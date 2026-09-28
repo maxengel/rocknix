@@ -3024,6 +3024,11 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #       round-trip, a name that would run when the config is sourced is
 #       refused, a write that fails says so, and --info reads the config
 #       without running it (PL-051).
+#   C2. cloud_setup --seed-folders against a cloud on disk, path-based and
+#       bucket-shaped: an owner's README survives a listing that fails, and
+#       a listing that fails writes nothing (PL-047); on a bucket, where a
+#       missing key lists as nothing, the READMEs are written (#308 claude
+#       F-RS-09).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
 for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
@@ -3101,5 +3106,92 @@ C1RO=1 c1 --use-content-root
 [ "${RC}" -ne 0 ] && ! grep -q '^OK' "${C1}/out"; check $? "and --use-content-root likewise (rc ${RC})" "read-only /storage: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
 c1 --use-content-root
 [ "${RC}" -eq 0 ] && grep -qx 'CONTENT_REMOTE=""' "${CONF1}" && [ "$(grep -c '^CONTENT_REMOTE=' "${CONF1}")" -eq 1 ]; check $? "--use-content-root writes CONTENT_REMOTE=\"\" once" "rc ${RC}; $(grep '^CONTENT_REMOTE=' "${CONF1}" | tr '\n' ' ')"
+
+# C2. --seed-folders against a cloud kept in a directory. The shim answers as
+# rclone does: on a path-based remote (MODE=path) a folder or file that is not
+# there is "directory not found", exit 3; on a bucket (MODE=bucket) a missing
+# key or prefix lists as nothing, exit 0, and mkdir makes a folder only with
+# --s3-directory-markers. FAIL_LSF=1 fails every listing (exit 1, a network
+# error). Every argv is recorded.
+C2="${CS}/c2"; mkdir -p "${C2}/shim" "${C2}/storage/.config" "${C2}/cloud" "${C2}/rec" "${C2}/run"
+printf '#!/bin/sh\nexit 0\n' > "${C2}/shim/logger"
+cat > "${C2}/shim/rclone" <<'EOR'
+#!/bin/bash
+printf '%s\n' "$*" >> /rec/argv
+mode=$(cat /run/mode 2>/dev/null); fail=$(cat /run/fail-lsf 2>/dev/null)
+p=""; files=0; dirs=0; markers=0; ignore=0; src=""
+for a in "$@"; do
+    case "$a" in
+        qa:*) p="$a" ;;
+        --files-only) files=1 ;; --dirs-only) dirs=1 ;;
+        --s3-directory-markers) markers=1 ;; --ignore-existing) ignore=1 ;;
+        /*) src="$a" ;;
+    esac
+done
+rel="${p#qa:}"; rel="${rel#/}"; rel="${rel%/}"; target="/cloud/${rel}"
+case "$1" in
+  listremotes) echo "qa:" ;;
+  mkdir)
+    if [ "${mode}" = bucket ] && [ "${markers}" -eq 0 ]; then exit 0; fi
+    mkdir -p "${target}" ;;
+  lsf)
+    [ -n "${fail}" ] && { echo 'ERROR : Failed to lsf: connection reset' >&2; exit 1; }
+    if [ -f "${target}" ]; then basename "${target}"; exit 0; fi
+    if [ -d "${target}" ]; then
+        for e in "${target}"/*; do
+            [ -e "$e" ] || continue
+            if [ -d "$e" ]; then [ "${files}" -eq 1 ] || echo "$(basename "$e")/"
+            else [ "${dirs}" -eq 1 ] || basename "$e"; fi
+        done
+        exit 0
+    fi
+    [ "${mode}" = bucket ] && exit 0
+    echo 'ERROR : directory not found' >&2; exit 3 ;;
+  copyto)
+    [ "${ignore}" -eq 1 ] && [ -e "${target}" ] && exit 0
+    mkdir -p "$(dirname "${target}")" && cp "${src}" "${target}" ;;
+  *) exit 0 ;;
+esac
+EOR
+chmod +x "${C2}/shim"/*
+printf 'export PATH=%s\n' "${CSPATH}" > "${C2}/profile"
+CONF2="${C2}/storage/.config/cloud_sync.conf"
+c2() { # <args...>: cloud_setup against the cloud in C2/cloud; output to C2/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${C2}/profile" /etc/profile "${CSBB[@]}" \
+        --ro-bind "${C2}/shim" /shim --ro-bind "${C1}/repo" /repo --bind "${C2}/storage" /storage \
+        --bind "${C2}/cloud" /cloud --bind "${C2}/rec" /rec --ro-bind "${C2}/run" /run \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        bash /repo/cloud_setup "$@" > "${C2}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+c2reset() { # <path|bucket> [fail]: an empty cloud, the shipped config
+    rm -rf "${C2}/cloud"/* "${C2}/rec/argv"; echo "$1" > "${C2}/run/mode"
+    if [ -n "${2:-}" ]; then echo 1 > "${C2}/run/fail-lsf"; else rm -f "${C2}/run/fail-lsf"; fi
+    cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF2}"
+}
+readmes() { (cd "${C2}/cloud" && find . -name README.txt | sort | tr '\n' ' '); }
+c2reset path
+c2 --seed-folders
+[ "${RC}" -eq 0 ] && [ "$(readmes)" = "./ROCKNIX/Backups/README.txt ./ROCKNIX/Content/BIOS/README.txt ./ROCKNIX/Content/README.txt ./ROCKNIX/Content/ROMs/README.txt ./ROCKNIX/Saves/README.txt " ] && [ "$(grep -c '^OK ' "${C2}/out")" -eq 4 ]; check $? "a fresh path-based cloud is seeded: five READMEs, four folders reported OK" "rc ${RC}; READMEs: $(readmes); said: $(tr '\n' ' ' < "${C2}/out")"
+echo "mine" > "${C2}/cloud/ROCKNIX/Saves/README.txt"
+c2 --seed-folders
+[ "$(cat "${C2}/cloud/ROCKNIX/Saves/README.txt")" = "mine" ]; check $? "an owner's README is left alone when the folder lists" "the owner's README now reads: $(head -1 "${C2}/cloud/ROCKNIX/Saves/README.txt")"
+# PL-047: the listing fails, the upload would work.
+echo 1 > "${C2}/run/fail-lsf"
+c2 --seed-folders
+[ "$(cat "${C2}/cloud/ROCKNIX/Saves/README.txt")" = "mine" ]; check $? "a listing that fails does not overwrite the owner's README" "the owner's README now reads: $(head -1 "${C2}/cloud/ROCKNIX/Saves/README.txt") -- a failed probe was taken as 'absent' and the note was replaced (PL-047)"
+c2reset path fail
+c2 --seed-folders
+[ -z "$(readmes)" ]; check $? "and on a fresh cloud whose listings fail, nothing is written" "READMEs written with every listing failing: $(readmes)(PL-047)"
+grep -q '^MISSING ' "${C2}/out" && ! grep -q '^OK ' "${C2}/out"; check $? "and the report says MISSING rather than OK" "said: $(tr '\n' ' ' < "${C2}/out")"
+# claude F-RS-09: on a bucket the old probe (lsf of the README by name)
+# exits 0 with nothing for a key that is not there.
+c2reset bucket
+c2 --seed-folders
+[ "$(readmes)" = "./ROCKNIX/Backups/README.txt ./ROCKNIX/Content/BIOS/README.txt ./ROCKNIX/Content/README.txt ./ROCKNIX/Content/ROMs/README.txt ./ROCKNIX/Saves/README.txt " ]; check $? "a fresh bucket cloud gets its five READMEs too" "bucket READMEs: '$(readmes)' -- a missing key lists as nothing with exit 0, which the probe took as 'there' (#308 claude F-RS-09)"
+echo "mine" > "${C2}/cloud/ROCKNIX/Saves/README.txt"
+c2 --seed-folders
+[ "$(cat "${C2}/cloud/ROCKNIX/Saves/README.txt")" = "mine" ]; check $? "and an owner's README in a bucket is left alone" "bucket: the owner's README now reads: $(head -1 "${C2}/cloud/ROCKNIX/Saves/README.txt")"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

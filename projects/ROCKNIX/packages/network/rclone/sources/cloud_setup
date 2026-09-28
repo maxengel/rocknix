@@ -540,12 +540,25 @@ case "$1" in
         done
 
         seed_note() {
-            local dir="$1"; shift
-            # Never clobber a note the owner may have written themselves.
-            rclone lsf "${REMOTE}${dir}/README.txt" >/dev/null 2>&1 && return 0
-            local tmp; tmp=$(mktemp)
+            local dir="$1" listing tmp; shift
+            # Never clobber a note the owner may have written themselves, and
+            # never write on a guess. The folder's own listing says whether a
+            # README.txt is in it. Asking for the file by name could not: a
+            # listing that failed for any reason read as "absent" and the
+            # owner's note was replaced (audit #307 PL-047), and on a bucket
+            # a key that is not there lists as nothing with exit 0, which read
+            # as "present" -- so no README was ever written there (#308
+            # claude F-RS-09). A listing that fails writes nothing.
+            if ! listing=$(rclone lsf --files-only "${REMOTE}${dir}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); then
+                log_message "Seeding: ${dir} could not be listed, so its README was not written"
+                return 1
+            fi
+            printf '%s\n' "${listing}" | grep -qFx -- 'README.txt' && return 0
+            tmp=$(mktemp) || return 1
             printf '%s\n' "$@" > "${tmp}"
-            rclone copyto "${tmp}" "${REMOTE}${dir}/README.txt" 2>/dev/null
+            # --ignore-existing: another device may have written one since
+            # the listing.
+            rclone copyto --ignore-existing "${tmp}" "${REMOTE}${dir}/README.txt" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
             rm -f "${tmp}"
         }
 
