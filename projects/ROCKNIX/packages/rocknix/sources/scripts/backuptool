@@ -203,6 +203,19 @@ then
     if source /storage/.config/backuptool.conf
     then
         COMPRESSLOCATIONS=("${LOCATIONS[@]}")
+        # A list that is empty once sourced -- LOCATIONS=(), or a file that
+        # never sets it -- is the standard one, said as such. Until #307
+        # PL-035 it reached find as no locations at all, and find walked the
+        # working directory.
+        NAMED=0
+        for LOC in "${COMPRESSLOCATIONS[@]}"; do [ -n "${LOC}" ] && NAMED=1; done
+        if [ "${NAMED}" -eq 0 ]
+        then
+            WARN="YOUR OWN BACKUP LIST IS EMPTY, SO THE STANDARD ONE WAS USED."
+            echo "${WARN}"
+            logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf sets no locations"
+            COMPRESSLOCATIONS=("${DEFAULT[@]}")
+        fi
     else
         WARN="YOUR OWN BACKUP LIST COULDN'T BE READ, SO THE STANDARD ONE WAS USED."
         echo "${WARN}"
@@ -321,12 +334,22 @@ write_archive() {
     # read) is a failed collection, not a smaller one: find's status was
     # never read, its error went to /dev/null, and the archive was written
     # short and announced as a success (#307 PL-004).
-    local LOC FIND_RC=0
+    #
+    # Each location is walked by its canonical path (readlink -f), so the
+    # file list names every file the one way the checks below compare
+    # against: "/storage/./.config/system/configs/system.cfg" is
+    # system.cfg, and its Wi-Fi key is stripped like the plain spelling's
+    # (#307 PL-035; until then the exact-path membership tests missed it).
+    # A location that is itself a symlink holds no file of its own -- find
+    # never followed one -- so it is passed over as before.
+    local LOC CANON FIND_RC=0
     for LOC in "${COMPRESSLOCATIONS[@]}"
     do
         [ -n "${LOC}" ] || continue
         [ -e "${LOC}" ] || [ -L "${LOC}" ] || continue
-        find "${LOC}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
+        [ -L "${LOC}" ] && continue
+        CANON=$(readlink -f "${LOC}") && [ -n "${CANON}" ] || { FIND_RC=1; continue; }
+        find "${CANON}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
     done
     if [ "${FIND_RC}" -ne 0 ]
     then

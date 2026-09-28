@@ -3164,4 +3164,15 @@ p7bt backup
 [ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 PL-036: a sanitiser that dies part-way ends the backup with nothing written (rc ${RC})" "#307 PL-036: rc ${RC}; archive: $(p7list | tr '\n' '|'); system.cfg in it: $(tar -xzOf "$(p7arc | tail -1)" storage/.config/system/configs/system.cfg 2>/dev/null | tr '\n' '|') -- the half copy was archived as the file"
 rm -f "${P7}/shim/sed"
 
+# == PL-035: a location spelled with /. is the same location; an empty list is the standard one
+p7reset '  /storage/./.config/system/configs/system.cfg
+  /storage/.config/test/*'
+p7bt backup
+rm -rf "${P7}/x"; mkdir -p "${P7}/x"; tar -xzf "$(p7arc | tail -1)" -C "${P7}/x" 2>/dev/null
+[ "${RC}" -eq 0 ] && [ -f "${P7}/x/storage/.config/system/configs/system.cfg" ] && ! grep -rq SECRET "${P7}/x"; check $? "#307 PL-035: /storage/./.config/system/configs/system.cfg is canonicalised, so the Wi-Fi key is stripped as for the plain spelling" "#307 PL-035: rc ${RC}; archive: $(p7list | tr '\n' '|' | cut -c1-160); SECRET in: $(grep -rl SECRET "${P7}/x" 2>/dev/null | sed "s|${P7}/x/||" | tr '\n' ' ')"
+p7reset ''
+printf 'LOCATIONS=()\n' > "${P7S}/.config/backuptool.conf"; echo '<inputList />' > "${P7S}/.config/emulationstation/es_input.cfg"
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.config/emulationstation/es_input.cfg' && grep -q "YOUR OWN BACKUP LIST IS EMPTY, SO THE STANDARD ONE WAS USED" "${P7OUT}"; check $? "#307 PL-035: an empty LOCATIONS falls back to the standard list, and says so" "#307 PL-035: rc ${RC}; archive: $(p7list | tr '\n' '|' | cut -c1-160); screen: $(p7screen)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
