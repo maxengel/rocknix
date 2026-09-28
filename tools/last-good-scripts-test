@@ -3513,4 +3513,19 @@ SA_CWD=/storage/cwd sa_run "${CP}" cloud_capture --retire --unlink savestates/gb
 SA_CWD=/storage/cwd sa_run "${CP}" cloud_capture --retire --unlink /storage/roms/savestates/gb/Game.state1
 [ ! -e "${CP}/storage/roms/savestates/gb/Game.state1" ] && [ -f "${CP}/storage/cwd/savestates/gb/Game.state1" ] && [ "${RC}" -eq 0 ] && jq -e '.retired | map(.path) | index("savestates/gb/Game.state1")' "${CPM}" >/dev/null 2>&1; check $? "PL-052: an absolute path under the saves folder is retired and unlinked there, and only there (rc ${RC})" "saves folder's state: $([ -e "${CP}/storage/roms/savestates/gb/Game.state1" ] && echo still there || echo removed); rc ${RC}; retired: $(jq -c '.retired' "${CPM}" 2>/dev/null | cut -c1-120)"
 
+# PL-067 (F-CS-14 gpt): the final check, the rename, the stage's GC and the
+# stamp are one step under a lock of the capture's own: a second capture
+# waits for it rather than racing.
+cp_seed
+( exec 8>>"${CP}/storage/.cache/cloud_sync/.capture.lock"; flock -x 8; exec sleep 4 ) & cp_holder=$!
+sleep 0.5
+cp_exit
+kill "${cp_holder}" 2>/dev/null; wait "${cp_holder}" 2>/dev/null
+[ "${DT}" -ge 3 ] && [ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${CPM}" >/dev/null 2>&1; check $? "PL-067: a capture whose commit meets another's lock waits for it (${DT}s against a 4 s holder) and then records (rc ${RC})" "took ${DT}s, rc ${RC}, entry: $(jq -c '.entries | keys' "${CPM}" 2>/dev/null) -- the commit ran beside another capture's (F-CS-14)"
+cp_seed; cp_exit
+echo "a seal another capture just placed" > "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)"
+echo "state one, rewritten" > "${CP}/storage/roms/savestates/gb/Game.state1"
+cp_exit
+[ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC" "the fresh seal was collected -- another capture's pending version (F-CS-14)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

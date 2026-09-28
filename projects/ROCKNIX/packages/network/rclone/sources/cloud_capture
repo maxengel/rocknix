@@ -89,15 +89,22 @@
 # environment override, so the
 # core-pins map can be proven on an image whose read-only /usr has none.
 #
-# Two writers are serialised by detection, not by a lock. The boot --full
-# runs detached and can overlap the first game's exit capture; whichever
-# lands second sees the manifest's inode or mtime differ from what it loaded
-# and discards its own document rather than clobber the other's. An exit,
-# --rescan or --retire that loses then re-runs itself ONCE against the
-# winner's document (CLOUD_CAPTURE_RETRY marks the second attempt; seals are
-# content-addressed, so it re-uses them); a second loss, or a --full that
-# loses, is recorded as manifest-moved and left to the next run. The
-# residual: three writers in one second would drop one first version.
+# Two writers are serialised by detection, and their commits by a lock of
+# this script's own. The boot --full runs detached and can overlap the first
+# game's exit capture; whichever lands second sees the manifest's inode or
+# mtime differ from what it loaded and discards its own document rather than
+# clobber the other's. An exit, --rescan or --retire that loses then re-runs
+# itself ONCE against the winner's document (CLOUD_CAPTURE_RETRY marks the
+# second attempt; seals are content-addressed, so it re-uses them); a second
+# loss, or a --full that loses, is recorded as manifest-moved and left to the
+# next run. The commit itself -- the final check, the rename, the stage's
+# GC, the stamp -- runs under /storage/.cache/cloud_sync/.capture.lock (audit
+# #307 PL-067): the check and the rename were two steps another capture
+# could land between, and one capture's GC could collect a seal another had
+# just placed and not yet published. The lock is waited for, briefly -- a
+# commit holds it for milliseconds -- and a run that cannot have it goes on
+# under detection alone, as every run did before. It is not the transfer
+# lock, which this script never takes.
 
 CACHE="/storage/.cache/cloud_sync"
 STAGE="${CACHE}/stage"
@@ -192,6 +199,37 @@ UNIT=""
 RC=0
 REASON=""
 
+# The commit lock (PL-067, header). Up to five seconds in tenths -- busybox
+# flock has no -w -- and then the run goes on without it, logged. fd 8,
+# append-opened, so taking it never truncates anything; released before the
+# re-run's exec, which would otherwise carry it into a process that then
+# waits on itself.
+CAPTURE_LOCK="${CACHE}/.capture.lock"
+LOCK_HELD=0
+capture_lock() {
+    local n=0
+    [ "${LOCK_HELD}" = 1 ] && return 0
+    mkdir -p "${CACHE}" 2>/dev/null
+    # The group's redirection is the group's alone; exec's own (fd 8) stays.
+    { exec 8>>"${CAPTURE_LOCK}"; } 2>/dev/null || return 1
+    while ! flock -n 8 2>/dev/null; do
+        n=$(( n + 1 ))
+        if [ "${n}" -ge 50 ]; then
+            exec 8>&-
+            log_message "another capture has held ${CAPTURE_LOCK} for five seconds; going on under detection alone" "false" "WARN"
+            return 1
+        fi
+        sleep 0.1
+    done
+    LOCK_HELD=1
+    return 0
+}
+capture_unlock() {
+    [ "${LOCK_HELD}" = 1 ] || return 0
+    exec 8>&-
+    LOCK_HELD=0
+}
+
 finish() {
     local rc="${1:-${RC}}" reason="${2:-${REASON}}" now emu core mode
     now="$(date +%s)"
@@ -212,6 +250,8 @@ finish() {
     # never grow past one line per mode. Assembled in a temp file in the same
     # directory and moved into place, so a reader never sees a torn stamp; a
     # one-line stamp from before this is simply its mode's line.
+    # Under the commit lock (PL-067): the stamp is a read-modify-rename too.
+    capture_lock
     {
         awk -v m="${mode}" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f != m) print }' \
             "${CACHE}/last-capture" 2>/dev/null
@@ -1475,6 +1515,9 @@ if [ ! -s "${TMP}" ] || ! "${JQ}" -e . "${TMP}" >/dev/null 2>&1; then
     finish 1 "render-failed"
 fi
 
+# The check, the rename and the GC below are one step under the commit lock
+# (PL-067); detection still decides who wins.
+capture_lock
 if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
     rm -f "${TMP}" 2>/dev/null
     if [ -z "${CLOUD_CAPTURE_RETRY}" ] && [ "${MODE}" != "full" ]; then
@@ -1487,6 +1530,7 @@ if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
         # re-uses them. exec runs no EXIT trap, hence cleanup by hand.
         log_info "${MANIFEST} changed underneath; re-running once against the new document"
         cleanup
+        capture_unlock
         CLOUD_CAPTURE_RETRY=1 exec "$0" "${ORIG_ARGS[@]}"
     fi
     log_error "${MANIFEST} changed underneath; this run was discarded"
@@ -1513,11 +1557,21 @@ declare -A STAGE_REF
 while IFS= read -r _ref; do
     [ -n "${_ref}" ] && STAGE_REF["${_ref}"]=1
 done < <("${JQ}" -r '.entries[] | select(.pub == null) | .sha256 // empty' "${MANIFEST}" 2>/dev/null)
+# A seal placed in the last ten minutes is spared (PL-067): it may be
+# another capture's, sealed and not yet published, and collecting it would
+# leave that capture's entry naming a copy that is gone. By its change time,
+# which the seal's rename sets -- its modification time is the save's own
+# (cp -p). The next capture's GC takes it if nothing claims it.
+_now=$(date +%s)
 for _f in "${STAGE}"/*; do
     [ -f "${_f}" ] || continue
     _n="${_f##*/}"
     case "${_n}" in .tmp.*) continue ;; esac
-    [ -n "${STAGE_REF[${_n}]}" ] || rm -f "${_f}" 2>/dev/null
+    [ -n "${STAGE_REF[${_n}]}" ] && continue
+    _ct=$(stat -c %Z "${_f}" 2>/dev/null)
+    case "${_ct}" in ''|*[!0-9]*) continue ;; esac
+    [ $(( _now - _ct )) -lt 600 ] && continue
+    rm -f "${_f}" 2>/dev/null
 done
 _kb="$(du -sk "${STAGE}" 2>/dev/null | cut -f1)"
 case "${_kb}" in ''|*[!0-9]*) _kb=0 ;; esac
