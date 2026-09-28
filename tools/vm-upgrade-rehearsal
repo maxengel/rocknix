@@ -85,6 +85,15 @@ mkdir -p .config/system.d && ln -sfn /dev/null .config/system.d/emergency.target
 echo '# the owner'\''s own (vm-upgrade-rehearsal)' > .config/tmpfiles.d/50-rehearsal-owner.conf; sync" >>"$LOG" 2>&1
 check "retired quirk files seeded before the update" "$(ssha "cd /storage && ls $RETIRED .config/tmpfiles.d/50-rehearsal-owner.conf 2>/dev/null | wc -l; readlink .config/system.d/emergency.target" | tr '\n' ' ')" "5 /dev/null "
 
+say "seed a RetroArch cfg an owner changed, on a vulkan-era cfg (#307 PL-034, #308 claude F-VM-11)"
+# The fullscreen size set by hand must survive the update and the new
+# 092-retroarch-surface, which follows the guest's mode only for values of
+# its own; the driver the device shipped until 2026-09, vulkan, moves to gl
+# on an image with no Vulkan driver.
+RACFG=/storage/.config/retroarch/retroarch.cfg
+ssha "sed -i -e 's/^video_fullscreen_x = .*/video_fullscreen_x = \"1024\"/' -e 's/^video_fullscreen_y = .*/video_fullscreen_y = \"768\"/' -e 's/^video_driver = .*/video_driver = \"vulkan\"/' $RACFG; sync" >>"$LOG" 2>&1
+check "RetroArch cfg seeded before the update" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "vulkan" video_fullscreen_x = "1024" video_fullscreen_y = "768" '
+
 say "stage $(basename "$NEW") and reboot guest a"
 # The pair's key and port come from vm-pair, not from literals here (they
 # were, and a pair on other settings would have gone unrehearsed -- audit
@@ -117,6 +126,7 @@ check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
 for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && break; sleep 2; done
 check "retired quirk files taken back after the update (#307 PL-019)" "$(ssha "cd /storage && ls $RETIRED 2>/dev/null | wc -l; [ -L .config/system.d/emergency.target ] && echo masked || echo unmasked" | tr '\n' ' ')" "0 unmasked "
 check "and the owner's file beside them kept" "$(ssha 'cat /storage/.config/tmpfiles.d/50-rehearsal-owner.conf')" "# the owner's own (vm-upgrade-rehearsal)"
+check "RetroArch fullscreen size set by hand kept, driver moved to gl (#307 PL-034, #308 claude F-VM-11)" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "gl" video_fullscreen_x = "1024" video_fullscreen_y = "768" '
 # --- release checks: assertions about one release's defects, not about the
 # upgrade path. Each names its issue; drop it when the issue's cause is gone
 # upstream (audit #258 PL-030 asked that a generic tool label these).

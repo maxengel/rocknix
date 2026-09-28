@@ -3347,4 +3347,78 @@ f1_vm utm "${F1V}/disk.qcow2" --output "${F1V}/bundle.zip"
 check $? "a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)" "rc ${F1_RC}; <output>.tmp: '$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null || echo GONE)'; left: $(ls "${F1V}" | grep '^bundle' | tr '\n' ' '); $(head -c 200 "${F1V}/out")"
 fi
 
+# F1g. #307 PL-034, #308 claude F-VM-10 and gpt F-VM-09: 092-retroarch-surface
+#      sizes RetroArch's fullscreen surface to the guest's mode. It used to
+#      rewrite video_fullscreen_x/y only while they read the shipped 0|640 and
+#      0|480, so its own first write (1280x800) read as a player's value and a
+#      kept guest re-run at 640x480 kept a 1280x800 surface; it took the first
+#      mode of every connector's modes file, disconnected ones included, and a
+#      "1920x1080i" gave a height of "1080i". Now it records what it wrote
+#      (beside the cfg, so a settings backup carries the record with the
+#      values it describes), follows the mode while the values are its own
+#      -- shipped, recorded, or an earlier build's unrecorded write -- and
+#      leaves anything else, which is somebody's. And #308 claude F-VM-11,
+#      RetroArch's part: the device's shipped video_driver was vulkan on an
+#      image with no Vulkan driver, so RetroArch exited without a frame; a
+#      cfg that still names vulkan, on an image with no Vulkan ICD, moves to
+#      gl.
+F1G="${F1}/g"; F1GS=platforms/GENERIC_X64/092-retroarch-surface; mkdir -p "${F1G}/q" "${F1G}/icd/vulkan/icd.d" "${F1G}/noicd"
+echo '{}' > "${F1G}/icd/vulkan/icd.d/lvp_icd.json"
+if { [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1_QREL}/${F1GS}" 2>/dev/null; }; then
+    check 1 "-" "092-retroarch-surface does not exist at ${BASE_REF}"
+else
+src_of "${F1_QREL}/${F1GS}" "${F1G}/q/092-retroarch-surface"
+F1VK=(); [ -d /usr/share/vulkan ] && F1VK=(--tmpfs /usr/share/vulkan)   # the host's ICDs are not the image's
+f1_surface() { # <storage> <sys> [icd]: one boot's run of the quirk
+    local etc="${F1G}/noicd"; [ "${3:-}" = icd ] && etc="${F1G}/icd"
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind "${etc}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1G}/q" /q \
+        --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
+        bash /q/092-retroarch-surface > "${F1G}/out" 2>&1
+}
+f1_wh() { printf '%sx%s' "$(sed -n 's/^video_fullscreen_x = "\(.*\)"$/\1/p' "${1}/.config/retroarch/retroarch.cfg")" "$(sed -n 's/^video_fullscreen_y = "\(.*\)"$/\1/p' "${1}/.config/retroarch/retroarch.cfg")"; }
+f1_set() { sed -i "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${2%x*}\"/; s/^video_fullscreen_y = .*/video_fullscreen_y = \"${2#*x}\"/" "${1}/.config/retroarch/retroarch.cfg"; }
+f1_sys "${F1G}/s1280" "card0-Virtual-1:connected:1280x800,1024x768,640x480"
+f1_sys "${F1G}/s640"  "card0-Virtual-1:connected:640x480,1280x800,1024x768"
+f1_sys "${F1G}/s2"    "card0-DP-1:disconnected:1920x1080,1280x720" "card0-Virtual-1:connected:1280x800,640x480"
+f1_sys "${F1G}/si"    "card0-Virtual-1:connected:1920x1080i,1280x720"
+# A fresh guest at QEMU's 1280x800, then the same guest re-run at 640x480.
+f1_storage "${F1G}/a"; f1_surface "${F1G}/a" "${F1G}/s1280"; F1_W1=$(f1_wh "${F1G}/a")
+f1_surface "${F1G}/a" "${F1G}/s640"; F1_W2=$(f1_wh "${F1G}/a")
+[ "${F1_W1}" = 1280x800 ] && [ "${F1_W2}" = 640x480 ]
+check $? "the shipped 640x480 follows a 1280x800 guest, and follows it back when the kept guest is re-run at 640x480 (#307 PL-034)" "1280x800 boot: ${F1_W1}; the same guest at 640x480: ${F1_W2}; $(head -c 160 "${F1G}/out")"
+f1_surface "${F1G}/a" "${F1G}/s1280"; [ "$(f1_wh "${F1G}/a")" = 1280x800 ]; check $? "and back again at 1280x800" "a third boot at 1280x800: $(f1_wh "${F1G}/a")"
+# Somebody's own value is left, whatever the mode does.
+f1_set "${F1G}/a" 1024x768; f1_surface "${F1G}/a" "${F1G}/s640"; F1_W3=$(f1_wh "${F1G}/a"); f1_surface "${F1G}/a" "${F1G}/s1280"
+[ "${F1_W3}" = 1024x768 ] && [ "$(f1_wh "${F1G}/a")" = 1024x768 ]; check $? "a value set by hand (1024x768) is left at 640x480 and at 1280x800" "the hand-set 1024x768 became ${F1_W3} at 640x480 and $(f1_wh "${F1G}/a") at 1280x800"
+# The connected connector's preferred mode, not the first line of every
+# connector's list; an interlaced mode's height is a number.
+f1_storage "${F1G}/c"; f1_surface "${F1G}/c" "${F1G}/s2"
+[ "$(f1_wh "${F1G}/c")" = 1280x800 ]; check $? "a disconnected DP-1 listing 1920x1080 first is passed over for the connected output's 1280x800 (#308 claude F-VM-10, gpt F-VM-09)" "with a disconnected DP-1 before the connected output: $(f1_wh "${F1G}/c")"
+f1_storage "${F1G}/i"; f1_surface "${F1G}/i" "${F1G}/si"
+[ "$(f1_wh "${F1G}/i")" = 1920x1080 ]; check $? "an interlaced 1920x1080i gives a height of 1080 (#308 claude F-VM-10)" "1920x1080i gave $(f1_wh "${F1G}/i")"
+# Already written: a guest the earlier builds' quirk sized at 1280x800 has
+# the values and no record. Its known footprint -- QEMU's 1280x800, or the
+# mode the guest has now -- is taken as the quirk's, and follows the mode;
+# an unrecorded value that is neither is somebody's.
+f1_storage "${F1G}/o"; f1_set "${F1G}/o" 1280x800; f1_surface "${F1G}/o" "${F1G}/s640"
+[ "$(f1_wh "${F1G}/o")" = 640x480 ]; check $? "an earlier build's unrecorded 1280x800 follows a re-run at 640x480" "the earlier builds' 1280x800 stayed $(f1_wh "${F1G}/o") at 640x480"
+f1_storage "${F1G}/p"; f1_set "${F1G}/p" 1024x768; f1_surface "${F1G}/p" "${F1G}/s640"
+[ "$(f1_wh "${F1G}/p")" = 1024x768 ]; check $? "and an unrecorded 1024x768 is left" "an unrecorded 1024x768 became $(f1_wh "${F1G}/p")"
+# A boot that changes nothing writes nothing: the cfg and the record keep
+# their bytes.
+f1_storage "${F1G}/n"; f1_surface "${F1G}/n" "${F1G}/s1280"
+F1_N0=$(cd "${F1G}/n/.config/retroarch" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_surface "${F1G}/n" "${F1G}/s1280"
+[ "${F1_N0}" = "$(cd "${F1G}/n/.config/retroarch" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ]; check $? "a second boot at the same mode leaves the cfg and the record as they were" "a second boot changed the retroarch directory"
+# The driver: vulkan moves to gl only on an image with no Vulkan ICD.
+f1_storage "${F1G}/v"; f1_surface "${F1G}/v" "${F1G}/s1280"; F1_VD1=$(grep '^video_driver' "${F1G}/v/.config/retroarch/retroarch.cfg")
+f1_storage "${F1G}/w"; f1_surface "${F1G}/w" "${F1G}/s1280" icd; F1_VD2=$(grep '^video_driver' "${F1G}/w/.config/retroarch/retroarch.cfg")
+[ "${F1_VD1}" = 'video_driver = "gl"' ] && [ "${F1_VD2}" = 'video_driver = "vulkan"' ]
+check $? "a cfg naming vulkan moves to gl on an image with no Vulkan ICD, and is left where one exists (#308 claude F-VM-11)" "no ICD: ${F1_VD1}; with an ICD: ${F1_VD2}"
+fi
+F1RA=projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
+src_of "${F1RA}" "${F1G}/retroarch.cfg"
+[ "$(grep '^video_driver' "${F1G}/retroarch.cfg")" = 'video_driver = "gl"' ]; check $? "and the GENERIC_X64 profile ships gl, the driver a guest can draw with (#308 claude F-VM-11)" "the GENERIC_X64 profile ships $(grep '^video_driver' "${F1G}/retroarch.cfg")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

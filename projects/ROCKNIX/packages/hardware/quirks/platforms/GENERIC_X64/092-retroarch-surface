@@ -13,18 +13,73 @@
 # (fork #263; #251's measurements described the scaling). The H700 ships
 # 640/480 and never drew this way.
 #
-# The shipped cfg now says 640x480; a guest on another mode (the 1280x800
-# QA guest) gets its own here, from the connected output, when the values
-# are still the shipped ones. A value somebody set by hand is left alone,
-# and RetroArch does not write these back (config_save_on_exit is off).
+# The shipped cfg says 640x480; a guest on another mode (the 1280x800 QA
+# guest) gets its own here, and keeps following it -- a guest kept and
+# re-run at another --res gets the new size -- for as long as the values
+# are this quirk's: the shipped ones, the ones it recorded writing last
+# (RECORD, beside the cfg, so a settings backup carries the record with the
+# values it describes), or, with no record, what an earlier build of this
+# quirk wrote without keeping one (the guest's mode, or QEMU's default
+# 1280x800). Anything else was set by somebody and is left alone.
+# RetroArch does not write these back (config_save_on_exit is off).
 CFG="/storage/.config/retroarch/retroarch.cfg"
-MODE="$(cat /sys/class/drm/card*-*/modes 2>/dev/null | head -1)"
-if [ -f "${CFG}" ]; then
-  case "${MODE}" in
-    [0-9]*x[0-9]*)
-      W="${MODE%x*}"; H="${MODE#*x}"
-      grep -qE '^video_fullscreen_x = "(0|640)"$' "${CFG}" && sed -i "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${W}\"/" "${CFG}"
-      grep -qE '^video_fullscreen_y = "(0|480)"$' "${CFG}" && sed -i "s/^video_fullscreen_y = .*/video_fullscreen_y = \"${H}\"/" "${CFG}"
-      ;;
-  esac
+RECORD="/storage/.config/retroarch/.fullscreen-surface"
+[ -f "${CFG}" ] || exit 0
+
+# RetroArch's driver. This device's cfg named vulkan until 2026-09, and the
+# image carries no Vulkan driver, so RetroArch exited without drawing a
+# frame; gl is what a guest draws with (virgl, or llvmpipe with --gl none).
+# A cfg still naming vulkan moves to gl -- only while no Vulkan ICD exists.
+ICD=no
+for f in /usr/share/vulkan/icd.d/*.json /etc/vulkan/icd.d/*.json; do
+  [ -e "${f}" ] && ICD=yes
+done
+if [ "${ICD}" = no ] && grep -q '^video_driver = "vulkan"$' "${CFG}"; then
+  sed -i 's/^video_driver = "vulkan"$/video_driver = "gl"/' "${CFG}"
 fi
+
+# The mode sway will take: the preferred (first) mode of the connected
+# output. The compositor has not started at this point of the boot, so
+# there is no current mode to read, and sway takes the preferred one. An
+# interlaced mode is named 1920x1080i; its height is still 1080.
+MODE=""
+for c in /sys/class/drm/card*-*; do
+  [ "$(cat "${c}/status" 2>/dev/null)" = connected ] || continue
+  MODE="$(head -n 1 "${c}/modes" 2>/dev/null)"
+  [ -n "${MODE}" ] && break
+done
+MODE="${MODE%i}"
+case "${MODE}" in
+  [1-9]*x[1-9]*) W="${MODE%%x*}"; H="${MODE#*x}" ;;
+  *) exit 0 ;;
+esac
+case "${W}${H}" in *[!0-9]*) exit 0 ;; esac
+
+value() { sed -n "s/^$1 = \"\\([0-9]*\\)\"\$/\\1/p" "${CFG}" | head -n 1; }
+X="$(value video_fullscreen_x)"; Y="$(value video_fullscreen_y)"
+[ -n "${X}" ] && [ -n "${Y}" ] || exit 0
+RX=""; RY=""
+if [ -f "${RECORD}" ]; then
+  RX="$(sed -n 's/^video_fullscreen_x=\([0-9]*\)$/\1/p' "${RECORD}")"
+  RY="$(sed -n 's/^video_fullscreen_y=\([0-9]*\)$/\1/p' "${RECORD}")"
+fi
+
+OURS=no
+if [ -n "${RX}" ] && [ "${X}" = "${RX}" ] && [ "${Y}" = "${RY}" ]; then
+  OURS=yes                                   # what this quirk wrote last
+elif { [ "${X}" = 0 ] || [ "${X}" = 640 ]; } && { [ "${Y}" = 0 ] || [ "${Y}" = 480 ]; }; then
+  OURS=yes                                   # the shipped values
+elif [ ! -f "${RECORD}" ] && { { [ "${X}" = "${W}" ] && [ "${Y}" = "${H}" ]; } || { [ "${X}" = 1280 ] && [ "${Y}" = 800 ]; }; }; then
+  OURS=yes                                   # an earlier build's write, unrecorded
+fi
+[ "${OURS}" = yes ] || exit 0
+
+if [ "${X}" != "${W}" ] || [ "${Y}" != "${H}" ]; then
+  sed -i -e "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${W}\"/" \
+         -e "s/^video_fullscreen_y = .*/video_fullscreen_y = \"${H}\"/" "${CFG}"
+fi
+if [ "${RX}" != "${W}" ] || [ "${RY}" != "${H}" ]; then
+  printf '# 092-retroarch-surface (GENERIC_X64): the values it last wrote to retroarch.cfg\nvideo_fullscreen_x=%s\nvideo_fullscreen_y=%s\n' "${W}" "${H}" > "${RECORD}.new" \
+    && mv "${RECORD}.new" "${RECORD}"
+fi
+exit 0
