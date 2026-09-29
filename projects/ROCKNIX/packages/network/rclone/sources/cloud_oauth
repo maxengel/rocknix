@@ -645,8 +645,13 @@ button.minor{background:#333;color:#ddd;font-weight:500}
 .ok{background:#272;padding:12px;border-radius:8px;margin:1rem 0}
 .box{border:1px solid #444;border-radius:10px;padding:14px;margin:1rem 0}
 .big{font-size:1.6rem;text-align:center;margin:1rem 0}
+/* Five buttons on a phone's 350 px share the row from a basis of nothing
+   (flex:1 1 0) and may shrink below their words (min-width:0, which flex
+   items refuse by default); width:auto undoes the block rule's 100%, which
+   as a basis put every button on a row of its own. Show sat off the right
+   edge of an iPhone's screen (fork #330). */
 .keys{display:flex;gap:8px;margin-top:10px}
-.keys button{flex:1;margin-top:0}
+.keys button{flex:1 1 0;min-width:0;width:auto;padding:12px 6px;margin-top:0}
 /* The trackpad. Tall enough to drag across a four-inch screen's worth of
    page without lifting a finger, and touch-action:none so the browser does
    not steal the gesture to scroll its own page. */
@@ -998,6 +1003,15 @@ network you trust.</p>
 </div>
 
 <script>
+// A script that dies before it starts leaves the page saying Checking... for
+// as long as it is open, its taps dead (fork #330). Said on the page, with
+// the browser's words for the ROCKNIX team, instead of nothing.
+window.onerror = function (message) {
+  var state = document.getElementById("state");
+  if (!state) return;
+  state.className = "err";
+  state.textContent = "This page stopped working. Reload it; if it happens again, tell the ROCKNIX team: " + message;
+};
 (function () {
   var pin = "%(pin)s";
   var box = document.getElementById("kb");
@@ -1008,11 +1022,15 @@ network you trust.</p>
   // One request at a time, in order. Backspaces and characters that overtake
   // each other arrive as scrambled text in the field on the handheld.
   //
-  // Two states from the probe: up, the window is on the handheld's screen
-  // (the named keys drive it -- Tab is how a field the page did not focus
-  // is reached); ready, a field on its page has had the caret, so text
-  // has somewhere to go.
-  var up = false;
+  // Two states from the probe: winUp, the window is on the handheld's
+  // screen (the named keys drive it -- Tab is how a field the page did not
+  // focus is reached); ready, a field on its page has had the caret, so
+  // text has somewhere to go. It was `up` until fork #330 -- the same name
+  // as the pad's up(e) below, and a var assigned false over a hoisted
+  // function makes addEventListener("touchend", up) throw before poll()
+  // ever runs: the page sat on Checking... with its taps dead on every
+  // browser, while drags moved the pointer (their handler was bound first).
+  var winUp = false;
   var ready = false;
   var page = null;
   var queue = Promise.resolve();
@@ -1065,12 +1083,12 @@ network you trust.</p>
       if (box.value) {
         box.value = box.value.slice(0, -1);
         if (ready) deliver(box.value);
-      } else if (up) {
+      } else if (winUp) {
         send("key=backspace");
       }
       return;
     }
-    if (!up) return;
+    if (!winUp) return;
     send("key=" + named);
     if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; dropped = []; warnSay(); }
   }
@@ -1210,8 +1228,25 @@ network you trust.</p>
 
   // This page is scanned before the window exists -- the QR is on the screen
   // the sign-in page then replaces -- so it has to come alive by itself.
+  //
+  // A probe that fails is counted; five in a row (ten seconds) and the line
+  // says the handheld cannot be reached and what to look at, instead of
+  // Checking... for as long as the page is open (fork #330: an iPhone with a
+  // VPN badge in its status bar showed Checking... for two minutes while
+  // its taps went nowhere). The polling goes on: the moment an answer comes
+  // the line changes to what it says.
+  var failed = 0;
+  function unreachable() {
+    state.className = "err";
+    state.textContent = "Your phone can't reach your handheld. Both need to be "
+      + "on the same Wi-Fi, and a VPN on your phone can get in the way.";
+  }
   function poll() {
-    fetch("/" + pin + "?probe=1").then(function (r) { return r.text(); })
+    fetch("/" + pin + "?probe=1", {cache: "no-store"}).then(function (r) {
+        if (!r.ok) throw new Error("status " + r.status);
+        failed = 0;
+        return r.text();
+      })
       .then(function (t) {
         // "open <page>" -- the page token changes when the handheld
         // navigates, which is when what is in this box stopped being
@@ -1226,7 +1261,7 @@ network you trust.</p>
           if (page !== null) { box.value = ""; sent = ""; }
           page = parts[1];
         }
-        up = isUp;
+        winUp = isUp;
         state.className = open ? "ok" : "note";
         state.textContent = open
           ? "Connected."
@@ -1253,7 +1288,7 @@ network you trust.</p>
         ready = open;
         if (opened) { sent = ""; deliver(box.value); }
       })
-      .catch(function () {})
+      .catch(function () { if (++failed >= 5) unreachable(); })
       .then(function () { setTimeout(poll, 2000); });
   }
   poll();
@@ -1540,6 +1575,7 @@ ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
 HAT_KEYS = {(ABS_HAT0X, -1): "left", (ABS_HAT0X, 1): "right",
             (ABS_HAT0Y, -1): "up", (ABS_HAT0Y, 1): "down"}
 SYS_INPUT = "/sys/class/input"
+DEV_INPUT = "/dev/input"
 
 # Arrows rather than Tab: WebKit's spatial navigation moves focus in the
 # direction pressed, which is what a d-pad means. Tab order on a login page
@@ -1606,9 +1642,32 @@ def find_gamepad():
         if codes is None:
             continue
         axes = _capabilities(entry, "abs") or set()
-        if BTN_SOUTH in codes and (BTN_DPAD_UP in codes or ABS_HAT0Y in axes):
-            return "/dev/input/" + entry, codes
+        if not (BTN_SOUTH in codes and (BTN_DPAD_UP in codes or ABS_HAT0Y in axes)):
+            continue
+        node = DEV_INPUT + "/" + entry
+        # sysfs lists a pad whose node is gone: on the Retroid Pocket Nova
+        # InputPlumber hides the physical "AYN Odin2 Gamepad" (event3) behind
+        # its own virtual controller (event7), and the first match could not
+        # be opened -- so the bridge ran with no pad and SELECT + START could
+        # not leave the window (fork #331). A candidate that cannot be
+        # opened is passed over, and the log says which one and why.
+        try:
+            os.close(os.open(node, os.O_RDONLY))
+        except OSError as exc:
+            log("gamepad: %s (%s) cannot be opened: %s; trying the next"
+                % (node, _device_name(entry), exc.strerror or exc))
+            continue
+        return node, codes
     return None, set()
+
+
+def _device_name(entry):
+    """The kernel's name for an input device, for the log; empty when unreadable."""
+    try:
+        with open("%s/%s/device/name" % (SYS_INPUT, entry)) as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
 
 
 def _capabilities(entry, kind):
@@ -1731,18 +1790,21 @@ class GamepadBridge:
         if not node:
             log("no gamepad found; the sign-in page can only be driven from a phone")
             return False
-        self.thread = threading.Thread(target=self._run, args=(node,), daemon=True)
-        self.thread.start()
-        log("gamepad bridge reading %s" % node)
-        return True
-
-    def _run(self, node):
+        # Opened here, so the log says "reading" only once it is (the Nova's
+        # log read "could not read the gamepad" and then "gamepad bridge
+        # reading /dev/input/event3", in that order; fork #331).
         try:
             fd = os.open(node, os.O_RDONLY)
         except OSError as exc:
-            log("could not read the gamepad: %s" % exc)
-            return
+            log("could not read the gamepad %s: %s; the sign-in page can only be driven from a phone"
+                % (node, exc.strerror or exc))
+            return False
+        self.thread = threading.Thread(target=self._run, args=(fd, node), daemon=True)
+        self.thread.start()
+        log("gamepad bridge reading %s (%s)" % (node, _device_name(os.path.basename(node))))
+        return True
 
+    def _run(self, fd, node):
         grabbed = False
         try:
             fcntl.ioctl(fd, EVIOCGRAB, 1)

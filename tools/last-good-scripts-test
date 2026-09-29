@@ -4795,10 +4795,16 @@ def pad_fifo(d):
     writer = os.open(fifo, os.O_RDWR)       # keeps a reader's open from blocking
     return fifo, writer
 
-def fake_sysfs(d, key_codes, abs_codes, name="Test Pad"):
+def fake_sysfs(d, key_codes, abs_codes, name="Test Pad", entry="event3", node=True):
+    """A sysfs entry for a pad, and (node=True) its device node beside it in
+    d/dev-input -- find_gamepad opens the node since fork #331, so a test sets
+    m.DEV_INPUT = fake_dev(d) as well. Called twice for two entries."""
     root = os.path.join(d, "sys-input")
-    dev = os.path.join(root, "event3", "device")
+    dev = os.path.join(root, entry, "device")
     os.makedirs(os.path.join(dev, "capabilities"))
+    os.makedirs(fake_dev(d), exist_ok=True)
+    if node:
+        open(os.path.join(fake_dev(d), entry), "w").close()
 
     def words(codes):
         top = max(codes) if codes else 0
@@ -4814,6 +4820,9 @@ def fake_sysfs(d, key_codes, abs_codes, name="Test Pad"):
     with open(os.path.join(dev, "name"), "w") as h:
         h.write(name + "\n")
     return root
+
+def fake_dev(d):
+    return os.path.join(d, "dev-input")
 
 def start_server(m, holder):
     if hasattr(m, "make_server"):
@@ -5200,11 +5209,12 @@ def hat_dpad_is_found_and_bridged():
     """#308 gpt F-RS-16 (claude F-RS-06): a d-pad reported as a hat."""
     m, d = load("rs16")
     m.SYS_INPUT = fake_sysfs(d, {304, 305, 307, 308, 310, 311, 314, 315}, {0, 1, 16, 17})
+    m.DEV_INPUT = fake_dev(d)
     try:
         node, codes = m.find_gamepad()
     except OSError as exc:
         node, codes = None, str(exc)
-    result(node == "/dev/input/event3",
+    result(node == os.path.join(fake_dev(d), "event3"),
            "a pad whose d-pad is ABS_HAT0X/Y is found (%s)" % node,
            "find_gamepad on a hat pad: %r -- no bridge, no exit from the handheld (#308 gpt F-RS-16)" % (node,))
     import fcntl as real_fcntl
@@ -5212,7 +5222,8 @@ def hat_dpad_is_found_and_bridged():
     m.fcntl = FakeFcntl(real_fcntl, "/nonexistent")
     kb = FakeKeyboard()
     bridge = m.GamepadBridge(kb, lambda: None, alive=lambda: True)
-    bridge.thread = threading.Thread(target=bridge._run, args=(fifo,), daemon=True)
+    # _run takes the opened node since fork #331 (start() opens it, so "reading" is logged only once it is)
+    bridge.thread = threading.Thread(target=bridge._run, args=(os.open(fifo, os.O_RDONLY), fifo), daemon=True)
     bridge.thread.start()
     for etype, code, value in ((EV_ABS, 17, -1), (EV_SYN, 0, 0), (EV_ABS, 17, 0), (EV_SYN, 0, 0),
                                (EV_ABS, 16, 1), (EV_SYN, 0, 0), (EV_ABS, 16, 0), (EV_SYN, 0, 0),
@@ -5224,6 +5235,96 @@ def hat_dpad_is_found_and_bridged():
     result(kb.pressed == ["up", "right", "down", "left", "enter"],
            "and its hat presses reach the page as arrows (up, right, down, left), buttons as before",
            "the bridge pressed %r for hat up, right, down+left and A" % kb.pressed)
+EOPY
+
+# fork #330: the keyboard page's script died at load on every browser -- a var
+# named `up` assigned false over the pad's hoisted function up(e), so
+# addEventListener("touchend", up) threw before poll() ran and the page sat on
+# Checking... with its taps dead. No test ran the page's script; these two do:
+# a static check for a var and a function sharing a name in the page's script,
+# and the script loaded under node against a stub document, where it must not
+# throw (node is on the build box; where it is not, the static check stands
+# and the line says so).
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+def remote_page_script(m):
+    page = m.REMOTE_PAGE % {"name": "Dropbox", "style": m.STYLE, "pin": "1234"}
+    return page[page.index("<script>") + len("<script>"):page.index("</script>")]
+
+@test
+def remote_page_script_has_no_name_clash():
+    """fork #330: a var that shadows a function in the page's script kills the page."""
+    import re
+    m, d = load("f330")
+    script = remote_page_script(m)
+    funcs = set(re.findall(r"^\s*function\s+([A-Za-z_$][\w$]*)\s*\(", script, re.M))
+    names = set(re.findall(r"\bvar\s+([A-Za-z_$][\w$]*)", script))
+    for match in re.finditer(r"\bvar\s+[^;]*?,\s*([A-Za-z_$][\w$]*)\s*=", script):
+        names.add(match.group(1))
+    clash = sorted(funcs & names)
+    result(not clash,
+           "no var in the keyboard page's script shares a name with one of its functions (%d functions, %d vars)" % (len(funcs), len(names)),
+           "the keyboard page's script declares %r as both a var and a function -- the page dies at load (#330)" % (clash,))
+
+@test
+def remote_page_script_loads_without_throwing():
+    """fork #330: the page's script, run under node against a stub document, reaches its first poll."""
+    import shutil
+    m, d = load("f330n")
+    node = shutil.which("node")
+    if not node:
+        result(True, "(no node on this host; the static clash check above stands for the script's load)", "")
+        return
+    script = remote_page_script(m)
+    stub = (
+        "var polled = 0, added = [];"
+        "var el = {addEventListener: function (t, f) { if (typeof f !== 'function') throw new TypeError('listener for ' + t + ' is ' + typeof f); added.push(t); },"
+        "  classList: {add: function () {}, remove: function () {}}, value: '', type: 'password', dataset: {}, hidden: true, textContent: '', className: '', focus: function () {}};"
+        "var document = {getElementById: function () { return el; }, querySelector: function () { return el; }, querySelectorAll: function () { return [el, el]; }};"
+        "var window = {addEventListener: el.addEventListener};"
+        "var fetch = function () { polled++; return new Promise(function () {}); };"
+        "var setTimeout = function () { return 0; };"
+    )
+    tail = "\nconsole.log(JSON.stringify({polled: polled, added: added}));\n"
+    path = os.path.join(d, "page.js")
+    with open(path, "w") as h:
+        h.write(stub + script + tail)
+    run = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+    ok = run.returncode == 0 and '"polled":1' in run.stdout and '"touchend"' in run.stdout and '"mouseup"' in run.stdout
+    result(ok,
+           "the keyboard page's script loads under node, binds the pad's touchend and mouseup, and sends its first probe",
+           "the keyboard page's script under node: rc %d, %s%s (#330)" % (run.returncode, run.stdout.strip()[-120:], (" stderr: " + run.stderr.strip().splitlines()[-1]) if run.stderr.strip() else ""))
+EOPY
+
+# fork #331: a pad sysfs lists whose node is gone (InputPlumber hides the Nova's
+# physical pad) is passed over for the next candidate, and the log says so.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def hidden_pad_is_passed_over():
+    """fork #331: the first pad in sysfs has no node; the next one is taken."""
+    m, d = load("f331")
+    pad = {304, 305, 307, 308, 310, 311, 314, 315}
+    m.SYS_INPUT = fake_sysfs(d, pad, {0, 1, 16, 17}, name="AYN Odin2 Gamepad", entry="event3", node=False)
+    fake_sysfs(d, pad, {0, 1, 16, 17}, name="Virtual Controller", entry="event7", node=True)
+    m.DEV_INPUT = fake_dev(d)
+    try:
+        node, codes = m.find_gamepad()
+    except OSError as exc:
+        node, codes = None, str(exc)
+    result(node == os.path.join(fake_dev(d), "event7") and 304 in codes,
+           "a listed pad with no node is passed over for the next (%s)" % node,
+           "find_gamepad with event3 hidden and event7 present: %r -- the Nova's bridge ran with no pad (#331)" % (node,))
+    text = log_text(m)
+    result("event3 (AYN Odin2 Gamepad) cannot be opened" in text and "trying the next" in text,
+           "and the log names the pad it passed over and why",
+           "log after the skip: %r" % text[-200:])
+    # No node at all: none, said once per candidate, never an exception.
+    os.unlink(os.path.join(fake_dev(d), "event7"))
+    try:
+        node2, _ = m.find_gamepad()
+    except OSError as exc:
+        node2 = str(exc)
+    result(node2 is None, "with no openable node, no pad (the page is driven from a phone)",
+           "find_gamepad with no openable node: %r" % (node2,))
 EOPY
 # #308 gpt F-RS-19: the wait for rclone's link is bounded by the clock.
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
