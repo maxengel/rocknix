@@ -102,6 +102,10 @@ if [ "${has_credentials}" -eq 1 ]; then
     echo "       only for accounts created for the fork." >&2
     exit 1
   fi
+else
+  # The positive, so a publish log says the check ran and what it found (audit #258 P-04: success is reported
+  # from the artifact, never from the absence of an error).
+  echo "checked: ${ES_BIN} carries no build credentials" >&2
 fi
 
 # qemu-img runs on the host here (it is not in the build container).
