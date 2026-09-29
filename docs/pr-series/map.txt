@@ -1,3 +1,7 @@
+# ceiling: files=30 insertions=1500
+# The size a person on ROCKNIX reviews, measured 2026-09-29 from the project's last forty merged PRs: a median of 18 lines
+# added in 1 file, three quarters under 85, the largest 3,046 (a new device). A PR over this ceiling fails tools/pr-stack-check
+# and is split before it is opened (#333, #335; the developer's words: "we can't be expected to review a PR with 40,000 lines").
 # The upstream series, by content (#322, #256; D-WORKFLOW-064, D-WORKFLOW-066).
 # One section per PR, in order; each names the paths `git checkout next -- <paths>`
 # takes onto the previous head. A path is a file or a directory (everything under
