@@ -72,32 +72,59 @@ those devices ship and the H700 does not."
 
 ## The PR description
 
-For each `pr/*` branch of the series (#322), the body upstream reads. The
-title is upstream's rule, not ours: `package: text`, 72 characters, no
-Conventional Commits prefix (`fork-workflow.md`). The body:
+For each `pr/*` branch of the series, the body upstream reads. The title is
+upstream's rule, not ours: `package: text`, 72 characters, no Conventional
+Commits prefix (`fork-workflow.md`).
 
-```
-What a player gets from this change, in two or three sentences.
+**It reads as the maintainer's own note to a reviewer**, because it is
+posted under their name (D-WORKFLOW-074) and because the ROCKNIX developers
+closed a whole series on 2026-09-29 for reading otherwise -- one asked for
+*"less AI"* in the submissions (D-WORKFLOW-078, #333). So: three or four
+short paragraphs of plain prose, first person singular, the way a person
+writes to a colleague they will meet again.
 
-**What it carries.** The paths, by area, in a sentence each.
-**How it was tested.** The suite, the proof, the device -- named, with what
-they showed; a build for at least one target.
-**What it does not touch.** The neighbours a reviewer might expect it to.
-**Kernel, bootloader or device tree.** Any such change, named; or "none".
-**Depends on.** The PR before it in the series, or "none".
-```
+1. What this changes and why, as a player or a reviewer would say it.
+2. How I tested it: which devices, what I ran, what I saw. Plainly.
+3. What it touches and does not (kernel, bootloader or device tree named
+   if any), and what it depends on, in a sentence.
+
+What it never carries:
+
+- **Any assistant.** No `Generated with Claude Code` footer, no
+  `Co-Authored-By` for one, no Claude, Claude Code or Anthropic anywhere --
+  in the body, the commit message, or a comment on the PR. The harness adds
+  a footer on its own; delete it before the PR is opened.
+- **Templates.** No bold labels (`**What it carries.**`), no headings, no
+  bullet lists unless they list devices; a template reads generated because
+  it is.
+- **The fork's plumbing.** No decision IDs, no `tools/…` names, no fork issue
+  numbers, no run numbers, no session names, no register vocabulary. A
+  reviewer cannot open any of it, and each one says a machine wrote this.
+- **The plural.** *I* built it, *I* tested it, *I* found it.
+- **Sales.** No exclamation marks, no "excited", no sign-off.
 
 From the estate's commit-messages card, the test that matters: a reviewer
-reading **only the description** -- no diff, no session, no fork issue --
-should know what problem this solves, why it matters and what it touches. If
-the description needs the diff to make sense, rewrite it. Outcome-first,
-present tense, active voice; the banned openers are the same ("This PR...",
-"This change...", "Various fixes"); the plumbing (fork issue numbers, the
-QA runs' names) goes in a details block at the end, since upstream's readers
-cannot open the fork's issues.
+reading **only the description** should know what problem this solves, why
+it matters and what it touches. A second test, from the closing: read it
+aloud as the maintainer; anything they would not say, cut.
+
+**The commit message** of the `pr/*` branch is the title, a blank line, and
+the first paragraph of the description in the same voice, 72 columns; no
+trailer of any kind.
+
+**One PR, one commit, one reviewable size.** Every `pr/*` branch is built
+on `upstream/next` by itself as one commit (D-WORKFLOW-079); a PR a person
+cannot read in a sitting is split before it is opened, and the interface
+work goes up as the review guide's buckets, one PR each.
+`tools/pr-stack-check` builds the branches, counts the commits, prints each
+PR's files and insertions, and refuses a description that carries any of
+the above.
 
 ## Before it is shown
 
-`tools/prose-check` on the note or the description; every bullet checked
-against the change log's entry and the run it names; the two-heads clause
-present whenever the files come from more than one build.
+`tools/prose-check` on the note or the description, with `PROSE_FIRST_PERSON=fail`
+for a PR description; `tools/pr-stack-check` for the series (the drafts'
+scan); every bullet checked against the change log's entry and the run it
+names; the two-heads clause present whenever the files come from more than
+one build; and the footer the harness appends removed from every `gh pr
+create` body before it is sent.

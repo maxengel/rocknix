@@ -303,6 +303,29 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
 
+  # One commit per PR, on the base by itself (D-WORKFLOW-079, #333): the
+  # ROCKNIX developers closed a series whose tenth branch carried ten
+  # commits. A count the guard cannot read is a refusal, not a pass.
+  if ! count="$(git rev-list --count "${base_ref}..${local_sha}" 2>/dev/null)"; then
+    echo "✗ pre-push: refusing to push ${branch}: git rev-list ${base_ref}..${local_sha} failed, so the one-commit rule could not be checked." >&2
+    status=1
+    continue
+  fi
+  if [ "$count" != 1 ]; then
+    echo "✖ pre-push blocked: ${branch} carries ${count} commits past ${base_ref}; a PR branch is one commit built by content (D-WORKFLOW-079)." >&2
+    echo "  Rebuild it: git worktree add --detach ../rocknix.worktrees/pr-tmp ${base_ref} && git switch -c ${dest} && git checkout next -- <the paths> && git commit" >&2
+    status=1
+    continue
+  fi
+  # Nothing upstream-bound names an assistant (D-WORKFLOW-078, #333): the
+  # commit message is scanned here; the PR body is the drafts' scan in
+  # tools/pr-stack-check, since it is not in the tree the branch carries.
+  if git log --format=%B "${base_ref}..${local_sha}" 2>/dev/null | grep -q -i -E 'claude|anthropic|generated with|co-authored-by'; then
+    echo "✖ pre-push blocked: ${branch}'s commit message names an assistant or carries a trailer; nothing upstream-bound may (D-WORKFLOW-078)." >&2
+    status=1
+    continue
+  fi
+
   # Files that differ between clean upstream and this PR branch tip.
   if ! changed="$(git diff --name-only "$base_ref" "$local_sha" 2>/dev/null)"; then
     echo "✗ pre-push: refusing to push ${branch}: git diff ${base_ref} ${local_sha} failed, so the personal-path guard could not run." >&2
