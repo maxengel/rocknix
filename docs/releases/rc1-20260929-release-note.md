@@ -23,7 +23,7 @@ The first release candidate of the fork's cloud sync, offline achievements and W
 
 - **RG35XX SP and RG SP (H700)**: flash `ROCKNIX-H700.aarch64-20260929-DDR4.img.gz` for an RG35XX SP and `-DDR3.img.gz` for an RG SP (those are the two we have; if yours doesn't boot on one, it's the other), then copy your device tree as the [H700 page](https://rocknix.org/configure/h700-installation/) says. To update in place, copy `ROCKNIX-H700.aarch64-20260929.tar` to `/storage/.update` and reboot.
 - **Retroid Pocket Nova (SM8550)**: `ROCKNIX-SM8550.aarch64-20260929.img.gz`, or the `.tar` in `/storage/.update`.
-- **RG353M (RK3566)**: `ROCKNIX-RK3566.aarch64-20260929.img.gz`, or the `.tar` in `/storage/.update`.
+- **RG353M (RK3566)**: flash `ROCKNIX-RK3566.aarch64-20260929-Generic.img.gz` (its bootloader detects the RG353 boards; the `-Specific` image names a device tree for boards it cannot detect), or the `.tar` in `/storage/.update`.
 
 Each file has a `.sha256` beside it.
 
