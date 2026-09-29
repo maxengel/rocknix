@@ -309,6 +309,18 @@ exit suite leaves). A report that reads `softpipe` is a guest on the wrong
 path, whatever the options say. Hardware rendering moves pixels against the
 accepted walk baseline once; that accept is named in `docs/vm-qa-log.md`.
 
+## A launch, a START or a walk waits for the interface to be idle (D-QA-057)
+
+`GET http://127.0.0.1:1234/isIdle` answers `[ true ]` with 200 only when no
+hasher, scraper, content installer, updater or game is running; while any of
+them runs, `POST /launch` answers 200 and starts nothing, and a page may still
+be loading. After a reboot with new ROMs the hasher runs for seconds to a
+minute on guest d. So a proof's reboot helper waits for `/isIdle`, for the
+startup sync's card to go and for a still screen before the script walks, and
+a launch through the API waits for `/isIdle` and dismisses dialogs first
+(`proofs-307/common.sh`, `tools/ra-offline-test`). A wait that expires says so
+in the log; a longer sleep is never the fix (blindspot 64).
+
 ## Driving EmulationStation from the monitor
 
 The keys the image maps (`/storage/.config/emulationstation/es_input.cfg`,
