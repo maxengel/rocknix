@@ -86,8 +86,11 @@ From the estate's rules, kept because the site already does them:
 | The reader's outcome first | "Get your saves onto every device you own." | "This page describes the cloud sync feature." (the maintainer's "This guide provides instructions on..." is the site's own and stays where it is; do not add new openers of that shape) |
 
 Contractions are the site's ("you'll", "don't", "it'll"); use them where the
-sentence wants one. "We" is the project when it does something ("we
-recommend", "we'll come back to this"), never the reader.
+sentence wants one. A sentence the fork writes speaks as one person, the
+maintainer: "I", never "we" (D-WORKFLOW-074, 2026-09-29: *"it should be 'I'
+and not 'we' [...] a consistent policy for everything we do"*); most
+sentences on a page are second person anyway. Other contributors' "we"
+("we recommend", "we'll come back to this") is theirs and stays.
 
 ## Tells
 

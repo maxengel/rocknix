@@ -28,6 +28,10 @@ FAIL = [
     (r"(^|[.!?]\s+)let's\b", "'Let's'"),
     (r"\b(in summary|to sum up|in conclusion|overall,|that's it!|you're all set|happy gaming)\b", "a closing summary or sign-off"),
 ]
+# First person plural (D-WORKFLOW-074): the fork posts as one person. A fail under
+# docs/releases/ (notes, PR descriptions) and with PROSE_FIRST_PERSON=fail; a warning
+# on a page, where another contributor's "we" is theirs and the writer's own is not.
+PLURAL = (r"\b(we|we're|we've|we'll|we'd|our|ours|ourselves)\b", "first person plural: the fork posts as one person, so 'I' and 'my' (D-WORKFLOW-074)")
 WARN = [
     (r"\bdue to the fact that\b|\bat this point in time\b|\ba number of\b", "padding ('because', 'now', a count)"),
     (r"\bin order to\b", "'in order to' ('to' does it; the site's RetroAchievements page says it twice, so a warning)"),
@@ -52,12 +56,15 @@ def prose_lines(text):
 
 def check(path, text):
     fails, warns = [], []
+    strict = "docs/releases/" in path.replace("\\", "/") or os.environ.get("PROSE_FIRST_PERSON") == "fail"
     body = list(prose_lines(text)); prev_first = None
     for i, l in body:
         low = l.lower()
         for pat, why in FAIL:
             if re.search(pat, low if pat[0] != "[" else l):
                 fails.append((i, why, l.strip()[:90]))
+        if re.search(PLURAL[0], low):
+            (fails if strict else warns).append((i, PLURAL[1], l.strip()[:90]))
         for pat, why in WARN:
             if re.search(pat, low):
                 warns.append((i, why, l.strip()[:90]))

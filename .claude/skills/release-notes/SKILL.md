@@ -58,6 +58,12 @@ Rules, from the estate's changelog skill and kept whole:
   server); never a tool's flag, exit code or log path.
 - **No exclamation marks, no "we're excited", no sign-off.** The first
   character of the note is the first character of its first sentence.
+- **First person singular, always (D-WORKFLOW-074).** A note, a PR
+  description or an issue comment is posted as the maintainer, one person:
+  "I", "my", "the two I have", never "we" or "our". Maintainer,
+  2026-09-29: *"we're posting as me, so it should be first person singular.
+  That should be a consistent policy for everything we do."*
+  `tools/prose-check` fails a plural.
 
 Two heads in one release (as RC1 has) are said in the first sentence and in
 the details block, with the diff between them in a clause: "the SM8550 and
