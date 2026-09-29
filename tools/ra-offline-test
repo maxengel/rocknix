@@ -236,13 +236,24 @@ cleanup() {
   [ -n "${VD_WAS:-}" ] && S "sed -i 's/^video_driver = .*/${VD_WAS}/' /storage/.config/retroarch/retroarch.cfg" >/dev/null 2>&1
   if [ "${TOGGLE_WAS:-0}" = 1 ]; then S 'raofflineproxy-ctl enable' >/dev/null 2>&1; else S 'raofflineproxy-ctl disable' >/dev/null 2>&1; fi
   [ "$WE_ENABLED" = 1 ] && S 'raofflineproxy-ctl flushed >/dev/null 2>&1; rm -rf /storage/.config/raofflineproxy' >/dev/null 2>&1
-  "$ROOT/tools/qa-accounts" "$PORT" clear 2>&1 | sed 's/^/  |     /'
+  if [ "${ACCT_WAS:-0}" = 1 ]; then
+    "$ROOT/tools/qa-accounts" "$PORT" ra 2>&1 | sed 's/^/  |     put back: /'
+  else
+    "$ROOT/tools/qa-accounts" "$PORT" clear 2>&1 | sed 's/^/  |     /'
+  fi
   S ". /etc/profile; set_setting global.retroachievements '${RA_WAS:-default}'; set_setting global.retroachievements.hardcore '${HC_WAS:-default}'" >/dev/null 2>&1
   st=$(S 'raofflineproxy-ctl status 2>/dev/null | tr "\n" " "'); link=$(S 'cat /sys/class/net/eth0/operstate 2>/dev/null')
   say "left: ${st}eth0=${link:-?} account cleared; global.retroachievements=${RA_WAS:-unset} hardcore=${HC_WAS:-unset} put back"
   echo; if [ "$FAILS" = 0 ]; then echo "PASSED ($PASSES)"; else echo "FAILED ($FAILS of $((FAILS+PASSES)))"; fi
   [ "$FAILS" = 0 ]
 }
+# Whether the guest already had an account (the walks' fixture on guest d
+# sets one and every walk from START assumes it: the MAIN MENU opens on
+# RETROACHIEVEMENTS when signed in). The name is tested for presence, never
+# printed; cleanup puts the account back rather than clearing it when it
+# was there before (chain 90, 2026-09-29: the clear left the proofs after
+# this test starting one row off).
+ACCT_WAS=0; [ -n "$(S '. /etc/profile; get_setting global.retroachievements.username' 2>/dev/null)" ] && ACCT_WAS=1
 "$ROOT/tools/qa-accounts" "$PORT" ra > /tmp/ra-offline-acct.$$ 2>&1; rc=$?
 # qa-accounts prints names and never values (its contract), so its line is
 # masked for the account's name but not dropped by the value filter, which
@@ -320,8 +331,30 @@ S 'rm -f /var/log/exec.log' >/dev/null 2>&1
 printf 'dismiss-dialogs\nsettle\n' > /tmp/ra-offline-dismiss.steps
 "$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" run /tmp/ra-offline-dismiss.steps --outdir /tmp >/dev/null 2>&1
 rm -f /tmp/ra-offline-dismiss.steps
+# And the interface idle. After a reboot with a copied ROM the hasher indexes
+# it, and HttpServerThread's /launch is refused while ThreadedHasher runs --
+# with a 200 and nothing launched (chain 90's run on 8dd6765af0, 2026-09-29:
+# the interface's last lines were the index completing). GET /isIdle answers
+# [ true ] (200) only when no hasher, scraper, installer, updater or game is
+# running; wait for it, bounded, and say how long it took.
+idle_wait() {  # seconds -> 0 when /isIdle answered true within them
+  local i; for i in $(seq 1 "$1"); do
+    [ "$(S "curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:1234/isIdle" 2>/dev/null)" = 200 ] && { echo "$i"; return 0; }
+    sleep 1
+  done; echo "$1"; return 1
+}
+iw=$(idle_wait 180); say "the interface idle after ${iw} s (GET /isIdle)"
 http=$(launch "$ROM")
 for i in $(seq 1 45); do S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null && break; sleep 1; done
+if ! S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null; then
+  # One more, after the interface says idle again: a launch the interface
+  # took and dropped (a reload, a dialog it drew after the dismiss) is told
+  # apart from a launch that cannot work by the second answer, and the
+  # retry is said, never silent.
+  iw2=$(idle_wait 60); say "no emulator after the first launch (HTTP ${http:-?}); idle again after ${iw2} s -- launching once more"
+  http=$(launch "$ROM")
+  for i in $(seq 1 45); do S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null && break; sleep 1; done
+fi
 check "$(S 'pgrep -f ^/usr/bin/retroarch >/dev/null'; echo $?)" "POST /launch $ROM -> HTTP ${http:-?}; RetroArch running"
 if ! S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null; then
   # Nothing below can be true without a running emulator; say what the
