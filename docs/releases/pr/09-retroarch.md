@@ -1,4 +1,4 @@
-Title: retroarch: notifications readable at a handheld's size, and rotation tables read from the source
+Title: retroarch: readable notifications, and rotation tables from the source
 
 RetroArch's on-screen notifications drew at a size no 3.5-inch panel could read: the face is now 13 px and the backdrop follows the font, the message queue keeps its floor and its place, and the font sizes are sharp on FreeType. The rotation tables for the FBA and MAME cores are generated from the cores' own source at build time by two scripts that skip `#if 0` and strings and refuse to guess, so a vertical game turns the right way on every device.
 

@@ -1,4 +1,4 @@
-Title: GENERIC_X64: a virtual machine build target, for QA on a desktop
+Title: GENERIC_X64: a virtual machine build target for QA on a desktop
 
 ROCKNIX builds a QEMU or VirtualBox guest as a device: the same busybox, scripts, EmulationStation binary and 640x480 panel as a handheld, with software GL, a serial root shell on a virtual machine only, and per-device emulator configurations that name no handheld's hardware. It is what every change in this series was proven on before a handheld saw it.
 

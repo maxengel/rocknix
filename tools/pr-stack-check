@@ -12,6 +12,7 @@
 # content from --from (default next): a path that exists on next is checked
 # out, a path next deleted is removed. Then it fails unless
 #
+#   0. every PR title obeys upstream's CI rule (`package: text`, 72 chars);
 #   1. every path the map names differs from the base somewhere (a dead line
 #      in the map is a PR that claims what it does not carry);
 #   2. no personal path (the push guard's PERSONAL_PATTERNS, read from
@@ -70,7 +71,11 @@ mapfile -t DIFF < <(git diff --name-only "${BASE}" "${FROM}" -- "${ROOTS[@]}" | 
 declare -a TITLES; declare -A PATHS_OF; n=-1
 while IFS= read -r line; do
   case "$line" in
-    '## '*) n=$((n+1)); TITLES[$n]="${line#\#\# }"; PATHS_OF[$n]="" ;;
+    '## '*) n=$((n+1)); TITLES[$n]="${line#\#\# }"; PATHS_OF[$n]=""
+       # upstream's CI title rule (validate-pull-request.yml): `package: text`, 72 chars at most
+       if ! printf '%s' "${TITLES[$n]}" | grep -q -E '^[a-zA-Z0-9_*./-]+:[[:space:]].+$' || [ "${#TITLES[$n]}" -gt 72 ]; then
+         fail "PR $((n+1))'s title breaks the CI rule (package: text, 72 chars at most): ${TITLES[$n]}"
+       fi ;;
     '#'*|'') ;;
     *) [ "$n" -ge 0 ] || { echo "pr-stack-check: a path before the first ## title: $line" >&2; exit 2; }
        PATHS_OF[$n]+="${line}"$'\n' ;;

@@ -1,4 +1,4 @@
-Title: build: recipes fetch nothing at configure, and no secret reaches the container
+Title: build: recipes fetch nothing at configure and forward no secrets
 
 A package now fails to configure instead of cloning a dependency the tree does not carry. pango built its own cairo from git master for three months, over the pinned one, and every image shipped it unnoticed; mangohud and gamescope fetched Vulkan headers, glm and stb the same way. The build refuses meson's downloads, and the three packages carry those trees as pinned, hash-checked sources. The docker recipe forwards no environment variable that looks like a credential into the container, and writes its `.env` fresh and owner-only.
 

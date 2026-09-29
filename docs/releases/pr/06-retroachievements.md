@@ -1,4 +1,4 @@
-Title: raofflineproxy: RetroAchievements offline, casual-only, as a system-wide toggle
+Title: raofflineproxy: RetroAchievements offline, casual-only, as a toggle
 
 With OFFLINE ACHIEVEMENTS (BETA) on, a device caches each game's achievement set and badges, records what is earned without a connection, and sends it to the player's account the next time it is online. The backend is RAOfflineProxy packaged natively: a loopback proxy on 127.0.0.1:8080 that the launch scripts point RetroArch and PPSSPP at while the toggle is on. It is casual-only, so turning it on turns hardcore mode off, with the sentence on screen. Nothing of upstream's bundle ships but the service: the OS owns the launch-time configuration.
 

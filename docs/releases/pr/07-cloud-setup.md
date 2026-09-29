@@ -1,4 +1,4 @@
-Title: rclone: cloud storage set up on the device, with a sign-in window and a phone's QR code
+Title: rclone: cloud storage set up on the device, with a sign-in window
 
 Cloud storage is set up from the couch. CONNECT OR REPAIR CLOUD STORAGE lists the providers rclone supports, a recommended shortlist first; a form asks each provider's questions in the player's words; Dropbox, Google Drive and OneDrive sign in on the provider's own page in a single-purpose web view that refuses to leave the provider's host, typed on the on-screen keyboard or from the player's phone through a QR code (the phone is a keyboard, never where the sign-in happens); the connection is kept only once the provider answers. A remote made by a sign-in the player abandoned is removed. The device's stable name in the cloud comes from `cloud_device_id`, so two devices never overwrite one another's backups.
 

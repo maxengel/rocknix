@@ -1,4 +1,4 @@
-Title: emulationstation: bump to the interface PR's commit; the save-state config and a theme patch
+Title: es: bump to the interface PR's commit; save-state config, a theme patch
 
 The EmulationStation pin moves to the commit the interface PR lands as on ROCKNIX's master, which carries the cloud pages, the save-state manager, the offline RetroAchievements pages, the Wi-Fi picker and the settings work the PRs before this one back. The art-book-next theme's tools system always shows its image, and `es_savestates.cfg` names the save-state contract the launcher reads.
 

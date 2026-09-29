@@ -1,4 +1,4 @@
-Title: rocknix: handhelds keep their logs, a watchdog and a crash store
+Title: rocknix: persistent logs, a watchdog and a crash store on handhelds
 
 A handheld that misbehaved used to lose the evidence at the reboot that followed: `/var/log` was tmpfs and the journal went with it. Logs now persist under `/storage`, a hardware watchdog restarts a hung device and records that it did, kernel panics land in pstore, and a bounded ring of core dumps is kept so the next crash can be read. `rocknix-evidence` collects it all into one archive on a timer, and `rocknix-corekeep` arms the core store when asked.
 

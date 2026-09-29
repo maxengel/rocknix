@@ -1,4 +1,4 @@
-Title: rocknix: the last good settings file, and backups that never carry a sign-in
+Title: rocknix: the last good system.cfg, and backups without a sign-in
 
 A `system.cfg` cut short by a power loss reset a device to defaults: it was backed up at every clean shutdown with whatever it held, so the truncated file replaced its own good copy. `chksysconfig` now writes `system.cfg.backup` only from a file that has just been checked, and verify at boot takes the live file, then the record, then the defaults, saying which. A shell writer never completes a cut file. `backuptool` writes `tar.gz` archives whole and renamed, holds back every Wi-Fi, account and cloud credential and refuses an archive in which a sign-in is still found, and restore keeps a way back; an interrupted restore is undone at the next boot. On-device backup and restore had reported success while writing short archives and aborting on the first symlink.
 

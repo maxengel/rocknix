@@ -9,7 +9,7 @@
 # Personal paths (fork-workflow.md) are never listed and never pass the guard.
 # Provenance: /home/max/.claude/jobs/fc48035c/tmp/path-commits.tsv, 2026-09-29.
 
-## build: recipes fetch nothing, forward no secrets, and say why they pin
+## build: recipes fetch nothing at configure and forward no secrets
 scripts/build
 scripts/get_env
 Makefile
@@ -31,7 +31,7 @@ projects/ROCKNIX/packages/emulators/standalone/yabasanshiro-sa/package.mk
 projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-audio-sdl/package.mk
 projects/ROCKNIX/packages/emulators/libretro/ppsspp-lr/package.mk
 
-## GENERIC_X64: a virtual machine as a build target, for QA on a desktop
+## GENERIC_X64: a virtual machine build target for QA on a desktop
 config/graphic
 scripts/extract
 scripts/image
@@ -74,7 +74,7 @@ projects/ROCKNIX/packages/wayland/compositor/sway/autostart/111-sway-init
 # shared: the emulator list carries GENERIC_X64's set and the core-pins map (#21) for the saves PR
 projects/ROCKNIX/packages/virtual/emulators/package.mk
 
-## evidence: handhelds keep their logs, a watchdog and a crash store across a power cycle
+## rocknix: persistent logs, a watchdog and a crash store on handhelds
 # kernel and device tree: H700's config and the ramoops reserved-memory patch (#104)
 projects/ROCKNIX/devices/H700
 projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
@@ -90,7 +90,7 @@ projects/ROCKNIX/packages/sysutils/powerstate
 # shared: installs the evidence scripts, chksysconfig's unit and the bootloader updater gate
 projects/ROCKNIX/packages/rocknix/package.mk
 
-## settings: the last good system.cfg, and backups that never carry a sign-in
+## rocknix: the last good system.cfg, and backups without a sign-in
 projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
 projects/ROCKNIX/packages/rocknix/system.d/rocknix-sysconfig.service
 projects/ROCKNIX/packages/rocknix/autostart/001-setup
@@ -110,7 +110,7 @@ projects/ROCKNIX/packages/network/rclone/sources/cloud_sync_cleanup_duplicates.s
 # shared: the shipped defaults carry every later PR's keys (the RetroAchievements switches, the cloud toggles)
 projects/ROCKNIX/packages/rocknix/config/system/configs/system.cfg
 
-## network: the device's name, mDNS, and saved Wi-Fi networks
+## rocknix: saved Wi-Fi networks, and a device name mDNS answers to
 projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
 projects/ROCKNIX/packages/network/networkmanager/config/NetworkManager.conf
 projects/ROCKNIX/packages/network/avahi
@@ -118,7 +118,7 @@ projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup
 projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service
 projects/ROCKNIX/packages/rocknix/autostart/099-networkservices
 
-## retroachievements: the offline proxy, and the launch scripts that point the emulators at it
+## raofflineproxy: RetroAchievements offline, casual-only, as a toggle
 projects/ROCKNIX/packages/network/raofflineproxy
 projects/ROCKNIX/packages/network/raofflineproxy-libchdr
 projects/ROCKNIX/packages/network/raofflineproxy-rcheevos
@@ -131,7 +131,7 @@ projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.
 # shared: the launch-time settings carry the proxy wiring and the save-state contract for the saves PR
 projects/ROCKNIX/packages/rocknix/sources/scripts/setsettings.sh
 
-## cloud: storage set up on the device, with a sign-in window and a phone's QR code
+## rclone: cloud storage set up on the device, with a sign-in window
 projects/ROCKNIX/packages/network/rclone/sources/cloud_setup
 projects/ROCKNIX/packages/network/rclone/sources/cloud_remote
 projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth
@@ -155,7 +155,7 @@ packages/sysutils/qrencode/package.mk
 # shared: rclone's recipe installs every cloud script, this PR's and the saves PR's; rclone at 1.75.1
 projects/ROCKNIX/packages/network/rclone/package.mk
 
-## saves: sync bounded and visible, a manifest of every save, content and settings tiers
+## rclone: saves synced on their own, every save recorded, content tiers
 projects/ROCKNIX/packages/network/rclone/sources/cloud_backup
 projects/ROCKNIX/packages/network/rclone/sources/cloud_restore
 projects/ROCKNIX/packages/network/rclone/sources/cloud_capture
@@ -177,7 +177,7 @@ projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0011-video-thread
 projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0015-video-thread-wrapper-run-a-command-once.patch
 projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0018-auto-slot-survives-content-load.patch
 
-## retroarch: notifications readable at a handheld's size, and the rotation tables
+## retroarch: readable notifications, and rotation tables from the source
 projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0014-widgets-backdrop-follows-the-font.patch
 projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0016-widgets-message-queue-floor.patch
 projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0017-widgets-sharp-font-sizes.patch
@@ -190,6 +190,6 @@ projects/ROCKNIX/packages/emulators/libretro/fbneo-lr/package.mk
 projects/ROCKNIX/packages/emulators/libretro/mame2003-plus-lr/package.mk
 projects/ROCKNIX/packages/emulators/libretro/mame2010-lr/package.mk
 
-## es: the EmulationStation pin, after the interface PR merges upstream
+## es: bump to the interface PR's commit; save-state config, a theme patch
 projects/ROCKNIX/packages/ui/emulationstation/package.mk
 projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next
