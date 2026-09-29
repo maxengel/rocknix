@@ -92,20 +92,20 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 
 | Item | Severity | Outcome | Evidence |
 | --- | --- | --- | --- |
-| PL-001 | High | Resolved | pending the commit |
-| PL-002 | High | Resolved | pending the commit |
+| PL-001 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-002 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
 | PL-003 | High | Resolved | ES `893a81403` (StringUtil, two MaskSecretsTests cases; 176 cases / 1856 assertions pass) |
-| PL-004 | Medium | Resolved | pending the commit |
-| PL-005 | Medium | Resolved | pending the commit |
-| PL-006 | Medium | Resolved | pending the commit |
-| PL-007 | Medium | Resolved | pending the commit |
-| PL-008 | Medium | Resolved | pending the commit |
-| PL-009 | Medium | Resolved | pending the commit |
-| PL-010 | Medium | Resolved | pending the commit |
-| PL-011 | Medium | Resolved | ES `db5fc6954` (the hooks; pre-push-test 22 ok); the distribution commit named below when it exists (hooks-test 38 ok) |
-| PL-012 | Medium | Resolved | ES `db5fc6954`; the distribution commit below |
+| PL-004 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-005 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-006 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-007 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-008 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-009 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-010 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-011 | Medium | Resolved | ES `db5fc6954` (the hooks; pre-push-test 22 ok); `eb4fbe9b2c` (hooks-test 38 ok) |
+| PL-012 | Medium | Resolved | ES `db5fc6954`; `eb4fbe9b2c` |
 | PL-013 | Medium | Resolved | ES `03ebb50a1` (GuiMenu: the reader reports its success; es-syntax-check PASS) |
 | PL-014 | Medium | Resolved | ES `812bc2f75` (SystemConf; es-conf-tests 8 cases / 105 assertions, the new case seen to fail on the code before it) |
-| PL-015 | Low | Resolved | pending the commit |
-| PL-016 | Low | Resolved | pending the commit |
-| PL-017 | Low | Resolved | ES `db5fc6954`; the distribution commit below |
+| PL-015 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-016 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-017 | Low | Resolved | ES `db5fc6954`; `eb4fbe9b2c` |
