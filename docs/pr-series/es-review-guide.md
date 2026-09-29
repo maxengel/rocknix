@@ -103,7 +103,7 @@ Pairs with distribution PR 4 (chksysconfig, backuptool).
 ## G. Interface mechanics every bucket stands on
 
 - `es-core/src/components/ComponentGrid.{h,cpp}` (a direction offered only where it moves
-  something), `ComponentTab.cpp` (the tab strip as a focus stop, D-UI-021; see #325),
+  something), `ComponentTab.cpp` (the tab strip as a focus stop, D-UI-021; an empty strip is no stop since `f1ae6bc25`, #325),
   `MenuComponent.{h,cpp}`, `MultiLineMenuEntry.{h,cpp}` (rows measured from their fonts),
   `ComponentList.h`, `SwitchComponent.{h,cpp}`, `HelpComponent.cpp`, `TextComponent.h`,
   `resources/{Font,TabStops}.{h,cpp}` (unit test beside).

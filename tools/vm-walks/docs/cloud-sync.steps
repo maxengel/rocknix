@@ -1,22 +1,20 @@
 # configure/cloud-sync.md: the cloud rows on GAME SETTINGS, the cloud hub,
 # the tick page behind BACK UP TO THE CLOUD, and CONNECT OR REPAIR CLOUD
-# STORAGE. GAME SETTINGS is twelve presses up from the MAIN MENU's top row
-# (the unmarked stop, BACK, QUIT, then nine rows); it opens on its first row, and up wraps
+# STORAGE. GAME SETTINGS is eleven presses up from the MAIN MENU's top row
+# (BACK, QUIT, then nine rows); it opens on its first row, and up wraps
 # through BACK and PER SYSTEM ADVANCED CONFIGURATION to MANAGE CLOUD
 # STORAGE, the last row of the CLOUD SETTINGS group. On the hub, BACK UP TO
 # THE CLOUD is the first row and CONNECT OR REPAIR CLOUD STORAGE the eighth
 # press down (CONNECTED TO is a focus stop).
 # The MAIN MENU is reached from its bottom, so the walk is the same whether
 # the guest is signed in to RetroAchievements (the menu then opens on that
-# row, above GAME SETTINGS) or not. Probed one press at a time on 2026-09-29
-# (proofs-307/up-probe.steps): up from the top row lands on an unmarked stop
-# with nothing highlighted, the next on BACK, the third on QUIT, and the rows
-# above QUIT never move. Three presses to QUIT, not two.
+# row, above GAME SETTINGS) or not: up from the top row lands on BACK, the
+# next on QUIT, and the rows above QUIT never move. (Until EmulationStation
+# f1ae6bc25 the first press landed on an empty tab strip, #325, and every
+# count here was one higher.)
 key ret
 wait-for-change 30 1
 settle
-key up
-wait-for-change 30 1
 key up
 wait-for-change 30 1
 key up

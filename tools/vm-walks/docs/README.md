@@ -13,9 +13,9 @@ game list with nothing open and ends with `dismiss-dialogs`; each press has
 30 s and one re-send, since a loaded guest eats a press now and then. The MAIN MENU
 is walked from its bottom (up wraps through BACK to QUIT), so a guest signed
 in to RetroAchievements, whose menu opens on that extra row, walks the same.
-From the top row it is three presses to QUIT, not two: the first lands on
-an empty grid cell (#325, `main-menu-up-probe.steps`); when #325 lands, every
-MAIN MENU count here drops by one.
+From the top row it is two presses to QUIT (BACK, then the wrap); until
+EmulationStation f1ae6bc25 the first press landed on an empty tab strip (#325,
+`main-menu-up-probe.steps`) and every MAIN MENU count here was one higher.
 
 A frame that shows an account's name is painted out with `tools/png-blackout`
 before it is filed: the RETROACHIEVEMENTS SETTINGS frame's USERNAME row, on a
