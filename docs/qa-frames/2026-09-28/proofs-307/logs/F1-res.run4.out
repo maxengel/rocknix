@@ -1,0 +1,36 @@
+00:23:59 === F1-res on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+00:23:59 the guest's mode: 640x480
+00:23:59 before: x=640 y=480 | record: surface=640x480 
+00:23:59 -- 1 the quirk's own 1280x800, the record's first form
+00:24:00    seeded: x=1280 y=800 | record: video_fullscreen_x=1280 video_fullscreen_y=800 
+00:24:35    after the boot: x=640 y=480 | record: surface=640x480 
+00:24:35   PASS  1 the quirk's own 1280x800, the record's first form: video_fullscreen_x/y = 640x480 after the boot
+00:24:35   PASS  1 the quirk's own 1280x800, the record's first form: the record reads 'surface=640x480 '
+00:24:35 -- 1b the quirk's own 1280x800, the record's surface= form
+00:24:36    seeded: x=1280 y=800 | record: surface=1280x800 
+00:25:11    after the boot: x=640 y=480 | record: surface=640x480 
+00:25:11   PASS  1b the quirk's own 1280x800, the record's surface= form: video_fullscreen_x/y = 640x480 after the boot
+00:25:11   PASS  1b the quirk's own 1280x800, the record's surface= form: the record reads 'surface=640x480 '
+00:25:11 -- 1c a boot cut between the record's write and the cfg's
+00:25:12    seeded: x=1280 y=800 | record: surface=1280x800 surface=640x480 
+00:25:47    after the boot: x=640 y=480 | record: surface=640x480 
+00:25:47   PASS  1c a boot cut between the record's write and the cfg's: video_fullscreen_x/y = 640x480 after the boot
+00:25:47   PASS  1c a boot cut between the record's write and the cfg's: the record reads 'surface=640x480 '
+00:25:47 -- 2 an unrecorded 1280x800
+00:25:48    seeded: x=1280 y=800 | record: none
+00:26:23    after the boot: x=1280 y=800 | record: none
+00:26:23   PASS  2 an unrecorded 1280x800: video_fullscreen_x/y = 1280x800 after the boot
+00:26:23   PASS  2 an unrecorded 1280x800: the record reads 'none'
+00:26:23 -- 3 a hand-set 1024x768 beside a 640x480 record
+00:26:24    seeded: x=1024 y=768 | record: surface=640x480 
+00:26:59    after the boot: x=1024 y=768 | record: surface=640x480 
+00:26:59   PASS  3 a hand-set 1024x768 beside a 640x480 record: video_fullscreen_x/y = 1024x768 after the boot
+00:26:59   PASS  3 a hand-set 1024x768 beside a 640x480 record: the record reads 'surface=640x480 '
+00:26:59 -- 4 RESET's 0x0 beside a 1280x800 record
+00:27:00    seeded: x=0 y=0 | record: surface=1280x800 
+00:27:35    after the boot: x=640 y=480 | record: surface=640x480 
+00:27:35   PASS  4 RESET's 0x0 beside a 1280x800 record: video_fullscreen_x/y = 640x480 after the boot
+00:27:35   PASS  4 RESET's 0x0 beside a 1280x800 record: the record reads 'surface=640x480 '
+cp: can't stat '/storage/.qa307-found/.fullscreen-surface': No such file or directory
+00:27:36 put back (the found record): x=640 y=480 | record: surface=640x480 
+00:27:36 === done: 12 PASS, 0 FAIL

@@ -1,0 +1,13 @@
+23:25:42 === E1-pl024 on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+23:26:18 before: global.autosave=1 global.incrementalsavestates=2  (md5 d526d19a7fc655e0)
+    lock: 2005 alive=yes
+23:27:20 after the refused save: global.autosave=1 global.incrementalsavestates=2  (md5 d526d19a7fc655e0)
+    es_log: 2026-09-28 19:27:11	[1554]	WARNING	saveSystemConf: the settings lock was not free within 5s; nothing written -- the changes are kept for the next save
+23:27:20   PASS  the interface said the settings lock was not free and nothing was written (0 -> 1 lines)
+23:27:20   PASS  system.cfg is byte for byte as it was (md5 d526d19a7fc655e0)
+    lock freed: ls: /tmp/.system.cfg.lock: No such file or directory
+23:27:56 after the second save: 
+23:27:56   PASS  the later change landed (global.incrementalsavestates=2 is gone: INCREMENT PER SAVE, the empty value, written by removing the key)
+23:27:56   PASS  the refused change landed with it (global.autosave is no longer 1: 'removed')
+    restored: global.autosave=1 global.incrementalsavestates=2 23:28:38    frames: /workspace/tmp/rocknix-session/proofs-307/frames/E1-pl024-{autosave-row,autosave-flipped,incremental-row,incremental-changed}.png
+23:28:38 === done: 4 PASS, 0 FAIL

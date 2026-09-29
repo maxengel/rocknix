@@ -1,0 +1,10 @@
+23:14:37 === B-pl003 on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+23:14:38    adapters: eth0 lo ; hwsim: modprobe: FATAL: Module mac80211_hwsim not found in directory /lib/modules/7.1.2
+23:14:38   PASS  the image's wifictl join reads the key with --escape no (the fix is in the image)
+23:14:38    profile: Connection 'QA307 Net' (82e41229-7cb2-4c9e-96bd-0c89e79c7ce1) successfully added.
+23:14:38    the join's read (--escape no) gives: 'ab:cd\ef12345'; without it: 'ab\:cd\\ef12345'; typed: 'ab:cd\ef12345'   (a QA-only key written for this proof)
+23:14:38   PASS  PL-003 (the read half, on the real nmcli): the key reads back as typed
+23:14:38   PASS  the escaping the fix answers is real on this nmcli (the old read differs: 'ab\:cd\\ef12345')
+    profiles left named QA307: 0
+23:14:38 CANNOT RUN: PL-003's join (wifictl join -> get_setting wifi.key) and PL-031 (a second adapter): no wlan device, no mac80211_hwsim module in the guest kernel 7.1.2
+23:14:38 === done: 3 PASS, 0 FAIL

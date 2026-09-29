@@ -1,0 +1,18 @@
+23:28:38 === E1-pl069-control on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+23:28:38   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+23:29:14   PASS  the exit sync is OFF for the control (cloudsaves.gameexit=0)
+23:29:14 the interface's pid: 1455
+23:31:12   iteration 10: 10,1790638272,2319092,224544,21,1790637901_0
+23:33:10   iteration 20: 20,1790638390,2421492,225352,21,1790637901_0
+23:35:08   iteration 30: 30,1790638507,2535772,237648,21,1790637901_0
+23:37:05   iteration 40: 40,1790638625,2638172,238236,21,1790637901_0
+23:39:03   iteration 50: 50,1790638743,2740572,238452,21,1790637901_0
+23:39:03 rows: 51; iteration 0: 0,1790638154,2225592,203024,21,1790637901_0; iteration 5: 5,1790638213,2267892,223020,21,1790637901_0; last: 50,1790638743,2740572,238452,21,1790637901_0
+23:39:03 distinct last-sync-exit stamps across the run: 2
+23:39:03   PASS  50 exit syncs ran (51 rows, 0 launches lost)
+23:39:03   PASS  no exit sync ran in the control (2 distinct last-sync-exit stamps)
+23:39:03   PASS  the same interface throughout (pid 1455)
+23:39:03   FAIL  VmSize flat: iteration 5 2267892 kB -> iteration 50 2740572 kB (+472680 kB; unjoined threads would add ~8 MiB per sync, ~360 MiB over 45)
+23:39:03   PASS  threads flat: 21 -> 21
+    restored gameexit: 1
+23:39:39 === done: 6 PASS, 1 FAIL
