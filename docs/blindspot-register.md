@@ -1088,3 +1088,49 @@ list as it stood before PL-028 (`git show cba6ae23f2~1`) and to pass with
 28 ids carried, before this entry was written. The rule is the
 code-auditor skill's Phase 5: every confirmed finding becomes an item or a
 named lead.
+
+## 69. A page test whose stubs were kinder than a browser passed a script that died at load (2026-09-29)
+
+The phone keyboard page's script declared `var up = false` for the window's
+state over the pad's hoisted `function up(e)`; every browser threw at the
+`touchend` binding before `poll()` ran, and RC1 shipped a page that read
+`Checking…` for as long as it was open with its taps dead (#330). The
+script harness had two groups that ran that very script under node, and
+both passed it for a week: their stub elements' `addEventListener` pushed
+whatever it was handed onto a list, where a browser refuses a listener
+that is not a function. The tell: a stub that accepts what the real API
+refuses passes the exact input the real API dies on, and a suite of
+thirteen greens says nothing about the one call that matters.
+
+**Guard:** the sandboxes in `tools/last-good-scripts-test` (C4 and CF5)
+throw a `TypeError` for a listener that is not a function and answer
+`fetch` with `ok` and `status`, as a browser does -- RC1's page fails 7 of
+7 there now and the fixed page passes 13 of 13; C3 loads the page's script
+under node against a stub of the same strictness and refuses a var that
+shares a function's name. The rule behind it: a stub is written from the
+real API's refusals, not from what the code under test happens to call.
+
+## 70. An upstream series shaped by the fork's process, not by the reviewers' capacity (2026-09-29)
+
+Twelve PRs went up in one hour: ten on the distribution as a stack, so the
+tenth carried ten commits; every body ending in an assistant's footer and
+written in the fork's register (bold labels, tool names, decision IDs);
+and the interface work as one PR of 200 files and 41,496 insertions with a
+review guide in place of a split. The ROCKNIX developers closed all of
+them the same afternoon -- *"how do you expect us to be able to review
+this? please can you separate the changes and use less AI to submit
+PR's"*. Every one of those shapes was chosen for the fork's convenience
+(D-WORKFLOW-066's no-artificial-split, the stack the checker built, the
+harness's own footer) and none was checked against the one question a
+reviewer asks: can a person read this in a sitting, and did a person write
+it. The tell: a submission whose form is explained by our tooling rather
+than by the reader.
+
+**Guard:** `.githooks/pre-push` refuses a `pr/*` branch with more than one
+commit past `upstream/next` or a commit message that names an assistant;
+`tools/pr-stack-check` builds every PR on the base by itself, prints each
+one's files and insertions against a ceiling the map may set, and refuses
+a description that carries an assistant, a decision ID, a fork tool, the
+plural or a template; the `release-notes` skill says what a PR body is.
+What no tool can check -- whether a reviewer can read it in a sitting --
+is the maintainer's read before anything is resubmitted (D-WORKFLOW-080).
