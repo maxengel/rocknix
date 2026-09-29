@@ -1,54 +1,82 @@
 # configure/cloud-sync.md: the cloud rows on GAME SETTINGS, the cloud hub,
 # the tick page behind BACK UP TO THE CLOUD, and CONNECT OR REPAIR CLOUD
-# STORAGE. START opens MAIN MENU on GAME SETTINGS (signed out); GAME SETTINGS
-# opens on its first row, and up wraps through BACK and PER SYSTEM ADVANCED
-# CONFIGURATION to MANAGE CLOUD STORAGE, the last row of the CLOUD SETTINGS
-# group. On the hub, BACK UP TO THE CLOUD is the first row and CONNECT OR
-# REPAIR CLOUD STORAGE the eighth press down (CONNECTED TO is a focus stop).
+# STORAGE. GAME SETTINGS is eleven presses up from the MAIN MENU's top row
+# (BACK, QUIT, then nine rows); it opens on its first row, and up wraps
+# through BACK and PER SYSTEM ADVANCED CONFIGURATION to MANAGE CLOUD
+# STORAGE, the last row of the CLOUD SETTINGS group. On the hub, BACK UP TO
+# THE CLOUD is the first row and CONNECT OR REPAIR CLOUD STORAGE the eighth
+# press down (CONNECTED TO is a focus stop).
+# The MAIN MENU is reached from its bottom, so the walk is the same whether
+# the guest is signed in to RetroAchievements (the menu then opens on that
+# row, above GAME SETTINGS) or not: up from the top lands on BACK, up again
+# wraps to QUIT, and the rows above QUIT never move (2026-09-29).
 key ret
-wait-for-change 30 0
+wait-for-change 30 1
+settle
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
 settle
 key x
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 key up
-wait-for-change 30 0
+wait-for-change 30 1
 key up
-wait-for-change 30 0
+wait-for-change 30 1
 key up
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 shot game-settings-cloud-rows
 key x
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 shot cloud-hub
 key x
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 shot back-up-to-the-cloud
 key z
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 key down
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 key x
-wait-for-change 30 0
+wait-for-change 30 1
 settle
 shot connect-or-repair-cloud-storage
 dismiss-dialogs

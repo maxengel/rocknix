@@ -173,9 +173,11 @@ Every page, in this order, and the fourth step is where the skill improves:
    capture taught (2026-09-29): a row is found by its reference frame or by
    reading the source, never by counting a montage (GAME SETTINGS' ACCOUNTS
    line is a heading, and two walks counted it as a row); and under a
-   device build the guest draws late enough that `wait-for-change`'s
-   re-send lands a key twice, so a docs walk waits 30 s per press and never
-   re-sends (`wait-for-change 30 0`, one press per line).
+   device build the guest eats a press now and then, so a docs walk gives
+   each press 30 s and one re-send (`wait-for-change 30 1`, one press per
+   line). A cut without the re-send lost one press in each of three walks
+   and one of them ended on the QUIT page; the tool's re-send was never the
+   fault, a miscount was.
 
 ## The check on this file
 
