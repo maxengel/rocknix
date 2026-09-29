@@ -1,0 +1,195 @@
+# The upstream series, by content (#322, #256; D-WORKFLOW-064, D-WORKFLOW-066).
+# One section per PR, in order; each names the paths `git checkout next -- <paths>`
+# takes onto the previous head. A path is a file or a directory (everything under
+# it that differs from upstream/next). A file that several buckets touched is
+# listed once, under the first PR that needs it, and its later lines ride along;
+# those are the "shared" lines, marked so the PR description can say so.
+# tools/pr-stack-check reads this file, builds the stack in a throwaway worktree
+# and fails unless the last head equals next on every upstream-bound path.
+# Personal paths (fork-workflow.md) are never listed and never pass the guard.
+# Provenance: /home/max/.claude/jobs/fc48035c/tmp/path-commits.tsv, 2026-09-29.
+
+## build: recipes fetch nothing, forward no secrets, and say why they pin
+scripts/build
+scripts/get_env
+Makefile
+tools/pkgcheck
+packages/addons/addon-depends/rsyslog-depends/libyaml/package.mk
+projects/ROCKNIX/packages/apps/mangohud
+projects/ROCKNIX/packages/apps/mangohud-vulkan-headers
+projects/ROCKNIX/packages/apps/mangohud-vulkan-utility-libraries
+projects/ROCKNIX/packages/apps/gamescope
+projects/ROCKNIX/packages/apps/gamescope-glm
+projects/ROCKNIX/packages/apps/gamescope-stb
+projects/ROCKNIX/packages/graphics/cairo/package.mk
+projects/ROCKNIX/packages/sysutils/nvtop/package.mk
+projects/ROCKNIX/packages/emulators/standalone/aethersx2-sa/package.mk
+projects/ROCKNIX/packages/emulators/standalone/amiberry/package.mk
+projects/ROCKNIX/packages/emulators/standalone/bigpemu-sa/package.mk
+projects/ROCKNIX/packages/emulators/standalone/drastic-sa/package.mk
+projects/ROCKNIX/packages/emulators/standalone/yabasanshiro-sa/package.mk
+projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-audio-sdl/package.mk
+projects/ROCKNIX/packages/emulators/libretro/ppsspp-lr/package.mk
+
+## GENERIC_X64: a virtual machine as a build target, for QA on a desktop
+config/graphic
+scripts/extract
+scripts/image
+scripts/build_distro
+projects/ROCKNIX/bootloader/install
+projects/ROCKNIX/devices/GENERIC_X64
+projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64
+projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)
+projects/ROCKNIX/packages/initramfs/config/initramfs.x86_64.conf
+projects/ROCKNIX/packages/linux/package.mk
+projects/ROCKNIX/packages/lang/gcc/package.mk
+projects/ROCKNIX/packages/multimedia/libplacebo/package.mk
+packages/audio/libsamplerate/package.mk
+packages/tools/installer/package.mk
+packages/tools/syslinux/package.mk
+packages/sysutils/dmidecode/package.mk
+packages/sysutils/ryzenadj/package.mk
+projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64
+projects/ROCKNIX/packages/emulators/libretro/mupen64plus-lr/package.mk
+projects/ROCKNIX/packages/emulators/standalone/aethersx2-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/azahar-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/cemu-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/dolphin-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/drastic-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/duckstation-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/flycast-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/melonds-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/scripts/start_mupen64plus.sh
+projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-input-sdl/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-video-gliden64/package.mk
+projects/ROCKNIX/packages/emulators/standalone/nanoboyadvance-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/package.mk
+projects/ROCKNIX/packages/emulators/standalone/rpcs3-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/supermodel-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/emulators/standalone/xemu-sa/config/GENERIC_X64
+projects/ROCKNIX/packages/sysutils/system-utils/sources/devices/GENERIC_X64
+projects/ROCKNIX/packages/wayland/compositor/sway/autostart/111-sway-init
+# shared: the emulator list carries GENERIC_X64's set and the core-pins map (#21) for the saves PR
+projects/ROCKNIX/packages/virtual/emulators/package.mk
+
+## evidence: handhelds keep their logs, a watchdog and a crash store across a power cycle
+# kernel and device tree: H700's config and the ramoops reserved-memory patch (#104)
+projects/ROCKNIX/devices/H700
+projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
+projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep
+projects/ROCKNIX/packages/rocknix/system.d/rocknix-evidence.service
+projects/ROCKNIX/packages/rocknix/system.d/rocknix-evidence.timer
+projects/ROCKNIX/packages/sysutils/busybox
+projects/ROCKNIX/packages/sysutils/systemd/config
+projects/ROCKNIX/packages/sysutils/systemd/package.mk
+projects/ROCKNIX/packages/sysutils/systemd/system.d/systemd-pstore.service.d
+projects/ROCKNIX/packages/sysutils/systemd/tmpfiles.d
+projects/ROCKNIX/packages/sysutils/powerstate
+# shared: installs the evidence scripts, chksysconfig's unit and the bootloader updater gate
+projects/ROCKNIX/packages/rocknix/package.mk
+
+## settings: the last good system.cfg, and backups that never carry a sign-in
+projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
+projects/ROCKNIX/packages/rocknix/system.d/rocknix-sysconfig.service
+projects/ROCKNIX/packages/rocknix/autostart/001-setup
+projects/ROCKNIX/packages/rocknix/autostart/007-rootpw
+projects/ROCKNIX/packages/rocknix/profile.d/001-functions
+projects/ROCKNIX/packages/sysutils/systemd/scripts/userconfig-setup
+projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
+projects/ROCKNIX/packages/rocknix/sources/scripts/run
+projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset
+projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-update
+projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-systems
+projects/ROCKNIX/packages/rocknix/sources/scripts/setrootpass
+projects/ROCKNIX/packages/rocknix/sources/scripts/automount
+projects/ROCKNIX/packages/rocknix/sources/post-update
+projects/ROCKNIX/packages/network/rclone/sources/post-update
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync_cleanup_duplicates.sh
+# shared: the shipped defaults carry every later PR's keys (the RetroAchievements switches, the cloud toggles)
+projects/ROCKNIX/packages/rocknix/config/system/configs/system.cfg
+
+## network: the device's name, mDNS, and saved Wi-Fi networks
+projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
+projects/ROCKNIX/packages/network/networkmanager/config/NetworkManager.conf
+projects/ROCKNIX/packages/network/avahi
+projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup
+projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service
+projects/ROCKNIX/packages/rocknix/autostart/099-networkservices
+
+## retroachievements: the offline proxy, and the launch scripts that point the emulators at it
+projects/ROCKNIX/packages/network/raofflineproxy
+projects/ROCKNIX/packages/network/raofflineproxy-libchdr
+projects/ROCKNIX/packages/network/raofflineproxy-rcheevos
+projects/ROCKNIX/packages/virtual/network/package.mk
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0013-cheevos-offline-proxy-toast.patch
+projects/ROCKNIX/packages/emulators/standalone/armsx2-sa/scripts/cheevos_armsx2.sh
+projects/ROCKNIX/packages/emulators/standalone/dolphin-sa/scripts/cheevos_dolphin.sh
+projects/ROCKNIX/packages/emulators/standalone/melonds-sa/scripts/cheevos_melonds.sh
+projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.sh
+# shared: the launch-time settings carry the proxy wiring and the save-state contract for the saves PR
+projects/ROCKNIX/packages/rocknix/sources/scripts/setsettings.sh
+
+## cloud: storage set up on the device, with a sign-in window and a phone's QR code
+projects/ROCKNIX/packages/network/rclone/sources/cloud_setup
+projects/ROCKNIX/packages/network/rclone/sources/cloud_remote
+projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth
+projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id
+projects/ROCKNIX/packages/network/rclone/sources/cloud_net_ready
+projects/ROCKNIX/packages/network/cloud-signin-window
+packages/web/webkitgtk
+packages/web/libsoup
+packages/web/libpsl
+packages/network/glib-networking
+projects/ROCKNIX/packages/security/gnutls/package.mk
+packages/security/libtasn1/package.mk
+packages/graphics/woff2
+projects/ROCKNIX/packages/graphics/harfbuzz-icu
+packages/graphics/openjpeg/package.mk
+packages/compress/brotli/package.mk
+packages/devel/ruby/package.mk
+packages/devel/unifdef/package.mk
+projects/ROCKNIX/packages/multimedia/gstreamer
+packages/sysutils/qrencode/package.mk
+# shared: rclone's recipe installs every cloud script, this PR's and the saves PR's; rclone at 1.75.1
+projects/ROCKNIX/packages/network/rclone/package.mk
+
+## saves: sync bounded and visible, a manifest of every save, content and settings tiers
+projects/ROCKNIX/packages/network/rclone/sources/cloud_backup
+projects/ROCKNIX/packages/network/rclone/sources/cloud_restore
+projects/ROCKNIX/packages/network/rclone/sources/cloud_capture
+projects/ROCKNIX/packages/network/rclone/sources/cloud_content_backup
+projects/ROCKNIX/packages/network/rclone/sources/cloud_content_restore
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync_helper
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf.defaults
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt
+projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt.defaults
+projects/ROCKNIX/packages/network/rclone/sources/cloud_saves_root
+projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout
+projects/ROCKNIX/packages/network/rclone/sources/cloud_log_scrub
+projects/ROCKNIX/packages/network/rclone/autostart
+projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh
+projects/ROCKNIX/packages/sysutils/system-utils/sources/scripts/input_sense
+projects/ROCKNIX/packages/ui/emulationstation/config
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0011-video-thread-wrapper-serialise-posters.patch
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0015-video-thread-wrapper-run-a-command-once.patch
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0018-auto-slot-survives-content-load.patch
+
+## retroarch: notifications readable at a handheld's size, and the rotation tables
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0014-widgets-backdrop-follows-the-font.patch
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0016-widgets-message-queue-floor.patch
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0017-widgets-sharp-font-sizes.patch
+projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0019-widgets-message-queue-keeps-its-place.patch
+projects/ROCKNIX/packages/emulators/libretro/rotation-table-fba.py
+projects/ROCKNIX/packages/emulators/libretro/rotation-table-mame.py
+projects/ROCKNIX/packages/emulators/libretro/fbalpha2012-lr/package.mk
+projects/ROCKNIX/packages/emulators/libretro/fbalpha2019-lr/package.mk
+projects/ROCKNIX/packages/emulators/libretro/fbneo-lr/package.mk
+projects/ROCKNIX/packages/emulators/libretro/mame2003-plus-lr/package.mk
+projects/ROCKNIX/packages/emulators/libretro/mame2010-lr/package.mk
+
+## es: the EmulationStation pin, after the interface PR merges upstream
+projects/ROCKNIX/packages/ui/emulationstation/package.mk
+projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next
