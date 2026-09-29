@@ -11482,11 +11482,15 @@ fi
 # newer marker removed by the older run, and the games that index
 # identified offline waited for a listing nobody would ask for. The check
 # and the removal are now one step under the marker's own lock, which the
-# write takes too. The moment between them is made here: an rm shim, at the
-# removal of index-pending, starts `raofflineproxy-ctl index-offline` and
-# lets the removal go ahead once that write has landed or two seconds have
-# passed. The lock's wait is in real seconds, so the virtual clock's fast
-# sleep is off for the case.
+# write takes too -- and, since the audit of the fixes (gpt G3-D-03: a
+# writer that could not have the lock renames over the path regardless),
+# the ack first renames the marker aside, then reads and removes the aside
+# copy, so a marker that lands on the path meanwhile is left alone. The
+# moment between them is made here: an rm shim, at the removal of the
+# aside copy, starts `raofflineproxy-ctl index-offline` and lets the
+# removal go ahead once that write has landed or two seconds have passed.
+# The lock's wait is in real seconds, so the virtual clock's fast sleep is
+# off for the case.
 if [ "${DF_OK}" -eq 1 ]; then
 printf "${DCFG_ON}" > "${TCFG}"; TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
 treset; rm -f "${TR}/fast-sleep"; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
@@ -11494,7 +11498,7 @@ tctl index-offline; DTOKA="$(cat "${TPD}/index-pending" 2>/dev/null)"
 cat > "${T}/shim/rm" <<'EOS'
 #!/bin/sh
 for a in "$@"; do
-    case "${a}" in */index-pending)
+    case "${a}" in */index-pending.ack.*)
         if [ ! -e /run/d35-writer.started ]; then
             : > /run/d35-writer.started
             ( bash /repo/raofflineproxy-ctl index-offline; echo $? > /run/d35-writer.rc ) >/dev/null 2>&1 &
@@ -12802,22 +12806,24 @@ p7zchk verify; p7zchk backup
 [ "$(tr '\n' '|' < "${P7ZC}")" = "a=1|system.hostname=X|" ] && [ "$(tr '\n' '|' < "${P7ZC}.backup")" = "a=1|system.hostname=X|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): keys removed from the end on purpose stay removed through the boot's verify and backup" "E1's lead: system.cfg '$(tr '\n' '|' < "${P7ZC}")'; record '$(tr '\n' '|' < "${P7ZC}.backup")'"
 rm -f "${P7ZC}.backup" "${P7F}/lock-z" "${P7F}/log-z"; printf 'system.hostname=X\n' > "${P7ZC}"
 # ---------------------------------------------------------------- S315.
-# #315 (D-CLOUD-153): on a remote rclone can neither set modtimes on nor
-# hash (WebDAV, vendor other) it compares by size alone, so a save whose
-# bytes changed but whose size did not never moved. The exit sync's recent
-# set now goes with --ignore-times, every other saves pass (both scripts,
-# both directions) with --update --modify-window 1s; a remote that keeps
-# modtimes or hashes gets neither. The claim is the rclone command line, so
+# #315 (D-CLOUD-153, refined D-CLOUD-154): on a remote rclone can neither set
+# modtimes on nor hash (plain WebDAV: every vendor but nextcloud, owncloud,
+# infinitescale, fastmail and rclone's own serve; a crypt or alias over one)
+# it compares by size alone, so a save whose bytes changed but whose size did
+# not never moved. Every saves pass -- the recent set too, both scripts, both
+# directions -- now runs with --update there (rclone's own one-second window
+# stands in for the modtime; --modify-window was measured inert and
+# --ignore-times on the recent set replayed the slack). A remote that keeps
+# modtimes or hashes gets nothing. The claim is the rclone command line, so
 # every rclone call is answered by the shim without running (a WebDAV url
 # nobody serves would only add retries); the argv is recorded first.
 # Seen to FAIL first: against the scripts at 320d2b2bea (the commit before
 # the fix), `BASE_REF=320d2b2bea tools/last-good-scripts-test --old` on
-# 2026-09-28 23:55 UTC failed 9 of these checks and no other section's --
-# the flag cases and the function's presence; the five that assert a flag's
-# absence on other remotes pass on both, as they should. The default
-# BASE_REF (1d1503180d) predates section s's script and exits 2 there, so
-# a positive for a late section names its own base.
-echo "  S315. #315: the size-only remote's flags -- --ignore-times on the recent set, --update --modify-window 1s elsewhere, nothing on other remotes"
+# 2026-09-28 23:55 UTC failed 9 of the section's first shape; the refined
+# section's positive is re-run the same way (the log names the run). The
+# default BASE_REF (1d1503180d) predates section s's script and exits 2
+# there, so a positive for a late section names its own base.
+echo "  S315. #315: the size-only remote gets --update on every saves pass; every other remote nothing; the detection's edges"
 SZ=$(sa_new s315); sa_script "${SZ}" cloud_backup cloud_restore cloud_saves_root
 cat > "${SZ}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
@@ -12841,55 +12847,106 @@ sz_conf() { printf '[qa]\ntype = %s\n%s' "$1" "${2:-}" > "${SZ}/storage/.config/
 sz_stamp() { printf '%s 0\n' "$(( $(date +%s) - 60 ))" > "${SZ}/storage/.cache/cloud_sync/last-backup"; }
 sz_has() { printf '%s' "$1" | grep -q -- "$2"; }
 sz_count() { printf '%s\n' "$1" | tr ' ' '\n' | grep -c -x -- "$2"; }
+sz_run() { # <script> [args]: the run, then c = its copy line (a missing copy line is its own FAIL, gpt F-SS-05)
+    : > "${SZ}/ctl/argv"; sa_run "${SZ}" "$@"; c=$(sz_copy); [ -n "${c}" ] || { check 1 "" "$*: no copy command was issued (rc ${RC}); the assertions below are vacuous"; return 1; }; return 0; }
 
 sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = other\n'; sz_stamp
-sa_run "${SZ}" cloud_backup --yes --saves-only --recent
-c=$(sz_copy); sz_has "${c}" '--max-age' && sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
-check $? "webdav/other, the recent set: --max-age with --ignore-times, no --modify-window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-rm -f "${SZ}/storage/.cache/cloud_sync/last-backup"; : > "${SZ}/ctl/argv"
-sa_run "${SZ}" cloud_backup --yes --saves-only --recent
-c=$(sz_copy); ! sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s'
-check $? "webdav/other, --recent with no backup on record (a full pass): --update --modify-window 1s, no --ignore-times" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only
-c=$(sz_copy); sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s' && ! sz_has "${c}" '--ignore-times'
-check $? "webdav/other, the deliberate saves backup: --update --modify-window 1s" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only --update
-c=$(sz_copy); [ "$(sz_count "${c}" '--update')" = 1 ] && sz_has "${c}" '--modify-window 1s'
-check $? "webdav/other, the startup pair's --update given: --update once, with the window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --saves-only
-c=$(sz_copy); sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s'
-check $? "webdav/other, cloud_restore's saves pass: --update --modify-window 1s (the cloud's upload time against this device's copy)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --method=copy --update --saves-only --automatic
-c=$(sz_copy); [ "$(sz_count "${c}" '--update')" = 1 ] && sz_has "${c}" '--modify-window 1s'
-check $? "webdav/other, the startup restore (--update given): --update once, with the window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-
+sz_run cloud_backup --yes --saves-only --recent && { sz_has "${c}" '--max-age' && [ "$(sz_count "${c}" '--update')" = 1 ] && ! sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'; check $? "webdav/other, the recent set: --max-age with --update once, no --ignore-times, no --modify-window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+rm -f "${SZ}/storage/.cache/cloud_sync/last-backup"
+sz_run cloud_backup --yes --saves-only --recent && { ! sz_has "${c}" '--max-age' && [ "$(sz_count "${c}" '--update')" = 1 ]; check $? "webdav/other, --recent with no backup on record (a full pass): --update once" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_backup --yes --saves-only && { [ "$(sz_count "${c}" '--update')" = 1 ] && ! sz_has "${c}" '--modify-window'; check $? "webdav/other, the deliberate saves backup: --update once, no window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_backup --yes --saves-only --update && { [ "$(sz_count "${c}" '--update')" = 1 ]; check $? "webdav/other, the startup pair's --update given: --update once, not twice" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_restore --yes --saves-only && { [ "$(sz_count "${c}" '--update')" = 1 ]; check $? "webdav/other, cloud_restore's saves pass: --update (the cloud's upload time against this device's copy)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_restore --yes --method=copy --update --saves-only --automatic && { [ "$(sz_count "${c}" '--update')" = 1 ]; check $? "webdav/other, the startup restore (--update given): --update once" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = sharepoint\n'; sz_stamp
+sz_run cloud_backup --yes --saves-only && { [ "$(sz_count "${c}" '--update')" = 1 ]; check $? "webdav/sharepoint (no modtime setting, no hashes): --update, like other (claude F-SS-02)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
 sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = nextcloud\n'; sz_stamp
-sa_run "${SZ}" cloud_backup --yes --saves-only --recent
-c=$(sz_copy); sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
-check $? "webdav/nextcloud (modtimes and checksums): the recent set as before, neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --saves-only
-c=$(sz_copy); ! sz_has "${c}" '--update' && ! sz_has "${c}" '--modify-window'
-check $? "webdav/nextcloud, cloud_restore: no --update, no window (the manual row's shape kept)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+sz_run cloud_backup --yes --saves-only --recent && { sz_has "${c}" '--max-age' && ! sz_has "${c}" '--update'; check $? "webdav/nextcloud (modtimes and checksums): the recent set as before, no --update" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_restore --yes --saves-only && { ! sz_has "${c}" '--update'; check $? "webdav/nextcloud, cloud_restore: no --update (the manual row's shape kept)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = fastmail\n'; sz_stamp
+sz_run cloud_backup --yes --saves-only && { ! sz_has "${c}" '--update'; check $? "webdav/fastmail (modtimes and hashes per rclone's docs): no --update" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
 sz_conf dropbox $'token = {"access_token":"x"}\n'; sz_stamp
-sa_run "${SZ}" cloud_backup --yes --saves-only --recent
-c=$(sz_copy); sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
-check $? "dropbox: the recent set as before, neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
-: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only
-c=$(sz_copy); ! sz_has "${c}" '--update' && ! sz_has "${c}" '--modify-window'
-check $? "dropbox, the deliberate backup: neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+sz_run cloud_backup --yes --saves-only --recent && { sz_has "${c}" '--max-age' && ! sz_has "${c}" '--update'; check $? "dropbox: the recent set as before, no --update" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
+sz_run cloud_backup --yes --saves-only && { ! sz_has "${c}" '--update'; check $? "dropbox, the deliberate backup: no --update" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"; }
 
-# The detection itself, from both scripts, the same text.
-awk '/^remote_compares_by_size\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_backup" > "${SZ}/fn-b.sh"
-awk '/^remote_compares_by_size\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_restore" > "${SZ}/fn-r.sh"
-[ -s "${SZ}/fn-b.sh" ] && cmp -s "${SZ}/fn-b.sh" "${SZ}/fn-r.sh"; check $? "remote_compares_by_size is one function, the same text in cloud_backup and cloud_restore" "the two copies differ, or one is missing"
+# The detection itself, from both scripts, the same text (with its section reader).
+for fn in remote_compares_by_size _rclone_conf_key; do
+    awk -v f="${fn}" '$0 ~ "^"f"\\(\\) *\\{" {p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_backup" >> "${SZ}/fn-b.sh"
+    awk -v f="${fn}" '$0 ~ "^"f"\\(\\) *\\{" {p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_restore" >> "${SZ}/fn-r.sh"
+done
+[ -s "${SZ}/fn-b.sh" ] && grep -q '^_rclone_conf_key' "${SZ}/fn-b.sh" && cmp -s "${SZ}/fn-b.sh" "${SZ}/fn-r.sh"; check $? "remote_compares_by_size and its reader are one text in cloud_backup and cloud_restore" "the two copies differ, or one is missing"
 sz_fn() { RCLONE_CONF_FILE="$1" bash -c ". '${SZ}/fn-b.sh'; remote_compares_by_size '$2'"; }
-printf '[qa]\ntype = webdav\nvendor = other\n\n[other]\ntype = webdav\nvendor = owncloud\n' > "${SZ}/c1.conf"
+printf '[qa]\ntype = webdav\nvendor = other\n\n[other]\ntype = webdav\nvendor = owncloud\n\n[qa.prod]\ntype = webdav\nvendor = other\n\n[qaxprod]\ntype = webdav\nvendor = nextcloud\n\n[vault]\ntype = crypt\nremote = dav:Saves\n\n[dav]\ntype = webdav\nvendor = sharepoint-ntlm\n\n[al]\ntype = alias\nremote = nc:x\n\n[nc]\ntype = webdav\nvendor = infinitescale\n\n[loop]\ntype = alias\nremote = loop:\n' > "${SZ}/c1.conf"
 sz_fn "${SZ}/c1.conf" "qa:"; check $? "the name with rclone's trailing colon, webdav/other: by size" "returned non-zero"
 ! sz_fn "${SZ}/c1.conf" "other"; check $? "a second section, webdav/owncloud: not by size (the section, not the file, is read)" "returned zero"
+sz_fn "${SZ}/c1.conf" "qa.prod" && ! sz_fn "${SZ}/c1.conf" "qaxprod"; check $? "a dotted name matches its own section only: qa.prod by size, qaxprod (nextcloud) not (gpt F-SS-03)" "the dot was read as a wildcard"
+sz_fn "${SZ}/c1.conf" "vault"; check $? "crypt over a sharepoint-ntlm WebDAV: by size, one hop through remote = (claude F-SS-04)" "returned non-zero"
+! sz_fn "${SZ}/c1.conf" "al"; check $? "alias over an Infinite Scale WebDAV: not by size" "returned zero"
+! sz_fn "${SZ}/c1.conf" "loop"; check $? "an alias that names itself ends after three hops: not by size" "returned zero, or hung"
 printf '[qa]\ntype = webdav\n' > "${SZ}/c2.conf"; sz_fn "${SZ}/c2.conf" qa; check $? "webdav with no vendor line: by size" "returned non-zero"
 ! sz_fn "${SZ}/c1.conf" "nope"; check $? "a remote the file does not name: not by size (no flags added on a guess)" "returned zero"
 ! sz_fn "${SZ}/none.conf" qa; check $? "an unreadable config: not by size" "returned zero"
-! sz_fn "${SZ}/c1.conf" 'qa;rm'; check $? "a name with a character outside rclone's: not by size, and never a sed pattern" "returned zero"
+! sz_fn "${SZ}/c1.conf" 'qa;rm'; check $? "a name with a character outside rclone's: not by size" "returned zero"
+RCLONE_CONFIG="${SZ}/c1.conf" bash -c ". '${SZ}/fn-b.sh'; remote_compares_by_size qa"; check $? "RCLONE_CONFIG, rclone's own override, is honoured (claude F-SS-10)" "returned non-zero"
+
+# ---------------------------------------------------------------- S3F.
+# The audit of the fixes to #313's items (docs/audits/2026_09_29-milestone-
+# audit-of-the-313-fixes): the two seats' confirmed findings, each with the
+# input that showed it. Seen to FAIL first: against the scripts at 286759eb6d
+# (`BASE_REF=286759eb6d tools/last-good-scripts-test --old`), the log names
+# the run.
+echo "  S3F. the audit of the fixes: shell-owned names and NUL bytes refused by the grammar; the sorter's pipeline gates its rename; the ZIP listing's CRC column asserted; the restore gate's mount state; the migration's reader; the scrubber's truncated line; the ack's rename"
+SF="${TMP}/s3f"; mkdir -p "${SF}"
+# The grammar (cloud_backup's conf_valid), on canaries the seats wrote (gpt G3-D-01, claude G3-D-02).
+awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${TMP}/src/cloud_backup" > "${SF}/cv.sh" 2>/dev/null || src_of "${RCLONE_REL}/cloud_backup" "${SF}/cb"; [ -s "${SF}/cv.sh" ] || awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SF}/cb" > "${SF}/cv.sh"
+for c in cloud_restore cloud_sync_helper; do src_of "${RCLONE_REL}/${c}" "${SF}/${c}"; awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SF}/${c}" > "${SF}/cv-${c}.sh"; done
+cmp -s "${SF}/cv.sh" "${SF}/cv-cloud_restore.sh" && cmp -s "${SF}/cv.sh" "${SF}/cv-cloud_sync_helper.sh"; check $? "conf_valid is one text in cloud_backup, cloud_restore and cloud_sync_helper" "the copies differ"
+sf_valid() { bash -c ". '${SF}/cv.sh'; conf_valid '$1' || { echo \"why: \${CONF_WHY}\"; exit 1; }"; }
+printf 'SAVESPATH="/storage/roms"\nRANDOM="BASH_VERSINFO[\\$(printf x > /tmp/s3f-ran)0]"\n' > "${SF}/c1"
+! sf_valid "${SF}/c1" > "${SF}/o" 2>&1 && grep -q 'a name the shell owns' "${SF}/o"; check $? "RANDOM=... is refused as a name the shell owns (the seat's canary ran when sourced on the host)" "accepted, or another why: $(cat "${SF}/o" | tr '\n' '|' | cut -c1-120)"
+printf 'SAVESPATH="/storage/roms"\nPATH="/tmp/evil"\n' > "${SF}/c2"; ! sf_valid "${SF}/c2" > "${SF}/o" 2>&1 && grep -q 'a name the shell owns' "${SF}/o"; check $? "PATH=... is refused" "accepted"
+printf 'SAVESPATH="/storage/roms"\nRCLONEOPTS="--x \\$(printf y > /tmp/s3f-y)"\n' > "${SF}/c3"; ! sf_valid "${SF}/c3" > "${SF}/o" 2>&1 && grep -q 'followed by' "${SF}/o"; check $? "a backslash-dollar-paren inside double quotes is refused (a literal dollar-paren a shell context could run)" "accepted"
+printf 'SAVESPATH="/storage/roms"\nRCLONEOPTS="--filter-from \\"/a b\\" --bwlimit 1M \\$5 \\\\x"\nLOG_LEVEL=INFO\n' > "${SF}/c4"; sf_valid "${SF}/c4" > "${SF}/o" 2>&1; check $? "PL-015's escapes still pass: an escaped quote, a doubled backslash, a backslash-dollar before an ordinary character" "refused: $(cat "${SF}/o" | tr '\n' '|' | cut -c1-120)"
+printf 'SAVESPATH="/storage/roms"\nEXTRA="x"\000#$(printf z > /tmp/s3f-z)\n' > "${SF}/c5"; ! sf_valid "${SF}/c5" > "${SF}/o" 2>&1 && grep -q 'a NUL byte' "${SF}/o"; check $? "a NUL byte in the file is refused before awk reads a truncated record (claude G3-D-02)" "accepted: $(cat "${SF}/o" | tr '\n' '|' | cut -c1-120)"
+[ ! -e /tmp/s3f-ran ] && [ ! -e /tmp/s3f-y ] && [ ! -e /tmp/s3f-z ]; check $? "none of the canaries ran while being judged" "a canary file exists under /tmp"
+# sort_settings (001-functions) refuses to install a copy whose producer failed (gpt G3-D-04).
+src_of "${ROCKNIX_REL:-projects/ROCKNIX/packages/rocknix}/profile.d/001-functions" "${SF}/fn" 2>/dev/null || cp "${FN}" "${SF}/fn"
+mkdir -p "${SF}/cfg"; printf 'z=1\nsystem.hostname=MINE\nb=2\na=3\n' > "${SF}/cfg/system.cfg"
+{ sed -n '/^function sort_settings() {/,/^}/p' "${SF}/fn"
+  cat <<EOS
+wait_lock() { return 0; }
+logger() { echo "logger \$*" >&2; }
+J_CONF="${SF}/cfg/system.cfg"; J_CONF_LOCK="${SF}/cfg/lock"
+settings_base() { printf 'system.hostname=MINE\\nb=2\\n'; return 1; }   # the hostname, then a failure
+EOS
+} > "${SF}/ss.sh"
+bash -c ". '${SF}/ss.sh'; sort_settings" 2>/dev/null; [ "$(cat "${SF}/cfg/system.cfg" | tr '\n' '|')" = "z=1|system.hostname=MINE|b=2|a=3|" ] && [ ! -e "${SF}/cfg/system.cfg.tmp" ]; check $? "a producer that fails after the hostname line installs nothing: the live file is untouched, no temporary left" "system.cfg is now '$(cat "${SF}/cfg/system.cfg" | tr '\n' '|')'"
+# backuptool's zip_stored_ok asserts the CRC column (claude G3-D-01).
+src_of "${ROCKNIX_REL:-projects/ROCKNIX/packages/rocknix}/sources/scripts/backuptool" "${SF}/bt" 2>/dev/null || cp "${BT}" "${SF}/bt"
+grep -q "grep -q 'CRC-32'" "${SF}/bt"; check $? "zip_stored_ok refuses a listing with no CRC column (the image's busybox prints one; a lesser build would pass every member)" "no CRC-32 header check in zip_stored_ok"
+# chksysconfig: roms-mounted=no proceeds only while the folder is still not a mount (gpt G3-D-07).
+src_of "${ROCKNIX_REL:-projects/ROCKNIX/packages/rocknix}/sources/scripts/chksysconfig" "${SF}/ck" 2>/dev/null || cp "${CHK}" "${SF}/ck"
+grep -q '\[ "${mounted}" = "0" \] && return 1' "${SF}/ck" && grep -q 'it is mounted now' "${SF}/ck"; check $? "finish_restore: a restore that ran with no roms mount waits when a mount is there now, or the table cannot be read" "the was=no branch still proceeds unconditionally"
+# cloud_migrate_layout reads a single-quoted or bare pointer through the shared grammar (claude G3-D-05).
+src_of "${RCLONE_REL}/cloud_migrate_layout" "${SF}/ml"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE=%s/Mine/Saves%s\nSETTINGS_REMOTE=/Mine/Backups\nCONTENT_REMOTE="/Mine/Content"\n' "'" "'" > "${SF}/ml.conf"
+v=$(bash -c "SYNC_CONF='${SF}/ml.conf'; $(awk '/^conf_get\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}; /^conf_value\(\) *\{/{q=1} q{print} q&&/^\}/{q=0}' "${SF}/ml"); conf_value SAVES_REMOTE; conf_value SETTINGS_REMOTE" 2>/dev/null | tr '\n' '|')
+[ "${v}" = "/Mine/Saves|/Mine/Backups|" ]; check $? "a single-quoted and a bare pointer read as their values, not as the whole line" "read as '${v}'"
+# cloud_log_scrub: a config line cut before its suffix keeps nothing after the verb (gpt G3-D-09).
+src_of "${RCLONE_REL}/cloud_log_scrub" "${SF}/ls"
+SCRUB=$(bash -c ". <(sed -n '/^SCRUB_SED=/,/^'\"'\"'$/p' '${SF}/ls'); printf '%s' \"\${SCRUB_SED}\"")
+printf '[2026-09-28 10:00:00] [INFO] [cloud_remote] rclone config create qa webdav url=http://x pass="front back" vendor=other\n' | sed -E -e "${SCRUB}" > "${SF}/scrubbed"
+! grep -q 'front\|back\|http://x' "${SF}/scrubbed" && grep -q 'url=<redacted> pass=<redacted> vendor=<redacted>' "${SF}/scrubbed"; check $? "a truncated config line masks a quoted value whole, key by key (a quoted value with a space left its tail readable)" "scrubbed line: $(cat "${SF}/scrubbed" | cut -c1-160)"
+printf '[2026-09-28 10:00:00] [INFO] [cloud_remote] rclone config create qa webdav url=http://x pass="front ba\n' | sed -E -e "${SCRUB}" > "${SF}/scrubbed2"
+! grep -q 'front\|ba$\|http://x' "${SF}/scrubbed2" && grep -q 'pass=<redacted>' "${SF}/scrubbed2"; check $? "a line cut inside a quoted value masks it to the end" "scrubbed line: $(cat "${SF}/scrubbed2" | cut -c1-160)"
+# raofflineproxy-ctl: the acknowledgement takes the marker aside by rename (gpt G3-D-03).
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl" "${SF}/ctl"
+mkdir -p "${SF}/pd"; printf 'B\n' > "${SF}/pd/index-pending"
+bash -c "INDEX_PENDING='${SF}/pd/index-pending'; pending_lock() { return 0; }; pending_unlock() { :; }; $(awk '/^ack_index_pending\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SF}/ctl"); ack_index_pending A; echo rc=\$?" > "${SF}/o" 2>&1
+grep -q 'rc=1' "${SF}/o" && [ "$(cat "${SF}/pd/index-pending" 2>/dev/null)" = "B" ] && [ -z "$(ls "${SF}/pd"/index-pending.ack.* 2>/dev/null)" ]; check $? "an ack for token A over a marker holding B keeps B in place and leaves no aside file" "$(cat "${SF}/o" | tr '\n' '|'); marker: $(cat "${SF}/pd/index-pending" 2>/dev/null)"
+printf 'A\n' > "${SF}/pd/index-pending"
+bash -c "INDEX_PENDING='${SF}/pd/index-pending'; pending_lock() { return 0; }; pending_unlock() { :; }; $(awk '/^ack_index_pending\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SF}/ctl"); ack_index_pending A; echo rc=\$?" > "${SF}/o" 2>&1
+grep -q 'rc=0' "${SF}/o" && [ ! -e "${SF}/pd/index-pending" ]; check $? "an ack for token A over a marker holding A removes it" "$(cat "${SF}/o" | tr '\n' '|')"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

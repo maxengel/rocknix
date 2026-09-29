@@ -241,6 +241,10 @@ conf_valid() {
     CONF_WHY=""
     if [ ! -s "$1" ]; then CONF_WHY="the file is missing or empty"; return 1; fi
     if ! bash -n "$1" 2>/dev/null; then CONF_WHY="bash cannot parse it"; return 1; fi
+    # A NUL byte ends awk's record on the device's busybox, so the grammar below
+    # would read "EXTRA=x"<NUL>"#$(cmd)" as EXTRA=x (the audit of the fixes,
+    # claude G3-D-02); counted before anything reads the file.
+    if [ "$(tr -d '\000' < "$1" 2>/dev/null | wc -c)" -ne "$(wc -c < "$1")" ]; then CONF_WHY="a NUL byte"; return 1; fi
     CONF_WHY=$(awk '
         function bad(why) { if (!failed) print "line " NR ": " why; failed = 1; exit 1 }
         # A double-quoted value from position i of s: the position after
@@ -254,6 +258,7 @@ conf_valid() {
                 if (c == "\\") {
                     if (i == n) return 0
                     d = substr(s, i + 1, 1)
+                    if (d == "$" && substr(s, i + 2, 1) ~ /[(\[{]/) bad("a \\$ followed by (, [ or { -- a literal $( that a shell context could still run (audit of the fixes, G3-D-01)")
                     if (d == "\"" || d == "\\" || d == "$" || d == "`") { val = val c d; i += 2; continue }
                     bad("a backslash inside double quotes that is not one of the escapes bash reads there")
                 }
@@ -287,6 +292,12 @@ conf_valid() {
             if (s ~ /^[ \t]*(#|$)/) next
             if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad("a line that is not KEY=value, a comment or blank")
             key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
+            # A name the shell owns is refused whatever its value: bash evaluates an
+            # assignment to RANDOM, SECONDS or LINENO as arithmetic, and arithmetic
+            # runs a $( ) it finds (the audit of the fixes, gpt G3-D-01: a sourced
+            # RANDOM="BASH_VERSINFO[\\$(cmd)0]" ran cmd on the host); PATH, IFS and
+            # the rest change what every later command means.
+            if (key ~ /^(RANDOM|SRANDOM|SECONDS|LINENO|HISTCMD|BASHPID|BASH_[A-Z_]*|EPOCH[A-Z]*|FUNCNAME|GROUPS|DIRSTACK|PIPESTATUS|SHELLOPTS|BASHOPTS|COMP_[A-Z_]*|READLINE_[A-Z_]*|PATH|IFS|ENV|BASH_ENV|CDPATH|HOME|PS[0-4]|PROMPT_COMMAND|TMPDIR|SHELL|LANG|LC_[A-Z_]*|GLOBIGNORE|HISTFILE|TMOUT|OPTIND|OPTARG|PWD|OLDPWD|SHLVL|UID|EUID|PPID|LD_[A-Z_]*)$/) bad("a name the shell owns (" key ")")
             c = substr(s, i, 1)
             if (c == "\"") {
                 j = dq(s, i + 1)

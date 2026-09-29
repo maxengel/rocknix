@@ -48,15 +48,36 @@ guard_load() {
 # --format='commit %h'); stdout is one "<commit:><path>:<line>TAB<+added line>"
 # per added line, the line number the file's after the change. A label never
 # holds a tab, so a pattern can only match after it.
+# The "+++" header is one only after a "---" header (a content line that
+# begins "++ " looks like one otherwise); a quoted path ("b/odd\"name") is
+# taken as git prints it; any other header with added lines after it fails
+# the scan rather than dropping them (the audit of the fixes, claude G3-E-01,
+# gpt G3-E-06). The callers force a/ and b/ prefixes, so diff.noprefix
+# cannot blank every path.
 guard_added_lines() {
   awk -v t="${guard_tab}" '
     /^commit [0-9a-f]+$/ { pre = $2 ":"; next }
-    /^\+\+\+ b\// { f = substr($0, 7); next }
-    /^\+\+\+ / { f = ""; next }
-    /^@@ / { match($0, /\+[0-9]+/); n = substr($0, RSTART + 1, RLENGTH - 1) + 0; next }
-    /^\+/ { if (f != "") print pre f ":" n t $0; n++; next }
+    /^--- / { minus = 1; next }
+    /^\+\+\+ / {
+      if (minus) {
+        minus = 0
+        if ($0 ~ /^\+\+\+ b\//) f = substr($0, 7)
+        else if ($0 ~ /^\+\+\+ "b\//) { f = substr($0, 8); sub(/"$/, "", f) }
+        else if ($0 == "+++ /dev/null") f = ""
+        else { f = ""; unknown++ }
+        next
+      }
+    }
+    /^@@ / { minus = 0; match($0, /\+[0-9]+/); n = substr($0, RSTART + 1, RLENGTH - 1) + 0; next }
+    /^\+/ { minus = 0; if (f != "") print pre f ":" n t $0; else orphan++; n++; next }
     /^-/ { next }
-    /^ / { n++ }'
+    /^ / { minus = 0; n++ }
+    END {
+      if (unknown || orphan) {
+        print "guard: " orphan+0 " added line(s) under a header the scan does not read (" unknown+0 " such header(s)); refused rather than skipped" > "/dev/stderr"
+        exit 1
+      }
+    }'
 }
 
 # guard_numbered <label>: stdin is a file; stdout "<label>:<n>TAB<line>".

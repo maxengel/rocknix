@@ -1680,7 +1680,10 @@ while read -r _ct _f; do
     [ $(( _now - _ct )) -lt 600 ] && continue
     _gone+=("${_f}")
 done < <(stage_times)
-[ "${#_gone[@]}" -gt 0 ] && rm -f "${_gone[@]}" 2>/dev/null
+# Removed in bounded batches (the audit of the fixes, gpt G3-D-05): a stage with
+# enough old seals to exceed the argument size failed the one rm the way the
+# stat above already guarded against, and kept them all.
+[ "${#_gone[@]}" -gt 0 ] && printf '%s\0' "${_gone[@]}" | xargs -0 rm -f 2>/dev/null
 _kb="$(du -sk "${STAGE}" 2>/dev/null | cut -f1)"
 case "${_kb}" in ''|*[!0-9]*) _kb=0 ;; esac
 if [ $(( _kb * 1024 )) -gt "${STAGE_MAX_BYTES}" ]; then

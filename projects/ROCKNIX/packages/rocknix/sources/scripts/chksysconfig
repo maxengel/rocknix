@@ -167,7 +167,15 @@ finish_restore() {
     esac
   fi
   under_roms() { # <path>: 0 when it waits for the roms mount
-    [ "${was}" = "no" ] && return 1
+    # "was not a mount when the restore ran" proceeds only while that is still
+    # so: a card mounted there since hides the folder the restore wrote into,
+    # and an unreadable table cannot say (the audit of the fixes, gpt G3-D-07).
+    if [ "${was}" = "no" ]; then
+      [ "${mounted}" = "0" ] && return 1
+      [ -n "${told}" ] || say "the restore ran with the roms folder not mounted, but it is mounted now (or the mount table cannot be read): its files are under the mount, so the finish waits"
+      told=1
+      return 0
+    fi
     case "${1}" in
       "${roms}"/*)
         if [ -z "${mounted}" ]; then

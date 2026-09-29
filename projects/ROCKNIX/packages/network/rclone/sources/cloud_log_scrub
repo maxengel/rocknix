@@ -78,6 +78,15 @@ fi
 SCRUB_SED='
 /\[cloud_remote\] rclone config /{
 s/^(.*\[cloud_remote\] rclone config [a-z]+) [^ ]+( .*)? failed \(([0-9-]+)\)(: .*)?$/\1 failed (\3)/
+# A record cut before its "failed (...)" suffix (the log truncated mid-line) is
+# masked key by key: a quoted value is masked whole, spaces and all, and one cut
+# inside its quotes is masked to the end of the line -- the unquoted rule alone
+# stopped at the first space and left a quoted value'"'"'s tail readable (the audit
+# of the fixes, gpt G3-D-09).
+s/ ([A-Za-z0-9_.-]+)="[^"]*"/ \1=<redacted>/g
+s/ ([A-Za-z0-9_.-]+)='"'"'[^'"'"']*'"'"'/ \1=<redacted>/g
+s/ ([A-Za-z0-9_.-]+)="[^"]*$/ \1=<redacted>/
+s/ ([A-Za-z0-9_.-]+)='"'"'[^'"'"']*$/ \1=<redacted>/
 s/ ([A-Za-z0-9_.-]+)=[^ ]*/ \1=<redacted>/g
 }
 /\[cloud_remote\] rclone config /!s/^(.*\[cloud_remote\] rclone [a-z]+) [^ ]+( .*)? failed \(([0-9-]+)\)(: .*)?$/\1 failed (\3)/

@@ -575,6 +575,11 @@ case "$1" in
         elif ! CAND="$(conf_get SAVES_REMOTE)"; then
             echo "Your cloud sync settings couldn't be read."
             exit 1
+        else
+            # The conf's own value is judged as the migration judges it
+            # (the audit of the fixes, claude G3-D-07): one trailing slash
+            # is a spelling, not an empty part.
+            CAND="${CAND%/}"
         fi
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         if [ -z "${REMOTE}" ]; then

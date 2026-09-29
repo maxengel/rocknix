@@ -462,8 +462,12 @@ function sort_settings() {
   # "defaults won" started from (D-CLOUD-078). It sorts settings_base's
   # lines, so a cut half line is never completed here either (the audit of
   # the fix round, E1's lead G2-E-core-03).
-  settings_base | grep '^[a-z0-9]' | sort >"${J_CONF}.tmp"
-  if [ -s "${J_CONF}.tmp" ] && grep -q '^system\.hostname=' "${J_CONF}.tmp"
+  # And the pipeline's own status gates the rename (the audit of the fixes,
+  # gpt G3-D-04): a producer that fails after the hostname line left a
+  # nonempty, plausible, truncated copy that the test below would install.
+  # pipefail in a subshell, as the neighbouring writers have it.
+  if ( set -o pipefail; settings_base | grep '^[a-z0-9]' | sort >"${J_CONF}.tmp" ) \
+     && [ -s "${J_CONF}.tmp" ] && grep -q '^system\.hostname=' "${J_CONF}.tmp"
   then
     mv -f "${J_CONF}.tmp" "${J_CONF}"
   else

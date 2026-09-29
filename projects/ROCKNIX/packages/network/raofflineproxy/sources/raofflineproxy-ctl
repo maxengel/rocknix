@@ -2132,10 +2132,21 @@ write_index_pending() {
 # the caller's listing was made for. 0 removed, 1 kept (a newer marker), 2
 # kept because the lock could not be had.
 ack_index_pending() {
-    local RC=1
+    # Taken aside by rename before it is read: a writer that could not have
+    # the lock renames a newer marker into place (write_index_pending's
+    # fallback), and a compare-then-rm on the shared path removed that newer
+    # one (the audit of the fixes, gpt G3-D-03). Whatever lands on the path
+    # after the rename is somebody else's and stays; a moved marker that is
+    # not the caller's token goes back.
+    local RC=1 mine="${INDEX_PENDING}.ack.$$"
     pending_lock || return 2
-    if [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${1}" ]; then
-        rm -f "${INDEX_PENDING}" && [ ! -e "${INDEX_PENDING}" ] && RC=0
+    if mv -f "${INDEX_PENDING}" "${mine}" 2>/dev/null; then
+        if [ "$(cat "${mine}" 2>/dev/null)" = "${1}" ]; then
+            rm -f "${mine}" && [ ! -e "${mine}" ] && RC=0
+        else
+            [ -e "${INDEX_PENDING}" ] || mv -f "${mine}" "${INDEX_PENDING}" 2>/dev/null
+            rm -f "${mine}" 2>/dev/null
+        fi
     fi
     pending_unlock
     return "${RC}"

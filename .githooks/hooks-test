@@ -59,6 +59,19 @@ printf 'one\nThe Zebrafish Quartet\n' > d.txt; g add d.txt
 expect refused "a listed word in another case, on line 2" "${HOOKS}/pre-commit"
 says "line 2 is named" "d.txt:2"
 g reset -q; rm d.txt
+# The three shapes the audit of the fixes found the scan skipping (claude
+# G3-E-01, gpt G3-E-06): a repository with diff.noprefix, a content line
+# that begins "++ ", and a file name git prints in quotes.
+g config diff.noprefix true; echo "${FAKE}" > f.txt; g add f.txt
+expect refused "a credential-shaped line with diff.noprefix set (the scan forces its prefixes)" "${HOOKS}/pre-commit"
+g config --unset diff.noprefix; g reset -q; rm f.txt
+printf '++ note\n%s\n' "${FAKE}" > h.txt; g add h.txt
+expect refused "a content line beginning ++ does not end the file's scan" "${HOOKS}/pre-commit"
+says "line 2 is named" "h.txt:2"
+g reset -q; rm h.txt
+echo "${FAKE}" > 'odd"name.txt'; g add 'odd"name.txt'
+expect refused "a file name git prints in quotes is still scanned" "${HOOKS}/pre-commit"
+g reset -q; rm 'odd"name.txt'
 echo 'clean content' > "${KEYNAME}"; g add "${KEYNAME}"
 expect allowed "a file NAMED like a key, clean inside (the label is not scanned)" "${HOOKS}/pre-commit"
 g commit -q -m named
@@ -78,6 +91,7 @@ printf 'tidy the notes\n\n# a comment line naming the zebrafish quartet is not t
 expect allowed "a clean message (git drops the # comment)" "${HOOKS}/commit-msg" "${SCRATCH}/msg"
 printf 'note\n\n%s\n' "${FAKE}" > "${SCRATCH}/msg"
 expect refused "a credential-shaped line in the message" "${HOOKS}/commit-msg" "${SCRATCH}/msg"
+expect refused "a message file that cannot be read (claude G3-E-02 / gpt G3-E-05)" "${HOOKS}/commit-msg" "${SCRATCH}/no-such-msg"
 FORBIDDEN_TERMS_FILE="${SCRATCH}/absent" expect refused "a message with no wordlist to judge it by" "${HOOKS}/commit-msg" "${SCRATCH}/msg"
 
 echo '--- pre-push'
@@ -94,6 +108,9 @@ says "the value is redacted" "[REDACTED]"
 g checkout -q -b old "${remote}"; echo 'zebrafish quartet' > t.txt; g add t.txt; g commit -q -m old; g push -q origin old; prev="$(git rev-parse HEAD)"
 echo more >> t.txt; g add t.txt; g commit -q -m touch
 expect refused "an older line in a file the range only touches beside (the tip scan)" push_line "refs/heads/old $(git rev-parse HEAD) refs/heads/old ${prev}"
+g checkout -q -b quoted "${remote}"; g config diff.noprefix true; echo "${FAKE}" > 'odd"name.txt'; g add 'odd"name.txt'; g commit -q -m quoted
+expect refused "a credential in a file git prints in quotes, pushed from a clone with diff.noprefix" push_line "refs/heads/quoted $(git rev-parse HEAD) refs/heads/quoted ${ZERO}"
+g config --unset diff.noprefix
 g checkout -q -b clean "${remote}"; echo more >> a.txt; echo more >> "${KEYNAME}"; g add -A; g commit -q -m clean
 expect allowed "a clean commit, touching the file named like a key" push_line "refs/heads/clean $(git rev-parse HEAD) refs/heads/clean ${ZERO}"
 SECRET_PATTERNS_FILE="${SCRATCH}/badlist" expect refused "a credential list that does not compile" push_line "refs/heads/clean $(git rev-parse HEAD) refs/heads/clean ${ZERO}"

@@ -476,6 +476,15 @@ credential_lines() {
 zip_stored_ok() { # <zip>: 0 when every stored member's bytes match its listed CRC
     local L CRC NAME GOT RC=0
     L=$(tmp_file) || return 1
+    # The listing must carry the CRC column at all: a busybox built without
+    # CONFIG_DESKTOP accepts -v and lists in the -l shape, and every member
+    # would then pass unchecked (the audit of the fixes, claude G3-D-01; the
+    # image's busybox prints it, measured 2026-09-29).
+    if ! unzip -lv "${1}" 2>/dev/null | head -n 3 | grep -q 'CRC-32'; then
+        logger -t backuptool "$(basename "${1}"): unzip -lv lists no CRC column; the archive's stored members cannot be checked"
+        rm -f "${L}"
+        return 1
+    fi
     if ! ( set -o pipefail
            unzip -lv "${1}" 2>/dev/null | awk '
                $2 == "Stored" && match($0, /[0-9][0-9]:[0-9][0-9] [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]  /) {

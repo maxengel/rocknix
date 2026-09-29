@@ -10,7 +10,7 @@ set -uo pipefail
 guard_load pre-commit || exit 1
 added="$(mktemp)" || { echo "✖ pre-commit: mktemp failed; nothing was scanned, so nothing is allowed" >&2; exit 1; }
 trap 'rm -f "${added}"' EXIT
-if ! git diff --cached -U0 --no-color --diff-filter=ACMRT -- . ':!*.po' ':!*.pot' | guard_added_lines > "${added}"; then
+if ! git diff --cached -U0 --no-color --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMRT -- . ':!*.po' ':!*.pot' | guard_added_lines > "${added}"; then
   echo "✖ pre-commit: could not read the index (git diff --cached failed); nothing was scanned, so nothing is allowed" >&2
   exit 1
 fi

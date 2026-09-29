@@ -193,15 +193,16 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     range="${remote_sha}..${local_sha}"
   fi
   names="$(mktemp)"; added="$(mktemp)"; lines="$(mktemp)"; blob="$(mktemp)"; msgs="$(mktemp)"
+  trap 'rm -f "${names:-}" "${added:-}" "${lines:-}" "${blob:-}" "${msgs:-}"' EXIT   # an interrupted push leaves nothing behind (the audit of the fixes, claude G3-E-07)
   scan_ok=1
   msgawk='/^commit [0-9a-f]+$/ { c = $2; n = 0; next } { n++; print c ":message:" n t $0 }'
   if [ "$whole" = 1 ]; then
     git diff --name-only --no-renames --diff-filter=AM "$empty_tree" "$local_sha" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --root --no-renames --diff-merges=first-parent --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --root --no-renames --diff-merges=first-parent --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
     git log --root --format='commit %h%n%B' "$local_sha" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   else
     git diff --name-only --no-renames --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --no-renames --diff-merges=first-parent --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --no-renames --diff-merges=first-parent --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
     git log --format='commit %h%n%B' "$range" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   fi
   guard_added_lines < "$added" > "$lines" || scan_ok=0

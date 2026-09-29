@@ -40,8 +40,62 @@ remote_name() {
     rclone listremotes 2>/dev/null | head -1
 }
 
+# The shared reader (cloud_setup's, the content scripts', D-CLOUD-149): a
+# single-quoted or bare pointer used to come back as the whole line from
+# `cut -d'"' -f2`, and the new folder logic then moved the pointer off the
+# player's saves (the audit of the fixes, claude G3-D-05).
+conf_get() { # <KEY> (the content scripts' reader, mirrored so every reader agrees, D-CLOUD-149): its value, quotes off; nothing when absent; exit 2 when unreadable, and why on stdout
+    [ -f ${SYNC_CONF} ] || return 0
+    awk -v k="$1" '
+        { t = $0; gsub(/\t/, "", t); if (t ~ /[[:cntrl:]]/ && !cntrl) cntrl = NR }
+        index($0, k "=") != 1 && !other \
+            && $0 ~ ("^[ \t]*((export|declare|typeset|readonly|local)([ \t]+-[A-Za-z]+)*[ \t]+)?" k "[ \t]*[+]?=") { other = NR }
+        index($0, k "=") == 1 {
+            s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1; why = ""
+            c = substr(s, 1, 1)
+            if (c == "\"") {
+                # Inside double quotes bash reads \" \\ \$ and \` as the one
+                # character each (PL-015), and so does this; an unescaped $
+                # or backtick is an expansion this reader does not make, and
+                # any other backslash is refused as conf_valid refuses it.
+                n = length(s); i = 2; closed = 0
+                while (i <= n) {
+                    d = substr(s, i, 1)
+                    if (d == "\"") { closed = 1; break }
+                    if (d == "\\") {
+                        e = substr(s, i + 1, 1)
+                        if (e == "\"" || e == "\\" || e == "$" || e == "`") { v = v e; i += 2; continue }
+                        ok = 0
+                        why = (e == "") ? "a value continued onto the next line, which this reader does not follow" \
+                                        : "a backslash inside double quotes that is not one of the escapes bash reads there"
+                        break
+                    }
+                    if (d == "$" || d == "`") { ok = 0; why = "a $ or a backtick inside double quotes"; break }
+                    v = v d; i++
+                }
+                if (ok && !closed) { ok = 0; why = "a double-quoted value that does not close on its line" }
+                if (ok) r = substr(s, i + 1)
+            } else if (c == "'"'"'") {
+                j = index(substr(s, 2), c)
+                if (j) { v = substr(s, 2, j - 1); r = substr(s, j + 2) } else { ok = 0; why = "a single-quoted value that does not close on its line" }
+            } else {
+                match(s, /^[A-Za-z0-9_.\/:@%+,=-]*/); v = substr(s, 1, RLENGTH); r = substr(s, RLENGTH + 1)
+            }
+            if (ok && r !~ /^([ \t]+(#.*)?)?$/) { ok = 0; why = "something after the value that is not a # comment" }
+            if (!found) { found = 1; first = v; firstok = ok; firstwhy = "line " NR ": " why }
+        }
+        END {
+            if (cntrl) { print "line " cntrl ": a control character other than a tab"; exit 2 }
+            if (other) { print "line " other ": " k " set in a form this reader does not read"; exit 2 }
+            if (found && !firstok) { print firstwhy; exit 2 }
+            if (found) print first
+        }
+    ' ${SYNC_CONF}
+}
 conf_value() {
-    grep -m1 "^$1=" "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2
+    local v
+    v=$(conf_get "$1"); case $? in 2) echo "cloud_migrate_layout: ${SYNC_CONF}: ${v}" >&2; return 2 ;; esac
+    printf '%s\n' "${v}"
 }
 
 # One folder, one spelling (the audit of the fix round, PL-001). The guards
@@ -479,6 +533,14 @@ migrate_content() {
 
 MODE="--check"
 main() {
+    # Every pointer this tool reads must be readable by the shared grammar
+    # before anything is compared or moved (the audit of the fixes, claude
+    # G3-D-05): a value the reader cannot read ends the run with its why,
+    # as cloud_setup ends, never as an empty pointer that reads as a folder.
+    local _k _v
+    for _k in SAVESPATH SETTINGS_BACKUPS SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE RCLONE_NET_OPTS; do
+        _v=$(conf_get "${_k}"); case $? in 2) echo "Your cloud sync settings couldn't be read (${SYNC_CONF}: ${_v})." >&2; exit 2 ;; esac
+    done
     local mode="${1:---check}"
     local remote saves backups content old_root
     MODE="${mode}"

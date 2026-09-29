@@ -927,30 +927,56 @@ first_remote() {
 }
 
 # Does the remote compare files by size alone? rclone decides equality by
-# size, then modtime, then hash. On a WebDAV remote it cannot set modtimes
-# on -- every vendor but nextcloud, owncloud, sharepoint and rclone's own
-# serve -- the modtime is "not supported" and never consulted, and a plain
-# WebDAV server offers no hash, so two files of one size are equal to it
-# whatever their bytes: a battery save, the same size every time it is
-# written, never moved again after its first upload (#315, D-CLOUD-153;
-# measured on 8196071ff5, `Sizes identical` at -vv; the same function as
-# cloud_backup's). Read from the config
-# file's section, never by starting rclone (a second on a handheld). The
-# answer is "no" for a remote this cannot read, so every other remote
-# keeps its passes as they were; over-detecting is harmless, since the
-# flags it enables are what rclone does with real modtimes anyway.
+# size, then modtime, then hash. Plain WebDAV supports neither modification
+# times nor hashes; rclone supports both only on Fastmail Files, ownCloud
+# (and its Infinite Scale), Nextcloud and its own serve (rclone.org/webdav,
+# "Modification times and hashes"; the vendor names from `rclone help
+# backend webdav`). On every other WebDAV vendor -- SharePoint, `other`,
+# none -- the modtime is "not supported" and never consulted, so two files
+# of one size are equal to it whatever their bytes: a battery save, the
+# same size every time it is written, never moved again after its first
+# upload (#315, D-CLOUD-153; measured on 8196071ff5, `Sizes identical` at
+# -vv, `backend features` Precision 3153600000000000000, Hashes []). A
+# crypt or alias remote over such a WebDAV inherits it, so one hop through
+# its `remote =` is followed (audit of the fix, F-SS-04). Read from the
+# config file, never by starting rclone (a second on a handheld); the
+# section is matched as a string, never as a pattern (a `.` in a name is
+# not a wildcard, F-SS-03/05). The answer is "no" for a remote this cannot
+# read, so every other remote keeps its passes as they were; over-detecting
+# is harmless, since the flag it enables is what rclone does with real
+# modtimes anyway.
+# RCLONE_CONF_FILE: the harness points it at a fixture (tools/last-good-scripts-test);
+# RCLONE_CONFIG is rclone's own override, honoured the same way.
 remote_compares_by_size() {
-    # RCLONE_CONF_FILE: the harness points it at a fixture (tools/last-good-scripts-test).
-    local remote="${1%:}" conf="${RCLONE_CONF_FILE:-/storage/.config/rclone/rclone.conf}" type vendor
-    [ -n "${remote}" ] && [ -r "${conf}" ] || return 1
-    case "${remote}" in *[!A-Za-z0-9_.-]*) return 1 ;; esac
-    type=$(sed -n "/^\[${remote}\]/,/^\[/{s/^type *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
-    [ "${type}" = webdav ] || return 1
-    vendor=$(sed -n "/^\[${remote}\]/,/^\[/{s/^vendor *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
-    case "${vendor}" in
-        nextcloud|owncloud|sharepoint|sharepoint-ntlm|rclone) return 1 ;;
-        *) return 0 ;;
-    esac
+    local remote="${1%:}" conf="${RCLONE_CONF_FILE:-${RCLONE_CONFIG:-/storage/.config/rclone/rclone.conf}}" type vendor inner hop
+    [ -r "${conf}" ] || return 1
+    for hop in 1 2 3; do
+        [ -n "${remote}" ] || return 1
+        type=$(_rclone_conf_key "${conf}" "${remote}" type)
+        case "${type}" in
+            webdav)
+                vendor=$(_rclone_conf_key "${conf}" "${remote}" vendor)
+                case "${vendor}" in
+                    nextcloud|owncloud|infinitescale|fastmail|rclone) return 1 ;;
+                    *) return 0 ;;
+                esac ;;
+            crypt|alias)
+                inner=$(_rclone_conf_key "${conf}" "${remote}" remote)
+                remote="${inner%%:*}"; [ "${remote}" != "${inner}" ] || return 1 ;;
+            *) return 1 ;;
+        esac
+    done
+    return 1
+}
+# _rclone_conf_key <conf> <section> <key>: the key's first value in that
+# section, the section name compared as a string.
+_rclone_conf_key() {
+    awk -v want="[$2]" -v key="$3" '
+        /^\[/ { insec = ($0 == want); next }
+        insec && index($0, key) == 1 {
+            rest = substr($0, length(key) + 1); sub(/^[ \t]*=[ \t]*/, "", rest)
+            if (rest != substr($0, length(key) + 1)) { sub(/[ \t]+$/, "", rest); print rest; exit }
+        }' "$1" 2>/dev/null
 }
 
 # Verifies rclone is properly configured before attempting operations
@@ -1125,6 +1151,10 @@ conf_valid() {
     CONF_WHY=""
     if [ ! -s "$1" ]; then CONF_WHY="the file is missing or empty"; return 1; fi
     if ! bash -n "$1" 2>/dev/null; then CONF_WHY="bash cannot parse it"; return 1; fi
+    # A NUL byte ends awk's record on the device's busybox, so the grammar below
+    # would read "EXTRA=x"<NUL>"#$(cmd)" as EXTRA=x (the audit of the fixes,
+    # claude G3-D-02); counted before anything reads the file.
+    if [ "$(tr -d '\000' < "$1" 2>/dev/null | wc -c)" -ne "$(wc -c < "$1")" ]; then CONF_WHY="a NUL byte"; return 1; fi
     CONF_WHY=$(awk '
         function bad(why) { if (!failed) print "line " NR ": " why; failed = 1; exit 1 }
         # A double-quoted value from position i of s: the position after
@@ -1138,6 +1168,7 @@ conf_valid() {
                 if (c == "\\") {
                     if (i == n) return 0
                     d = substr(s, i + 1, 1)
+                    if (d == "$" && substr(s, i + 2, 1) ~ /[(\[{]/) bad("a \\$ followed by (, [ or { -- a literal $( that a shell context could still run (audit of the fixes, G3-D-01)")
                     if (d == "\"" || d == "\\" || d == "$" || d == "`") { val = val c d; i += 2; continue }
                     bad("a backslash inside double quotes that is not one of the escapes bash reads there")
                 }
@@ -1171,6 +1202,12 @@ conf_valid() {
             if (s ~ /^[ \t]*(#|$)/) next
             if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad("a line that is not KEY=value, a comment or blank")
             key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
+            # A name the shell owns is refused whatever its value: bash evaluates an
+            # assignment to RANDOM, SECONDS or LINENO as arithmetic, and arithmetic
+            # runs a $( ) it finds (the audit of the fixes, gpt G3-D-01: a sourced
+            # RANDOM="BASH_VERSINFO[\\$(cmd)0]" ran cmd on the host); PATH, IFS and
+            # the rest change what every later command means.
+            if (key ~ /^(RANDOM|SRANDOM|SECONDS|LINENO|HISTCMD|BASHPID|BASH_[A-Z_]*|EPOCH[A-Z]*|FUNCNAME|GROUPS|DIRSTACK|PIPESTATUS|SHELLOPTS|BASHOPTS|COMP_[A-Z_]*|READLINE_[A-Z_]*|PATH|IFS|ENV|BASH_ENV|CDPATH|HOME|PS[0-4]|PROMPT_COMMAND|TMPDIR|SHELL|LANG|LC_[A-Z_]*|GLOBIGNORE|HISTFILE|TMOUT|OPTIND|OPTARG|PWD|OLDPWD|SHLVL|UID|EUID|PPID|LD_[A-Z_]*)$/) bad("a name the shell owns (" key ")")
             c = substr(s, i, 1)
             if (c == "\"") {
                 j = dq(s, i + 1)
@@ -1813,19 +1850,24 @@ restore_game_saves() {
     local replaced_root="/storage/.cache/cloud_sync/replaced" replaced_stamp
     replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
     all_opts+=("--backup-dir=${replaced_root}/${replaced_stamp}")
-    # #315 (D-CLOUD-153): on a remote that compares by size alone, the
-    # cloud's upload time stands in for its modtime: a copy uploaded after
-    # this device's was written is fetched, one uploaded before it is not
-    # (--update --modify-window 1s). Without it a same-size change in the
-    # cloud reads as "already here" whatever its bytes, so the second
-    # device never received the first device's save. The manual RESTORE
+    # #315 (D-CLOUD-153, refined D-CLOUD-154): on a remote that compares by
+    # size alone, the cloud's upload time stands in for its modtime under
+    # --update: a copy uploaded after this device's was written is fetched,
+    # one uploaded before it is not (rclone's own one-second window; no
+    # --modify-window needed). Without it a same-size change in the cloud
+    # read as "already here" whatever its bytes, so the second device never
+    # received the first device's save. Known: a local save written under a
+    # wrong clock, never uploaded, can be replaced by the cloud's older copy
+    # at the next startup; the replaced copy is kept under --backup-dir for
+    # one cycle (audit of the fix, gpt F-SS-02; #317). The manual RESTORE
     # SAVES row keeps its --update-less shape on every other remote.
     if remote_compares_by_size "${REMOTENAME}"; then
         local has_update=0 opt
         for opt in "${all_opts[@]}"; do [ "${opt}" = "--update" ] && has_update=1; done
         [ "${has_update}" = 1 ] || all_opts+=("--update")
-        all_opts+=("--modify-window" "1s")
-        log_message "the remote compares by size alone (#315): the cloud's upload time is compared with this device's copy (--update --modify-window 1s)" "false"
+        log_message "the remote compares by size alone (#315): the cloud's upload time is compared with this device's copy (--update)" "false"
+    else
+        log_message "the remote keeps modtimes or hashes: rclone's own comparison" "false"
     fi
 
     # Check if the rclone version supports the terminal width flag

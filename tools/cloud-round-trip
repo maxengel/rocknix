@@ -1419,8 +1419,12 @@ echo "${saw:-0}/${all:-0}"
     out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
     # The bucket path carries the remote folder; find the copy by its tail
     # in the listing rather than guessing the prefix (run 71 read None).
-    paths = [l.split(None, 1)[1] for l in backend("ls").splitlines()
-             if len(l.split(None, 1)) == 2 and l.split(None, 1)[1].endswith("savestates/recent-probe.state")]
+    # The live copy, never one under a -replaced folder (the audit of the
+    # fix, F-SS-06 / gpt F-SS-04): the shortest matching path outside any
+    # "-replaced/" component is the saves folder's own.
+    paths = sorted((l.split(None, 1)[1] for l in backend("ls").splitlines()
+                    if len(l.split(None, 1)) == 2 and l.split(None, 1)[1].endswith("savestates/recent-probe.state")
+                    and "-replaced/" not in l.split(None, 1)[1] and "/replaced/" not in l.split(None, 1)[1]), key=len)
     got = backend_bytes(paths[0]) if paths else None
     if got is None:
         failures += not check(False, "", f"could not read the bucket's copy back (listing paths: {paths}); nothing proven")

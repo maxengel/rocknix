@@ -533,8 +533,12 @@ class Session:
              "--timeout", "20s", "--low-level-retries", "1", "--retries", "1"],
             capture_output=True, text=True)
         if check.returncode != 0:
-            subprocess.run([RCLONE, "config", "delete", name],
-                           capture_output=True)
+            gone = subprocess.run([RCLONE, "config", "delete", name],
+                                  capture_output=True)
+            if gone.returncode != 0:
+                log("remote %s did not respond and could not be removed either "
+                    "(rclone config delete exited %d); it stays until the next "
+                    "sign-in replaces it" % (name, gone.returncode))
             return False, "signed in, but the remote did not respond"
 
         # Published only while this attempt still speaks for the state, and
@@ -551,10 +555,19 @@ class Session:
         if not write_owned(self.attempt, owner=self.gen,
                            from_status=(None, "starting", "waiting"),
                            status="signed-in", remote=name):
-            subprocess.run([RCLONE, "config", "delete", name],
-                           capture_output=True)
-            log("the sign-in finished after it had been closed or replaced; "
-                "the remote it made was removed")
+            # Checked, not assumed (the audit of the fixes, gpt G3-D-06): a
+            # delete that fails leaves the remote installed, and the log
+            # said it was gone.
+            gone = subprocess.run([RCLONE, "config", "delete", name],
+                                  capture_output=True)
+            if gone.returncode == 0:
+                log("the sign-in finished after it had been closed or replaced; "
+                    "the remote it made was removed")
+            else:
+                log("the sign-in finished after it had been closed or replaced; "
+                    "the remote it made could NOT be removed (rclone config "
+                    "delete exited %d) and stays until the next sign-in "
+                    "replaces it" % gone.returncode)
             return False, CLOSED_EARLY
         log("remote %s created for %s" % (name, self.backend))
         return True, name
