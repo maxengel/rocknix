@@ -790,7 +790,12 @@ run's percentage into its half of the bar.
   `--update` there, so rclone compares the local mtime with the cloud's upload time
   (its own one-second window; `--modify-window` was measured inert and `--ignore-times`
   would have replayed the recent window's ten-minute slack). Nothing changes on any
-  other remote. Two consequences to know: a save written while the device's clock was
+  other remote. **The window is real (D-CLOUD-155):** the backend keeps whole seconds,
+  so a same-size change written in the same second as its upload is not sent until
+  its next write -- measured 2026-09-29 with the image's rclone, and the reason vm-qa
+  run 72 failed the round trip's #315 step on the first cut that carried the fix; a
+  test of this path waits 2 s between the upload and the change, as the proof and the
+  step now do. Two consequences to know: a save written while the device's clock was
   wrong is not sent (the recent window already needs the clock), and at the next
   startup the cloud's older copy can replace such a save, kept under `--backup-dir`
   for one cycle -- #317, the content-based transport, is the answer for both. The

@@ -80,7 +80,7 @@ claude G3-D-03 (the writer's newline recorded), claude G3-D-06, claude G3-D-09, 
 
 ## Deferred, with a follow-up
 
-- **gpt G3-E-02** (the recovery record published outside the settings lock): a millisecond window needing a damaged live file and a concurrent script write; the record ends older, not lost. Follow-up issue to file with #317's release.
+- **gpt G3-E-02** (the recovery record published outside the settings lock): a millisecond window needing a damaged live file and a concurrent script write; the record ends older, not lost -- and older can matter when recovery is next needed, so it is tracked as an unresolved Medium, not accepted: **#320** (filed 2026-09-29, the interface fork as owner, a deterministic interleaving test in its criteria; with #317's release).
 
 ## Refuted, with the artifact
 
@@ -92,20 +92,20 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 
 | Item | Severity | Outcome | Evidence |
 | --- | --- | --- | --- |
-| PL-001 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-002 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-001 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-002 | High | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
 | PL-003 | High | Resolved | ES `893a81403` (StringUtil, two MaskSecretsTests cases; 176 cases / 1856 assertions pass) |
-| PL-004 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-005 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-006 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-007 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-008 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-009 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-010 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-004 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-005 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-006 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-007 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-008 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-009 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-010 | Medium | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
 | PL-011 | Medium | Resolved | ES `db5fc6954` (the hooks; pre-push-test 22 ok); `eb4fbe9b2c` (hooks-test 38 ok) |
 | PL-012 | Medium | Resolved | ES `db5fc6954`; `eb4fbe9b2c` |
-| PL-013 | Medium | Resolved | ES `03ebb50a1` (GuiMenu: the reader reports its success; es-syntax-check PASS) |
+| PL-013 | Medium | Resolved | ES `03ebb50a1` (GuiMenu: the reader reports its success; es-syntax-check PASS); the case, ES `0a02c71ea` (`tests/cloud-content-selection.py`: a directory where the selection file should be, nothing ticked, refuses -- 13 of 14 against the reader without its checks, 14 of 14 with them; the test had compiled nothing since the signature changed, 2026-09-29) |
 | PL-014 | Medium | Resolved | ES `812bc2f75` (SystemConf; es-conf-tests 8 cases / 105 assertions, the new case seen to fail on the code before it) |
-| PL-015 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
-| PL-016 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1251 checks; section S3F) |
+| PL-015 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
+| PL-016 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
 | PL-017 | Low | Resolved | ES `db5fc6954`; `eb4fbe9b2c` |

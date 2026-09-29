@@ -1414,6 +1414,17 @@ echo "${saw:-0}/${all:-0}"
     # 8196071ff5, 2026-09-28; the pair fixture A2 covers it but vm-qa does not
     # run the pair. Expected to FAIL on webdav until #315 is fixed: the suite
     # stays red over a known defect rather than green.
+    #
+    # Not in the same second as the upload above. The fix compares the local
+    # mtime with the backend's upload time (--update), and this backend keeps
+    # whole seconds: a same-size change written within the same second as
+    # its upload reads as equal in time and identical in size, and is not
+    # sent (measured 2026-09-29 on the host against the QA WebDAV: the same
+    # second not sent, 1.2 s later sent; vm-qa run 72 on 8dd6765af0 failed
+    # this step for exactly that reason, while X-size-same on the guest, which
+    # waits 2 s, passed). A player's next change is minutes after the last
+    # exit sync; the suite waits two seconds, as the proof does.
+    time.sleep(2)
     dev.write(f"{root}/savestates/recent-probe.state", b"RECENT")   # six bytes again, new ones
     dev.run("sync", check=False)
     out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)

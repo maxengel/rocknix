@@ -29,3 +29,15 @@ Distribution: the grammar (three copies: shell-owned names, backslash-dollar-par
 ### [Phase 7] 01:25 -- the seat's example literal redacted for the commit
 
 claude's all-es output quoted the hooks' own run-time credential fixture as a literal in its G3-E-01 failure scenario; the pre-commit guard refused the commit (rightly: a fixture is built at run time, never written down). Replaced by `<a credential-shaped value>` in the seat's file; the finding is unchanged.
+
+### [Phase 3 / 4] 02:10-02:15 -- 03 and 04 written; PL-030's two verdicts reconciled by line
+
+`tools/lint-audit-artifacts` (run after Phase 7, 02:06) named the missing 03, 04 and second opinion. Building 04's scorecard per seat per item found the gpt ES seat's PL-030 verdict (*does not hold as an evidenced closure*) that 02's summary sentence had missed; the three claims verified against the tree (`GuiSaveState.cpp:499/516/524`, `cloud_capture:117/252/709/1599`, the five transfer scripts 0 hits) and 02 corrected in place with the date.
+
+### [Phase 4.6] 02:15-02:24 -- the GPT seat's second opinion (481 s, `outcome=success`)
+
+Disagreements first: the summary overstated (PL-029 open, PL-030 adverse, seven partial verdicts unmapped, totals mixing findings and items); G3-D-09's severity unexplained; G3-E-02 needs a filed follow-up; PL-013 of 05 had no behavioural case; the boundary understated. The build not stopped.
+
+### [Phase 4 revision] 02:24-02:35 -- every disagreement taken
+
+The seven reservations read and dispositioned (two a lead: path aliases); PL-033 verified in the proxy's source; #320 filed for G3-E-02; `tests/cloud-content-selection.py` found compiling nothing since 03ebb50a1 changed the reader's signature (4 of 5, the failure unread) -- fixed and given the directory case, seen to fail first, ES `0a02c71ea`; the harness runs named (`harness-s3f` 1251+2, `harness-s3f2` 1254, `harness-318/new` 1257, `harness-s3f2-old` 18 red); the #315 rejections itemised, F-SS-07 moved to resolved. Meanwhile vm-qa run 72 on `8dd6765af0` failed the round trip's #315 step: the same-second write, measured (D-CLOUD-155), the step now waits 2 s; the re-run is owed.

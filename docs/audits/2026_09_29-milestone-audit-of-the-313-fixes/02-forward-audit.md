@@ -11,6 +11,8 @@
 
 Both seats returned a verdict line per item in their packet (claude: holds / holds in part / outside; gpt: the same shape). Read against the tree in Phase 2.5 below; no item was returned as **does not hold** by either seat. The items' own outcomes (the streams' commits and fail-before lines, #313) stand.
 
+**Correction, 2026-09-29 02:13 UTC (Phase 4, while the scorecard was built per seat per item):** the sentence above is wrong for one item. The gpt ES seat returned **PL-030** as *does not hold as an evidenced closure* -- "adds comments, not protection or a regression case; the alternative acceptance requires a source-backed refutation; the cited manager copy, capture serialization, and transfer read sets are not embedded" -- and the claude ES seat as *holds in part* (the refutation branch, the line not named). The sentence was written from the distribution seats' tables and the claude ES table before the gpt ES table had been read row by row. The three claims the refutation rests on were then verified against the tree by the orchestrator and are recorded in `04-analysis.md` § Acceptance-criteria scorecard (PL-030): the copy's write is synchronous at the press behind the manager's gate (`GuiSaveState.cpp:499` `savesTreeBusy`, `:516` `copyToSlot`, then `:524` `recordCopy` queued), `cloud_capture --adopt` writes under `/storage/.cache/cloud_sync` (`cloud_capture:117`, the manifest at `:709`) after `capture_lock` (`:252`, taken at `:1599`), and the five transfer scripts hold no reader of `manifest-`, `cloud_capture`, `/stage` or `.capture` (0 hits in each, 2026-09-29). The refutation stands on those lines; the gpt seat's objection -- that the diff itself carries no evidence -- is correct as an evidence finding and is answered here rather than in code, since a comment naming line numbers rots and the audit record does not.
+
 ## Findings, each re-read against the source (the seats' 31 on the fixes; #315's 17 are in the issue-tier folder)
 
 Verdict: **Confirmed** (the defect is in the tree as described, with the line), **Confirmed by execution** (a canary or a measurement showed it), **Refuted** (with the artifact), **Accepted** (true, taken as a known cost with the reason written beside the code). Outcome: **Taken** (fixed in this pass, the commit named in 05), **Accepted**, **Refuted**.
@@ -51,7 +53,7 @@ Verdict: **Confirmed** (the defect is in the tree as described, with the line), 
 
 ## Phase 2.5 -- the seats' item verdicts against the tree
 
-Every "holds in part" the seats returned is a finding above (the seats phrased the gap as a finding too); no item was returned as not holding. The orchestrator's per-item verification of 2026-09-28 (the commits and fail-before lines on #313) is therefore corroborated, not contradicted.
+Every "holds in part" the seats returned is a finding above (the seats phrased the gap as a finding too); no item was returned as not holding. *(Superseded, 2026-09-29: see the correction under § The seats' per-item verdicts -- the gpt ES seat returned PL-030 as not an evidenced closure, and seven of the gpt distribution seat's partial verdicts carry a reservation rather than a finding; both are dispositioned in `04-analysis.md` § Acceptance-criteria scorecard.)* The orchestrator's per-item verification of 2026-09-28 (the commits and fail-before lines on #313) is corroborated on every item but PL-030, whose refutation now rests on the lines named in 04.
 
 ## Running notes
 
