@@ -454,8 +454,20 @@ if [ "$CONTROL" = 0 ]; then
   fl=""; for i in $(seq 1 45); do fl=$(S "tail -n +$((LOG0+1)) $PROXYLOG 2>/dev/null | grep -m1 'Flush complete:'" | mask); [ -n "$fl" ] && break; sleep 2; done
   fltext="${fl#*INFO }"; [ -n "$fl" ] || fltext="no 'Flush complete' line within 90 s"
   check "$(case "$fl" in *"flushed=1"*) echo 0 ;; *) echo 1 ;; esac)" "proxy: ${fltext} ($(( $(now) - T_UP )) s after the link returned)"
-  stamp=$(S 'cat /storage/.config/raofflineproxy/last-flush 2>/dev/null')
-  check "$(case "$stamp" in [0-9]*" 1") echo 0 ;; *) echo 1 ;; esac)" "the last-flush stamp reads '<epoch> 1' (got '${stamp:-none}')"
+  # The proxy's stamp is taken by the interface's own send card at the link's
+  # return (ProxyCards::takeFlushed through the ctl's `flushed`, #305: the
+  # card that reports the batch removes it), so a `cat` seconds after the
+  # flush races the card and loses (chain 90, 5b: 'none' with the flush
+  # complete). Either artifact is the evidence: the stamp seen while it was
+  # there, or the card's own link stamp saying it was sent after the link
+  # returned -- /storage/.cache/cloud_sync/last-sync-link, "<epoch> 0 sent".
+  stamp=""; link=""; ev=""
+  for i in $(seq 1 25); do
+    stamp=$(S 'cat /storage/.config/raofflineproxy/last-flush 2>/dev/null'); case "$stamp" in [0-9]*" 1") ev="the last-flush stamp read '${stamp}'"; break ;; esac
+    link=$(S 'cat /storage/.cache/cloud_sync/last-sync-link 2>/dev/null'); case "$link" in [0-9]*" 0 sent"*) [ "${link%% *}" -ge "$T_UP" ] && { ev="the send card took the stamp and its link stamp reads '${link}'"; break; } ;; esac
+    sleep 1
+  done
+  check "$([ -n "$ev" ]; echo $?)" "the flush left its stamp and it was read or taken: ${ev:-neither the last-flush stamp nor a 'sent' link stamp after the link returned (last-flush '${stamp:-none}', link '${link:-none}')}"
   p=$(S 'raofflineproxy-ctl pending 2>/dev/null'); check "$([ "$p" = 0 ]; echo $?)" "raofflineproxy-ctl pending = ${p:-?} after the flush"
 fi
 

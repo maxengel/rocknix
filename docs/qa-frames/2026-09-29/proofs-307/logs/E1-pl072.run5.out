@@ -1,0 +1,25 @@
+03:43:22 === E1-pl072 on guest d, BUILD_ID="8dd6765af0b6f5fd6f99a8a979c3c4b00b573771"
+03:43:22   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+03:43:22   PASS  the exit sync is on
+03:44:00   PASS  Ninoid running (POST 200)
+    -rw-r--r--    1 root     root        500389 Sep 28 23:44 Ninoid.state1
+    -rw-r--r--    1 root     root        526769 Sep 28 23:44 Ninoid.state2
+    -rw-r--r--    1 root     root        525385 Sep 28 23:44 Ninoid.state3
+    -rw-r--r--    1 root     root        528635 Sep 28 23:44 Ninoid.state4
+    -rw-r--r--    1 root     root        514594 Sep 28 23:44 Ninoid.state5
+03:44:04 the exit hotkey
+03:44:05 link cut after the first Copied line (107 -> 109): yes
+03:44:32 last-sync-exit with the link down (serial): '1790653455 69 gaps YOU WENT OFFLINE PART-WAY THROUGH'
+03:44:38 link back, ssh answers
+    log: [2026-09-28 23:44:15] [ERROR] [cloud_backup] Couldn't finish: lost the network during the saves backup. Try again when you're online.
+    log: [2026-09-28 23:44:15] [INFO] [cloud_backup] Script completed in 11 seconds with exit code 69
+    log: 2026/09/28 23:44:34 INFO  : savestates/gb/Ninoid.state4: Copied (new)
+    log: 2026/09/28 23:44:34 INFO  : savestates/gb/Ninoid.state5: Copied (new)
+    log: 2026/09/28 23:44:34 INFO  : savestates/gb/Ninoid.state6: Copied (new)
+    log: 2026/09/28 23:44:35 INFO  : savestates/gb/Ninoid.state.auto.png: Copied (new)
+    log: 2026/09/28 23:44:35 INFO  : savestates/gb/Ninoid.state.auto: Copied (new)
+    log: [2026-09-28 23:44:35] [INFO] [cloud_backup] Script completed in 1 seconds with exit code 0
+03:44:38   PASS  the link was cut after bytes moved (a Copied line first)
+03:44:38   PASS  the exit sync ended 69 with the link gone ('1790653455 69 gaps YOU WENT OFFLINE PART-WAY THROUGH')
+03:44:38 the card's frames are under /workspace/tmp/rocknix-session/proofs-307/frames/E1-pl072/ -- the grade is the frame that reads THE SAVES THAT MADE IT ARE ON BOTH SIDES
+    cleanup, the cloud folder: Ninoid.state.auto Ninoid.state.auto.png 03:44:38 === done: 5 PASS, 0 FAIL

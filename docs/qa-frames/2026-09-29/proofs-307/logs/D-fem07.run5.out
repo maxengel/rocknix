@@ -1,0 +1,15 @@
+03:06:43 === D-fem07 on guest d, BUILD_ID="8dd6765af0b6f5fd6f99a8a979c3c4b00b573771"
+03:06:43 psp.graphics_backend before: ''
+    -rw-r--r--    1 root     root       1048576 Sep 28 23:06 /storage/roms/psp/qa307.iso
+03:07:19 toggle: enabled=1 marker=1 service=active hardcore=0 hardcore=0
+03:07:20 POST /launch /storage/roms/psp/qa307.iso -> 200
+03:07:21   PASS  PPSSPP (standalone) is running (pid 2360)
+03:07:42 ppsspp.ini: AchievementsHost = 127.0.0.1:8080
+    exec.log: Launching /usr/bin/ppsspp /storage/roms/psp/qa307.iso
+    exec.log: 07:20:696 Core/System.cpp:618 N[BOOT]: PPSSPP afbc66a31
+    exec.log: 07:20:709 UI/EmuScreen.cpp:260 E[BOOT]: Boot failed: Not a PSP game
+    service.log: 2026-09-28 23:07:20,460 INFO raofflineproxy Request: POST /dorequest.php body=r=login2&u=***&t=*** online=True
+03:07:42   PASS  cheevos_ppsspp.sh pointed PPSSPP at the proxy (AchievementsHost = 127.0.0.1:8080)
+03:07:42   PASS  the proxy logged a sign-in request during the PSP launch (r=login2 after 03:07:19)
+    ppsspp left after the exit hotkey: 0
+03:07:53 === done: 3 PASS, 0 FAIL

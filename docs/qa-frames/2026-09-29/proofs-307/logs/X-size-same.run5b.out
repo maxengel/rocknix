@@ -1,0 +1,45 @@
+05:12:57 === X-size-same on guest d, BUILD_ID="8dd6765af0b6f5fd6f99a8a979c3c4b00b573771"; scripts: cloud_backup, cloud_restore
+05:12:57   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+05:12:58 -- 1. a fresh 64 KiB save, synced
+    local md5: f3d7a4c8b50f570170fc7aa89571c5b1
+    sync rc=0
+    log: Checks:                 0 / 0, -, Listed 137
+    log: Transferred:            1 / 1, 100%
+    log: [2026-09-29 01:12:58] [INFO] [cloud_backup] Script completed in 0 seconds with exit code 0
+05:12:58     cloud md5: f3d7a4c8b50f570170fc7aa89571c5b1
+05:12:58   PASS  the first sync put the save in the cloud (md5 equal)
+    cloud lsl (size, modtime as the backend reports it):     65536 2026-09-29 01:12:58.000000000 QA307-size-same.srm
+05:12:58 -- 2. the same size, new bytes, two seconds later; the exit sync's command again
+    local: 9981e887f0c4aedbf68c7b04efe2adc9
+    local: 65536 01:13:01
+    sync rc=0
+    log: Checks:                 2 / 2, 100%, Listed 137
+    log: Transferred:            1 / 1, 100%
+    log: [2026-09-29 01:13:01] [INFO] [cloud_backup] Script completed in 0 seconds with exit code 0
+05:13:01     local md5 9981e887f0c4aedbf68c7b04efe2adc9, cloud md5 9981e887f0c4aedbf68c7b04efe2adc9
+05:13:01   PASS  a changed save of unchanged size reached the cloud
+05:13:01 -- 3. the same exit sync again with nothing changed: an unchanged save is not re-sent
+    sync rc=0
+    log: Checks:                 1 / 1, 100%, Listed 137
+    log: [2026-09-29 01:13:02] [INFO] [cloud_backup] Script completed in 0 seconds with exit code 0
+05:13:02   PASS  nothing changed, nothing sent (rclone: nothing to transfer)
+05:13:02 -- 4. the restore direction: a same-size change made in the cloud (the other device's push) reaches this device
+    cloud now holds md5: 07632cda3c142babefd97aee1dd1ea91
+    restore rc=0
+    log: [2026-09-29 01:13:02] [INFO] [cloud_restore] the remote compares by size alone (#315): the cloud's upload time is compared with this device's copy (--update)
+    log: Transferred:            2 / 2, 100%
+    log: [2026-09-29 01:13:03] [INFO] [cloud_restore] Script completed in 1 seconds with exit code 0
+05:13:03     local md5 9981e887f0c4aedbf68c7b04efe2adc9, cloud md5 9981e887f0c4aedbf68c7b04efe2adc9
+05:13:03   PASS  the cloud's same-size change reached this device at the startup restore
+05:13:03 -- 5. rclone's own reason, dry run at -vv with no comparison flags (what the scripts had before #315)
+    rclone -vv: 2026/09/29 01:13:03 DEBUG : Using config file from "/storage/.config/rclone/rclone.conf"
+    rclone -vv: 2026/09/29 01:13:03 DEBUG : found headers: 
+    rclone -vv: 2026/09/29 01:13:03 DEBUG : QA307-size-same.srm: size = 65536 OK
+    rclone -vv: 2026/09/29 01:13:03 DEBUG : QA307-size-same.srm: Sizes identical
+    rclone -vv: 2026/09/29 01:13:03 DEBUG : QA307-size-same.srm: Unchanged skipping
+    rclone -vv: 2026/09/29 01:13:03 NOTICE: 
+    rclone -vv --checksum: 2026/09/29 01:13:03 DEBUG : Using config file from "/storage/.config/rclone/rclone.conf"
+    rclone -vv --checksum: 2026/09/29 01:13:03 DEBUG : found headers: 
+    rclone -vv --checksum: 2026/09/29 01:13:03 DEBUG : QA307-size-same.srm: size = 65536 OK
+    rclone -vv --checksum: 2026/09/29 01:13:03 NOTICE: webdav root 'QA307d/Saves/gb': --checksum is in use but the source and destination have no hashes in common; falling back to --size-only
+05:13:03 === done: 5 PASS, 0 FAIL
