@@ -1,5 +1,5 @@
 # play/retro-achievements.md: RETROACHIEVEMENTS SETTINGS and its OFFLINE
-# ACHIEVEMENTS (BETA) page. GAME SETTINGS is eleven presses up from the MAIN
+# ACHIEVEMENTS (BETA) page. GAME SETTINGS is twelve presses up from the MAIN
 # MENU's top row; on it: UPDATE GAMELISTS, MOONLIGHT GAME STREAMING, then the
 # ACCOUNTS heading, then RETROACHIEVEMENTS SETTINGS -- two presses down, not
 # three (two exploratory walks counted the heading, 2026-09-29). On the
@@ -9,11 +9,15 @@
 # row: tools/png-blackout before it is filed.
 # The MAIN MENU is reached from its bottom, so the walk is the same whether
 # the guest is signed in to RetroAchievements (the menu then opens on that
-# row, above GAME SETTINGS) or not: up from the top lands on BACK, up again
-# wraps to QUIT, and the rows above QUIT never move (2026-09-29).
+# row, above GAME SETTINGS) or not. Probed one press at a time on 2026-09-29
+# (proofs-307/up-probe.steps): up from the top row lands on an unmarked stop
+# with nothing highlighted, the next on BACK, the third on QUIT, and the rows
+# above QUIT never move. Three presses to QUIT, not two.
 key ret
 wait-for-change 30 1
 settle
+key up
+wait-for-change 30 1
 key up
 wait-for-change 30 1
 key up
