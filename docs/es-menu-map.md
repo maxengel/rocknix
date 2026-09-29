@@ -211,7 +211,10 @@ were the connection.
 flowchart TD
     NET[NETWORK SETTINGS] --> SSID[WI-FI NETWORK  <i>the network the device is on . NOT CONNECTED . COULDN'T CHECK</i>]
     SSID -->|A| PICK{{WI-FI NETWORKS: the networks in range, the joined one first<br/>Home Wi-Fi  CONNECTED . Cafe: Guest  SAVED . Library<br/>REFRESH . INPUT MANUALLY . BACK}}
-    PICK -->|A on SAVED| JOIN[CONNECTING TO WI-FI -- wifictl join, the key NetworkManager holds;<br/>toast CONNECTED TO name; the page rebuilt]
+    PICK -->|A on SAVED| OPT[name IS SAVED.<br/>CONNECT WITH ITS SAVED KEY, OR FORGET IT?<br/>CONNECT . FORGET . CANCEL -- D-UI-118]
+    OPT -->|CONNECT| JOIN[CONNECTING TO WI-FI -- wifictl join, the key NetworkManager holds;<br/>toast CONNECTED TO name; the page rebuilt]
+    OPT -->|FORGET| ASK
+    PICK -->|A on CONNECTED| JOIN
     PICK -->|A on another| KEY[WI-FI KEY -- the on-screen keyboard, empty for an open network]
     KEY --> CONN[CONNECTING TO WI-FI -- wifictl connect, a new profile;<br/>toast CONNECTED TO name; the page rebuilt]
     JOIN -.->|refused| ERR3[COULDN'T CONNECT TO name. IF ITS KEY HAS CHANGED, FORGET IT UNDER MANAGE SAVED NETWORKS AND JOIN IT AGAIN WITH THE NEW KEY.]
@@ -235,26 +238,35 @@ flowchart TD
   setting `wifi.ssid` still exists and follows the player's choice (the
   picker's connect writes it; `wifictl join` moves it onto the joined
   network from the profile, key included, never printed) so the paths that
-  connect from the settings -- the WI-FI KEY row, the ENABLE WI-FI switch,
-  the restore wizard -- name the network the player is on. No line under the
-  label: build 1's `CONNECTED TO <other>` line existed only because the
-  value was the setting.
+  connect from the settings -- the ENABLE WI-FI switch, the restore wizard
+  -- name the network the player is on. No line under the label: build 1's
+  `CONNECTED TO <other>` line existed only because the value was the
+  setting. **No WI-FI KEY row** since D-UI-118 (2026-09-29, taken from
+  ROCKNIX's own saved-Wi-Fi work): a key field with no network beside it
+  asked "which network's key?"; the two places a key is typed are the
+  picker's WI-FI KEY page, per network, and the restore wizard's WI-FI
+  PASSWORD page.
 - **The picker (WI-FI NETWORKS)** lists the networks in range (`wifictl
   list`, a rescan behind the spinner), the joined one first and marked
   CONNECTED, the ones NetworkManager holds a profile for marked SAVED
   (`WifiText::pickerRows`, unit-tested); a saved network out of range is not
   a row (D-UI-064) -- this list is what can be joined from here. A on a
-  saved row joins it with the key NetworkManager holds (`wifictl join`:
+  saved row opens CONNECT / FORGET / CANCEL (D-UI-118, the second choice
+  taken from ROCKNIX's own work; CONNECT first, back lands on CANCEL):
+  CONNECT joins it with the key NetworkManager holds (`wifictl join`:
   `nmcli connection up`, then the settings follow, then `pin` prefers it at
-  the next boot and resume); A on any other row asks for the key (the
+  the next boot and resume), FORGET runs the manage page's own confirmation
+  and reader (one function, `GuiMenu::forgetWifiNetworkWithConfirmation`)
+  and rebuilds the picker; A on the connected row joins it again at once
+  (the press confirms or repairs); A on any other row asks for the key (the
   on-screen keyboard; START accepts, empty for an open network) and
   connects at once (`wifictl connect`, a new profile); INPUT MANUALLY takes
   a hidden network's name the same way. On success a toast CONNECTED TO
   <name> and the page is rebuilt so every row reads the connection back;
   failures are dialogs naming the network. Before this, picking a network
   the device had joined before ran `wifictl connect` with whatever key sat
-  in the WI-FI KEY row, which deletes the saved profile and rebuilds it with
-  that key.
+  in the WI-FI KEY row (a row that no longer exists), which deletes the
+  saved profile and rebuilds it with that key.
 - **MANAGE SAVED NETWORKS** (D-UI-062: "saved" is the maintainer's word and
   `wifictl`'s, and the page, its group and its dialogs use no other) sits
   with the Wi-Fi rows (Wi-Fi on, not LOCAL PLAY MODE). Its page lists

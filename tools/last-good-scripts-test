@@ -7939,6 +7939,23 @@ case "${all}" in
       case "${type}" in *wireless*) printf '%s\n' "$(tesc "${ssid}")" ;; esac
     done < /run/profiles
     echo "Neighbour" ;;
+  *"-f DEVICE,STATE dev status"*)
+    # connect_wifi's readiness loop: a device is connected when a wireless profile is active on it
+    for d in wlan0 wlan1; do
+      a=$(DEV="${d}" awk -F'|' '$2 ~ /wireless/ && $3 == ENVIRON["DEV"] { print $1 }' /run/profiles | head -n 1)
+      printf '%s:%s\n' "${d}" "$([ -n "${a}" ] && echo connected || echo disconnected)"
+    done ;;
+  *" device wifi connect "*)
+    # the keyed (or keyless) connect: recorded to /run/connect as "<ssid> [password <key>] ifname <dev>"; a new
+    # profile named after the SSID comes up on the device, holding the key given, and the one up there goes down;
+    # /run/connect-fails fails it (#318 D-UI-118 cases)
+    rest="${all#* device wifi connect }"; ssid="${rest%% password *}"; ssid="${ssid%% ifname *}"
+    psk=""; case "${rest}" in *" password "*) psk="${rest#* password }"; psk="${psk%% ifname *}" ;; esac
+    dev=wlan0; case "${rest}" in *" ifname "*) dev="${rest##* ifname }" ;; esac
+    printf '%s\n' "${rest}" >> /run/connect
+    [ -e /run/connect-fails ] && exit 4
+    DEV="${dev}" awk -F'|' 'BEGIN { OFS = FS } $2 ~ /wireless/ && $3 == ENVIRON["DEV"] { $3 = "-" } { print }' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles
+    printf '%s|802-11-wireless|%s|%s|%s\n' "${ssid}" "${dev}" "${ssid}" "${psk}" >> /run/profiles ;;
   *) echo "nmcli shim: unexpected call: $*" >&2; exit 2 ;;
 esac
 EOS
@@ -7954,8 +7971,8 @@ p7w() { # <verb> [name]: wifictl whole; stdout to $P7W/out, rc in $RC
 }
 p7wset() { # <profile rows, one per argument, fields separated by |>: the table, fresh settings and records
     printf '%s\n' "$@" > "${P7W}/run/profiles"
-    : > "${P7W}/run/settings"; : > "${P7W}/run/up"; : > "${P7W}/run/deleted"; : > "${P7W}/run/calls"
-    rm -f "${P7W}/run/nm-down" "${P7W}/run/psk-fails" "${P7W}/run/up-fails" "${P7W}/run/set-fails" "${P7W}/run/ssid-fails"
+    : > "${P7W}/run/settings"; : > "${P7W}/run/up"; : > "${P7W}/run/deleted"; : > "${P7W}/run/calls"; : > "${P7W}/run/connect"
+    rm -f "${P7W}/run/nm-down" "${P7W}/run/psk-fails" "${P7W}/run/up-fails" "${P7W}/run/set-fails" "${P7W}/run/ssid-fails" "${P7W}/run/connect-fails"
 }
 p7wkey() { awk 'index($0, "wifi.key=") == 1 { v = substr($0, 10); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
 p7wssid() { awk 'index($0, "wifi.ssid=") == 1 { v = substr($0, 11); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
@@ -8025,6 +8042,28 @@ p7w saved
 [ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "$(printf 'Home\tactive\nHome profile\tsaved\na\tb\tsaved')" ]; check $? "#307 audit (E2's picker): and saved without the flag is unchanged, for the interface's parser and join and forget" "#307 audit saved: printed '$(tr '\t\n' '~|' < "${P7W}/out")'"
 touch "${P7W}/run/ssid-fails"; p7w saved --ssid
 [ "${RC}" -eq 1 ] && [ ! -s "${P7W}/out" ]; check $? "#307 audit (E2's picker): an SSID that cannot be read makes saved --ssid print nothing and exit 1, never a list short of one" "#307 audit saved --ssid: rc ${RC}; printed '$(tr '\t\n' '~|' < "${P7W}/out")'"
+
+# == #318 D-UI-118: connect brings a saved profile up before it deletes anything, and a keyed connect
+# stores the key in the profile. Two lines taken from ROCKNIX's own saved-network work (spycat88,
+# b1f8464241; the merged design, D-UI-118) into connect_wifi; the cases are the fork's. The
+# settings-driven paths (ENABLE WI-FI, the restore wizard) run `connect` with wifi.ssid and whatever
+# wifi.key holds: for a network NetworkManager already holds and no key, the profile comes up as it
+# is -- nothing deleted, nothing rebuilt, the key it holds kept -- and a keyed connect writes the key
+# into the new profile (wifi-sec.psk-flags 0) so a later `join` can read it back. Before the two
+# lines every connect deleted the profile and rebuilt it from the settings (the second and third
+# checks below are the positives under --old BASE_REF=a06539d8ec).
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe|802-11-wireless|-|Cafe|cafe-key-1'
+printf 'wifi.ssid=Cafe\nwifi.enabled=1\n' > "${P7W}/run/settings"
+p7w connect
+[ "${RC}" -eq 0 ] && grep -qx 'Cafe ifname wlan0' "${P7W}/run/up" && ! grep -qx 'Cafe' "${P7W}/run/deleted" && [ ! -s "${P7W}/run/connect" ] && [ "$(awk -F'|' '$3 == "wlan0" { print $1 }' "${P7W}/run/profiles")" = "Cafe" ] && [ "$(awk -F'|' '$1 == "Cafe" { print $5 }' "${P7W}/run/profiles")" = "cafe-key-1" ]; check $? "#318 D-UI-118: connect with wifi.ssid=Cafe and no key brings the saved profile up (connection up id Cafe), deletes nothing and rebuilds nothing -- the key the profile holds is kept" "#318 saved-first: rc ${RC}; up: '$(tr '\n' '|' < "${P7W}/run/up")'; deleted: '$(tr '\n' '|' < "${P7W}/run/deleted")'; connect: '$(tr '\n' '|' < "${P7W}/run/connect")'"
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1'
+printf 'wifi.ssid=Library\nwifi.key=lib-key-1\nwifi.enabled=1\n' > "${P7W}/run/settings"
+p7w connect
+[ "${RC}" -eq 0 ] && [ ! -s "${P7W}/run/up" ] && grep -qx 'Library password lib-key-1 ifname wlan0' "${P7W}/run/connect" && grep -q 'connection modify Library wifi-sec.psk-flags 0' "${P7W}/run/calls" && [ "$(awk -F'|' '$1 == "Library" { print $5 }' "${P7W}/run/profiles")" = "lib-key-1" ]; check $? "#318 D-UI-118: a keyed connect of a network with no profile goes straight to device wifi connect (no connection up tried) and then sets wifi-sec.psk-flags 0 on the new profile, which holds the key" "#318 keyed: rc ${RC}; up: '$(tr '\n' '|' < "${P7W}/run/up")'; connect: '$(tr '\n' '|' < "${P7W}/run/connect" | sed 's/password [^ ]*/password ***/')'; modify calls: $(grep -c 'connection modify' "${P7W}/run/calls")"
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe|802-11-wireless|-|Cafe|cafe-key-1'
+printf 'wifi.ssid=Cafe\nwifi.key=cafe-key-2\nwifi.enabled=1\n' > "${P7W}/run/settings"
+p7w connect
+[ "${RC}" -eq 0 ] && [ ! -s "${P7W}/run/up" ] && grep -qx 'Cafe' "${P7W}/run/deleted" && grep -qx 'Cafe password cafe-key-2 ifname wlan0' "${P7W}/run/connect" && grep -q 'connection modify Cafe wifi-sec.psk-flags 0' "${P7W}/run/calls" && [ "$(awk -F'|' '$1 == "Cafe" { print $5 }' "${P7W}/run/profiles")" = "cafe-key-2" ]; check $? "#318 D-UI-118: a keyed connect of a saved network (the picker's WI-FI KEY page for a network whose key changed) replaces its profile with the typed key: deleted, device wifi connect, psk-flags 0, the profile holds the new key" "#318 keyed-saved: rc ${RC}; up: '$(tr '\n' '|' < "${P7W}/run/up")'; deleted: '$(tr '\n' '|' < "${P7W}/run/deleted")'; connect: '$(tr '\n' '|' < "${P7W}/run/connect" | sed 's/password [^ ]*/password ***/')'"
 
 # y3. 001-functions: the settings writer, the lock and the redaction, lifted
 # as c and wait-lock-test lift them and run in a fresh bash against temp
