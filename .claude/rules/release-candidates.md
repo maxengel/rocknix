@@ -63,14 +63,7 @@ it has its artifact.
    previous device build (`tools/vm-upgrade-rehearsal`); and each bumped
    package's own proof -- the sign-in window for webkitgtk, `tools/ra-offline-test`
    for the proxy. RECORD.txt written, the catalog regenerated.
-4. **Play-testing on the test device**: staged on the RG35XX SP with the
-   maintainer's yes for the copy and a second for the reboot (D-QA-011); the
-   soak -- hours of play offline, then Wi-Fi back (D-QA-036) -- with its
-   journal read afterwards.
-5. **The call**: a comment on the round's issue naming the build, the soak's
-   read and step 0's verdict; the device facts and the catalog updated in the
-   same change (D-WORKFLOW-046).
-6. **The full upstream audit, by two agents**: the code auditor at milestone
+4. **The full upstream audit, by two agents**: the code auditor at milestone
    tier over everything going upstream -- the distribution's diff against
    `upstream/next` and the EmulationStation fork's against ROCKNIX's master --
    by Fable 5.1 and GPT-6 Astra (D-QA-048), both through the council's
@@ -79,8 +72,17 @@ it has its artifact.
    The key is `~/.config/council/env`, sourced before the Facilitator runs;
    a probe of each seat first, its provenance naming the served model. Its
    punch list is
-   resolved (Phase 7) before step 7; a fix that changes the build goes back to
-   step 2, and the soak is re-read for what the fix touches.
+   resolved (Phase 7) before step 5; a fix that changes the build goes back to
+   step 2, and the VM proves the rebuilt cut again before the device sees it.
+5. **Play-testing on the test device**: staged on the RG35XX SP with the
+   maintainer's yes for the copy and a second for the reboot (D-QA-011) --
+   asked only once steps 0 to 4 are complete, the audit of the fixes
+   included (D-WORKFLOW-062); the
+   soak -- hours of play offline, then Wi-Fi back (D-QA-036) -- with its
+   journal read afterwards.
+6. **The call**: a comment on the round's issue naming the build, the soak's
+   read, step 0's verdict and the audit's punch list resolved; the device facts and the catalog updated in the
+   same change (D-WORKFLOW-046).
 7. **Submission and the test devices**: the PR series cut by content along
    the named buckets (`fork-workflow.md`, D-WORKFLOW-034), rocknix.org's
    documentation last (#42, D-WORKFLOW-014); builds for every test device --
@@ -103,10 +105,16 @@ It surfaced only when the upstream audit was being scoped, after the cut had
 been called, which is the dance this file exists to prevent. So step 0 comes
 before the first build, and its verdict is part of the call.
 
-The audit follows the play-testing rather than preceding it (the maintainer's
-order, D-QA-049): the audit covers everything going upstream, which is far
-more than any one round changed, and the play-testing is what says the build
-is worth auditing.
+The audit precedes the play-testing (D-WORKFLOW-062, 2026-09-29, reversing
+D-QA-049): the maintainer's words, *"I want to wait to transfer the build
+until we feel the build is a proper release candidate. That means I want all
+of the work in flight to complete: the code audit, our audit of the fixes."*
+The audit covers everything going upstream, far more than any one round
+changed, and its punch list shapes the build; a soak run before it is a soak
+of a build that will change, and a fix found after the soak costs a second
+evening on a person's device where a fix found before it costs a rebuild and
+a VM round. So the device sees a build only when nothing in flight is left to
+change it.
 
 ## When the procedure changes
 

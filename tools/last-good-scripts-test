@@ -12810,6 +12810,13 @@ rm -f "${P7ZC}.backup" "${P7F}/lock-z" "${P7F}/log-z"; printf 'system.hostname=X
 # modtimes or hashes gets neither. The claim is the rclone command line, so
 # every rclone call is answered by the shim without running (a WebDAV url
 # nobody serves would only add retries); the argv is recorded first.
+# Seen to FAIL first: against the scripts at 320d2b2bea (the commit before
+# the fix), `BASE_REF=320d2b2bea tools/last-good-scripts-test --old` on
+# 2026-09-28 23:55 UTC failed 9 of these checks and no other section's --
+# the flag cases and the function's presence; the five that assert a flag's
+# absence on other remotes pass on both, as they should. The default
+# BASE_REF (1d1503180d) predates section s's script and exits 2 there, so
+# a positive for a late section names its own base.
 echo "  S315. #315: the size-only remote's flags -- --ignore-times on the recent set, --update --modify-window 1s elsewhere, nothing on other remotes"
 SZ=$(sa_new s315); sa_script "${SZ}" cloud_backup cloud_restore cloud_saves_root
 cat > "${SZ}/storage/.config/cloud_sync.conf" <<'EOS'
