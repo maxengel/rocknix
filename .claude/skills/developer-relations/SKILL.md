@@ -159,11 +159,23 @@ Every page, in this order, and the fourth step is where the skill improves:
    it -- is noted here, in § Tells, with the phrase, and in
    `tools/prose-check`'s list when a pattern can catch it. Then the next
    page starts from the longer list.
-5. The screenshots are captured on the VM at 640x480 by a walk step file
+5. A page shared with other contributors is edited by section: their
+   sections stay as they wrote them, and `tools/prose-check`'s fails on
+   those lines are reported in the PR, never fixed in passing. On
+   2026-09-29 the cloud-sync page's three fails were all in the Syncthing
+   section (a contributor's "seamlessly", twice, and an exclamation mark);
+   the rclone section, the one being written, had none.
+6. The screenshots are captured on the VM at 640x480 by a walk step file
    kept beside the page's source (`tools/vm-walks/docs/<page>.steps`), never
    pasted from a session, so the picture can be retaken when the screen
    changes (`generic-x64-vm-testing.md`); a frame that shows an account's
-   name goes through `tools/png-blackout` first.
+   name goes through `tools/png-blackout` first. Two things the first
+   capture taught (2026-09-29): a row is found by its reference frame or by
+   reading the source, never by counting a montage (GAME SETTINGS' ACCOUNTS
+   line is a heading, and two walks counted it as a row); and under a
+   device build the guest draws late enough that `wait-for-change`'s
+   re-send lands a key twice, so a docs walk waits 30 s per press and never
+   re-sends (`wait-for-change 30 0`, one press per line).
 
 ## The check on this file
 

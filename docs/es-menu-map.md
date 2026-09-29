@@ -348,8 +348,9 @@ upstream's. The stamp gains `indexed=<n>`, which the page passes over.
 **Elsewhere, cloud-adjacent.** `SYSTEM SETTINGS > SYSTEM MANAGEMENT AND RESET`:
 DATA MANAGEMENT (back up / restore settings to this device), EMULATOR
 MANAGEMENT and SYSTEM MANAGEMENT (the resets) run headless behind a spinner and
-end in an outcome dialog (D-UI-037). `SCRAPER > OPTIONS` carries DEVELOPER ID /
-DEVELOPER PASSWORD beside the account (#64). The startup sync is a card at
+end in an outcome dialog (D-UI-037). `SCRAPER > ACCOUNTS` carries DEVELOPER ID /
+DEVELOPER PASSWORD beside the account (#64; the map said OPTIONS until
+2026-09-29, `GuiScraperStart::loadAccountsPage` says ACCOUNTS). The startup sync is a card at
 boot; the exit sync a card after a game; both end on the card (D-UI-028, with
 `COMPLETED WITH GAPS` removed by D-UI-030 -- a run passes or fails). A launch
 cancels either **in what ships today** (D-CLOUD-076); **D-CLOUD-109 replaces
