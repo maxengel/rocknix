@@ -197,9 +197,11 @@
 #            and treats one older than the bound as gone.
 #   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
 #   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
-#   limit=<0|1> indexed=<i> errors=<e> added=<k>[ truncated=1][ why=<TOKEN>]" -- how the last run
-#   went, read by the page for the line under the row
-#   (CloudText::parseScanStamp, which passes over keys it does not know).
+#   limit=<0|1> indexed=<i> errors=<e> added=<k>[ truncated=1][ why=<TOKEN>][ note=<TOKEN>]" -- how
+#   the last run went, read by the page for the line under the row
+#   (CloudText::parseScanStamp, which passes over keys it does not know). A
+#   scan that found no game to look at is rc 0 with note=NO_GAMES (fork
+#   #329): a run with nothing to do completed.
 #   `added` is how many games the run made ready for this account (fork
 #   #298), read from the store before and after -- a game is ready with the
 #   account's unlocks row and an achievementsets row of the game (audit of
@@ -1062,7 +1064,7 @@ added_count() { # <measured count, or empty> <cached>
 }
 
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
-# indexed=<i> errors=<e> added=<k> [why=<TOKEN>]", written whole or not at all (a
+# indexed=<i> errors=<e> added=<k> [why=<TOKEN>] [note=<TOKEN>]", written whole or not at all (a
 # rename), so the page never reads half a line. The page reads the keys it
 # knows and passes over the rest (CloudText::parseScanStamp), so indexed=
 # and errors= are for the log and for whoever reads the file.
@@ -1078,9 +1080,14 @@ write_stamp() {
     # the cap, and the games past it are the next scan's. Written only when
     # it is 1; CloudText::parseScanStamp reads it.
     local TRUNCATED="${11:-0}"
+    # note=NO_GAMES (fork #329): the run completed with nothing to look at;
+    # the twelfth argument, written only when given. The page reads it
+    # (CloudText::parseScanStamp) for the line under the row.
+    local NOTE="${12:-}"
     local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED} errors=${ERRORS} added=${ADDED}"
     [ "${TRUNCATED}" = "1" ] && LINE="${LINE} truncated=1"
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
+    [ -n "${NOTE}" ] && LINE="${LINE} note=${NOTE}"
     mkdir -p "${PROXY_DIR}" || return 1
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
 }
@@ -1980,11 +1987,19 @@ do_scan() {
 
     local READY
     if [ "${FOUND}" -eq 0 ]; then
+        # Nothing under the ROM folders to look at is a run that completed
+        # with nothing to do, not one that could not finish (fork #329: the
+        # page read COULDN'T FINISH on a device with no game yet, and the
+        # maintainer's reading was that "there was just nothing to scan").
+        # rc 0 and no why; the note tells the page and the stamp what there
+        # was to say, and the row reads NO GAMES TO SCAN YET.
         READY="$(count_ready)"
-        slog "scan: no games found under ${ROMS_ROOT}"
-        tell "why NO_GAMES_FOUND"
-        write_stamp 1 scan 0 0 "${READY}" 0 0 0 NO_GAMES_FOUND
-        exit 1
+        slog "scan done: no games found under ${ROMS_ROOT}, ready=${READY}"
+        tell "note NO_GAMES"
+        commit_cursor || slog "scan: an old cursor could not be removed; the next walk starts from the top all the same"
+        write_stamp 0 scan 0 0 "${READY}" 0 0 0 "" "" 0 NO_GAMES
+        tell "done 0|0|${READY}|0"
+        exit 0
     fi
     tell "total ${NEW}"
     if [ "${NEW}" -eq 0 ]; then
