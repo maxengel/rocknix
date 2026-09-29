@@ -5789,7 +5789,8 @@ function page(probeText) {
       className: a.class || "", hidden: "hidden" in a, value: "", textContent: "",
       dataset: {}, listeners: {},
       classList: { add() {}, remove() {} },
-      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      // as a browser: a listener that is not a function throws, so a var over a hoisted function fails here and not on a phone (#330)
+      addEventListener(ev, fn) { if (typeof fn !== "function") throw new TypeError("listener for " + ev + " is " + typeof fn); (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
       fire(ev, extra) {
         const e2 = Object.assign({ preventDefault() {}, touches: null, clientX: 0, clientY: 0 }, extra || {});
         (this.listeners[ev] || []).forEach((fn) => fn(e2));
@@ -5814,14 +5815,14 @@ function page(probeText) {
   };
   const sandbox = {
     document,
-    window: { addEventListener() {} },
+    window: { addEventListener(ev, fn) { if (typeof fn !== "function") throw new TypeError("listener for " + ev + " is " + typeof fn); } },
     setTimeout: (fn, ms) => timers.push(fn),
     fetch: (url, opts) => {
       if (opts && opts.method === "POST") {
         posts.push(opts.body);
-        return Promise.resolve({ text: () => Promise.resolve("") });
+        return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve("") });
       }
-      return Promise.resolve({ text: () => Promise.resolve(probe) });
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(probe) });
     },
     Promise, URLSearchParams, encodeURIComponent, decodeURIComponent, Math, Array, String, Object, JSON, RegExp,
   };
@@ -11341,7 +11342,8 @@ function phone() {
       tagName: tag.toUpperCase(), id: a.id || "", type: a.type || "", className: a.class || "",
       hidden: "hidden" in a, value: "", textContent: "", dataset: {}, listeners: {},
       classList: { add() {}, remove() {} },
-      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      // as a browser: a listener that is not a function throws, so a var over a hoisted function fails here and not on a phone (#330)
+      addEventListener(ev, fn) { if (typeof fn !== "function") throw new TypeError("listener for " + ev + " is " + typeof fn); (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
       fire(ev, extra) {
         const e2 = Object.assign({ preventDefault() {}, touches: null, clientX: 0, clientY: 0 }, extra || {});
         (this.listeners[ev] || []).forEach((fn) => fn(e2));
@@ -11363,14 +11365,14 @@ function phone() {
       querySelectorAll: (sel) => (sel === "[data-key]" ? keys : []),
       querySelector: () => null,
     },
-    window: { addEventListener() {} },
+    window: { addEventListener(ev, fn) { if (typeof fn !== "function") throw new TypeError("listener for " + ev + " is " + typeof fn); } },
     setTimeout: (fn) => timers.push(fn),
     fetch: (url, opts) => {
       if (opts && opts.method === "POST") {
         posts.push({ body: opts.body, page: hh.page, caret: hh.caret });
-        return Promise.resolve({ text: () => Promise.resolve("") });
+        return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve("") });
       }
-      return Promise.resolve({ text: () => Promise.resolve(hh.probe) });
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(hh.probe) });
     },
     Promise, URLSearchParams, encodeURIComponent, decodeURIComponent, Math, Array, String, Object, JSON, RegExp,
   };
