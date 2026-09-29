@@ -29,7 +29,7 @@ Each file has a `.sha256` beside it.
 
 <details><summary>Built from, tested on</summary>
 
-Two heads. The H700 images are build `8dd6765af0` (fork `next` at that commit; EmulationStation `014f82685`; upstream `next` at `6b344ab54d` and ROCKNIX's EmulationStation master at `cada856d8` underneath). The SM8550 and RK3566 images come from `50f3eeb726`, which adds only the round's records and a build fix for mangohud, a package those two ship and the H700 does not (D-WORKFLOW-069).
+Two heads. The H700 images are build `8dd6765af0` (fork `next` at that commit; EmulationStation `014f82685`; upstream `next` at `6b344ab54d` and ROCKNIX's EmulationStation master at `cada856d8` underneath). The SM8550 and RK3566 images come from `5b5005879e`, which adds only the round's records, its documentation, and build fixes for two packages those devices ship and the H700 does not: mangohud and gamescope, whose meson subprojects now come from pinned sources instead of a download at configure (D-WORKFLOW-069, D-WORKFLOW-070).
 
 What was run on `8dd6765af0`, on the GENERIC_X64 VM: vm-qa run 72 (fourteen suites; the cloud round trip's size-only step in run 72b after a two-second wait was added to the test), the proofs' run 5 with its 5b and 5c re-runs (37 scripts, 220 checks PASS, 3 FAIL: the `E1-pl069` pair, #310, and one line of `F2-widgets`, #324), the upgrade rehearsal from `d39ccdfff3` (RESULT PASS), the offline-achievements test 31 of 32. The H700 tar was staged on an RG35XX SP at 05:47 UTC on 2026-09-29 and the interface came up; the play-through is in progress. The SM8550 and RK3566 images are built and checksummed and have not run on a device yet.
 
