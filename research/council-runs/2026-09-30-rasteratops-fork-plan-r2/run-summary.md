@@ -2,7 +2,7 @@
 
 Profile: definitive
 Decision authority: **definitive**
-Generated: 2026-09-30T14:59:56.866Z
+Generated: 2026-09-30T15:28:22.491Z
 Source manifest: `research/council-runs/2026-09-30-rasteratops-fork-plan-r2/council-run-manifest.json`
 Provenance contract: `council-facilitator@1.14.0`
 Minimum assurance tier: `local_capture_provider_attested`
@@ -14,7 +14,7 @@ Declared outputs only, including their retries and recursion rounds; Setup probe
 
 | Attempts | Duration ms | Prompt tokens | Completion tokens | Total tokens | Tokens/sec | Usage unavailable |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 20 | 5576440 | 702411 | 428532 | 1130943 | 202.807 | 0 |
+| 21 | 6335745 | 756600 | 490146 | 1246746 | 196.78 | 0 |
 
 ## step1
 
@@ -63,4 +63,12 @@ Seal assurance tier: `local_capture_provider_attested`
 | gpt | 1 | success | 185944 | 20840 | 6247 | 27087 | 145.673 | available |
 | kimi | 1 | success | 67467 | 20717 | 5525 | 26242 | 388.961 | available |
 | muse | 1 | success | 155553 | 18939 | 19726 | 38665 | 248.565 | available |
+
+## step4_5
+
+Seal assurance tier: `local_capture_provider_attested`
+
+| Member | Attempt | Outcome | Duration ms | Prompt | Completion | Total | Tokens/sec | Usage status |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| claude | 1 | success | 759305 | 54189 | 61614 | 115803 | 152.512 | available |
 

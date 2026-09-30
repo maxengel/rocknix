@@ -1,0 +1,158 @@
+{
+  "artifact_path": "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/consensus_plan.md",
+  "output_file_sha256": "daa6fc1788ac5158602a74d1ada04a240cf5e94a9d57c64158c939be4f1c1c57",
+  "source_file_paths": [
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/claude-revised_plan.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/claude_vote.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/gemini_vote.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/gpt_vote.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/kimi_vote.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/muse_vote.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/gemini-revised_plan.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/gpt-revised_plan.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/kimi-revised_plan.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/muse-revised_plan.md"
+  ],
+  "source_file_hashes": [
+    "0a69c5801127fe8ff16905ae92971a82e77242940a53d13d5223f31effa0b151",
+    "96b960fe9aa6d38c846e79b56f9b632fc3f35262cd56b65da5e733b9beb1cbb9",
+    "fa85306ecd83f3fe22ac7e4edea0caaab6b187aa989d16a8c32e56b79a9709e0",
+    "98ea33a69ce4a9796a85051d69486d24946fdee49ba00edfe3b22bdbd587921a",
+    "a85bb6cd16aef7f8022a0c9a3a389389eab592265247334c39f29decd251d16a",
+    "4db2e5c093396d8ffe6535c635043dcb5022305397cab343252e317d1e0aaf97",
+    "f84326022d93a19b6a7590b13877ea2cfb1cc3eecedd5a2c4422a3afa9171dd9",
+    "11812f31ce4db01f56b8cb9bc38e670ca2d6a2a953b2a9a1e31584ae468add8e",
+    "8f0a54647d9aa9dd2f6e3d7fc896e622787dc17eb585c838a1486de7f9f6f69a",
+    "26b2bef5f3cbd8fcff4299f943dd5b4d279dc6f619e615692f643552552dbf6c"
+  ],
+  "facilitator_version": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "prev_verdict_sha256": "b7a270ede3fcd672c506d5eed7b6069972874d7e9a1374ec0731acbefe36812d",
+  "member": "claude",
+  "declared_model": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-30T15:14:54.248Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "adedebc3cd426e3be9ab49e45b4d8bb28e20d9fb74a4449768345510407431a3"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-30T15:14:54.248Z",
+      "duration_ms": 759305,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "anthropic/claude-fable-5.1",
+      "finish_reason": "stop",
+      "content_length": 82188,
+      "tokens": {
+        "prompt": 54189,
+        "completion": 61614,
+        "total": 115803,
+        "reasoning": 30438
+      },
+      "model_identity_source": "provider_response",
+      "served_provider": "Anthropic",
+      "served_provider_observations": [
+        "Anthropic"
+      ],
+      "content_sha256": "daa6fc1788ac5158602a74d1ada04a240cf5e94a9d57c64158c939be4f1c1c57",
+      "usage": {
+        "prompt_tokens": 54189,
+        "completion_tokens": 61614,
+        "total_tokens": 115803,
+        "cost": 3.62259,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 3.62259,
+          "upstream_inference_prompt_cost": 0.54189,
+          "upstream_inference_completions_cost": 3.0807
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 30438,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "2343626652a18ba210f412d06cdd743c41564c3531422f2c367aa8de5514428d"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 759308,
+    "retries_used": 0,
+    "file_artifact_sha256": "daa6fc1788ac5158602a74d1ada04a240cf5e94a9d57c64158c939be4f1c1c57",
+    "usage": {
+      "prompt_tokens": 54189,
+      "completion_tokens": 61614,
+      "total_tokens": 115803,
+      "cost": 3.62259,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 3.62259,
+        "upstream_inference_prompt_cost": 0.54189,
+        "upstream_inference_completions_cost": 3.0807
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 30438,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 54189,
+      "completion": 61614,
+      "total": 115803,
+      "reasoning": 30438
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+      "observed": "anthropic/claude-fable-5.1",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "xhigh",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 30438
+    },
+    "provider_verification": {
+      "result": "NOT_PINNED",
+      "declared": null,
+      "evidence": "response_provider_field",
+      "observed": "Anthropic",
+      "observed_providers": [
+        "Anthropic"
+      ]
+    }
+  },
+  "genesis_sha256": "4072e7351e98dbf4aa830685bc3b088dc184993487c03ba0290f8faf4eebbe07"
+}

@@ -51,3 +51,11 @@ Gate outcome: **PASS** — all five on their declared models at their declared e
 | muse   | OpenRouter (Meta-pinned) | meta/muse-spark-1.3 (OpenRouter, via meta, effort=max) | meta/muse-spark-1.3 | Response body `model` field | PASS | effort PASS (17245 reasoning tokens); served by Meta; 2.6 min |
 
 Gate outcome: **PASS** — all five ballots on their declared models at their declared efforts; the round is tallied after the seal, lint, chain and seals.
+
+### Step 4.5 · r1 · 2026-09-30T15:28:22Z
+
+| Member | Substrate | Declared model | Observed model | Verification mechanism | Result | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| claude | OpenRouter | anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh) | anthropic/claude-fable-5.1 | Response body `model` field | PASS | effort PASS (30438 reasoning tokens); served by Anthropic; 12.7 min; the winning author integrating the four other seats' dissent, owner's opt-in |
+
+Gate outcome: **PASS** — the consensus plan on its declared model at its declared effort; sealed, chain and seals verified, full lint clean; it is the Step 5 handoff input.
