@@ -23,4 +23,8 @@
 
 **Run summary.** `run-summary.md`: 20 attempts, 702,411 prompt and 428,532 completion tokens, 93 minutes of seat time, no usage gaps.
 
-**Owner decisions pending** (Step 5 waits on them): accept the 3-2 winner; opt into Step 4.5, a consensus integration by the winning author carrying the dissent above; then the issue. Written 2026-09-30T15:01Z.
+**Step 4.5 (owner's opt-in).** The claude seat integrated the four other plans' dissent into its own as the base: `revised_approaches/consensus_plan.md`, identity and effort PASS, sealed, chain and seals verified, full lint clean. Its § Dissents that conflict with the base lists what was not absorbed: flashing every target before publish (gemini), x64-only publication as a fallback (muse), the `DISTRO` split as the default first build (gpt, muse), labour and owner-hour allowances as plan quantities (gpt, kimi), the cloud default as a P0 blocker (kimi, muse).
+
+**Step 5.** The plan's issue is #344, written from the consensus plan's § Step 5 handoff content: phases P0 to P6 with agent-verifiable exits, fourteen register rows as the sentences they would carry, eight owner questions, and what is explicitly outside 0.0.1. It supersedes Phases A to E of #338.
+
+**Run summary, final.** `run-summary.md`: 21 attempts, 1,246,746 tokens, 106 minutes of seat time, no usage gaps. Model verification: five gates, all PASS. Written 2026-09-30T15:31Z.
