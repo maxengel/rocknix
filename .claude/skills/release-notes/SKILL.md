@@ -16,7 +16,7 @@ voice is `developer-relations`' (the site's); this file is the shape.
 
 ## The release note
 
-The body of a release on `maxengel/rocknix` (`tools/fork-publish-release`
+The body of a release on `rasteratops/distribution` (`tools/fork-publish-release`
 uploads the files; the note is written by hand and pasted with `gh release
 edit --notes-file`). Structure, in this order:
 

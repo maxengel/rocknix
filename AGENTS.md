@@ -126,7 +126,7 @@ No Conventional Commits. Scope by package or device, matching history:
 
 ## Fork workflow (this working copy is a fork)
 
-`origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
+`origin` = `rasteratops/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.md` / `worktrees.md`; the essentials:
 
 - Branch `next` = `upstream/next` + a *personal overlay* (`.claude/`, `AGENTS.md`,
@@ -143,7 +143,7 @@ No Conventional Commits. Scope by package or device, matching history:
   (`git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"`).
 - Remove a worktree with `tools/fork-worktree remove`, never `git worktree remove --force`
   (D-WORKFLOW-005): it cannot tell a checkout from hours of build output.
-- Issues go on the fork: always `gh --repo maxengel/rocknix` (`gh` defaults to upstream
+- Issues go on the fork: always `gh --repo rasteratops/distribution` (`gh` defaults to upstream
   here, which has Issues disabled).
 - User-facing behavior changes need a follow-up docs PR to the separate
   `ROCKNIX/rocknix.org` repo — code and the public docs must not drift.

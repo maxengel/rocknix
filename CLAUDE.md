@@ -113,13 +113,13 @@ No Conventional Commits. Scope by package or device, matching history:
 
 ## Fork workflow (this working copy is a fork)
 
-`origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
+`origin` = `rasteratops/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.md` / `worktrees.md`; essentials:
 
 - Branch `next` = `upstream/next` + a personal overlay (`.claude/rules/`, `docs/`, `plans/`, `.githooks/`, ...). **Never PR `next` upstream.**
 - Feature work: branch `feature/<name>` from `next` in a worktree at `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
 - Upstream PRs use a throwaway branch built **by content**: `git checkout next -- <the feature paths>` onto a detached `upstream/next`, one commit. The old `git rebase --onto upstream/next next pr/<name>` recipe is retired — it produces an empty branch, silently, once the feature has been merged into `next`. `.githooks/pre-push` guards `pr/*`; it is the backstop, not the plan.
-- Issues go on the fork: always `gh --repo maxengel/rocknix` (upstream has Issues disabled).
+- Issues go on the fork: always `gh --repo rasteratops/distribution` (upstream has Issues disabled).
 - User-facing behavior changes need a follow-up docs PR to the separate `ROCKNIX/rocknix.org` repo.
 - Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`. A learning that is a *procedure* becomes a tool or a flag, not prose (`learning-capture.md` § 3).
 - Decisions go in `docs/decision-register.md` the same session they are made, and are cited by ID rather than re-argued; the table is **append-only** (`decision-register.md`). Out-of-band maintainer requests become fork issues the same session, quoting their words (`issue-tracking.md`, D-QA-012).

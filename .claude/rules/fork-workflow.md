@@ -6,7 +6,7 @@ paths:
 
 # Fork workflow & merging up to upstream
 
-This is a fork (`origin` = `maxengel/rocknix`) of `upstream` = `ROCKNIX/distribution`.
+This is a fork (`origin` = `rasteratops/distribution`) of `upstream` = `ROCKNIX/distribution`.
 The goal: keep personal artifacts in the fork, but open **clean** upstream PRs that contain
 only the feature work.
 
