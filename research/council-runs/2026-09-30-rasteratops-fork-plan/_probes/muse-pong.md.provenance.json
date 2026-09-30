@@ -1,0 +1,143 @@
+{
+  "artifact_path": "research/council-runs/2026-09-30-rasteratops-fork-plan/_probes/muse-pong.md",
+  "output_file_sha256": "95784973cc639977bff93619700168505cb8f7855e44fa643d34622a43706c87",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "prev_verdict_sha256": "7576bfc6469daaceb69c2cf5d34f95799cdacc274477fee809df09016ed27290",
+  "member": "muse",
+  "declared_model": "meta/muse-spark-1.3 (OpenRouter, via meta, effort=max)",
+  "substrate": "openrouter",
+  "transport": "sse",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-30T14:13:20.971Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "8da5f700eb534f465f90dc7a204f32c7709787c3eb8bd3456123d3b562419506"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-30T14:13:20.971Z",
+      "duration_ms": 2498,
+      "max_tokens": 4096,
+      "transport": "sse",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "meta/muse-spark-1.3",
+      "finish_reason": "stop",
+      "content_length": 4,
+      "tokens": {
+        "prompt": 19,
+        "completion": 97,
+        "total": 116,
+        "reasoning": 85
+      },
+      "model_identity_source": "provider_response",
+      "served_provider": "Meta",
+      "served_provider_observations": [
+        "Meta",
+        "Meta",
+        "Meta",
+        "Meta"
+      ],
+      "content_sha256": "95784973cc639977bff93619700168505cb8f7855e44fa643d34622a43706c87",
+      "stream_events": 4,
+      "stream_chunks": 1,
+      "stream_done": true,
+      "usage": {
+        "prompt_tokens": 19,
+        "completion_tokens": 97,
+        "total_tokens": 116,
+        "cost": 0.000436,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000436,
+          "upstream_inference_prompt_cost": 0.00002375,
+          "upstream_inference_completions_cost": 0.00041225
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 85,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      }
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 2505,
+    "retries_used": 0,
+    "file_artifact_sha256": "95784973cc639977bff93619700168505cb8f7855e44fa643d34622a43706c87",
+    "usage": {
+      "prompt_tokens": 19,
+      "completion_tokens": 97,
+      "total_tokens": 116,
+      "cost": 0.000436,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.000436,
+        "upstream_inference_prompt_cost": 0.00002375,
+        "upstream_inference_completions_cost": 0.00041225
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 85,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 19,
+      "completion": 97,
+      "total": 116,
+      "reasoning": 85
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "meta/muse-spark-1.3 (OpenRouter, via meta, effort=max)",
+      "observed": "meta/muse-spark-1.3",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 85
+    },
+    "provider_verification": {
+      "result": "PASS",
+      "declared": [
+        "Meta"
+      ],
+      "evidence": "response_provider_field",
+      "observed": "Meta",
+      "observed_providers": [
+        "Meta",
+        "Meta",
+        "Meta",
+        "Meta"
+      ]
+    }
+  },
+  "genesis_sha256": "cfbf01d9836cf3b0c5087e0c1fc6fdac90cfdfa6a90d3548d4b377116ff6c64c"
+}
