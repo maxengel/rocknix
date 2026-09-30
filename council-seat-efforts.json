@@ -1,0 +1,352 @@
+{
+  "schema_version": "council-seat-efforts@1.0.0",
+  "note": "Pinned snapshot of each council seat's model and the reasoning efforts that model accepts. Refresh with `npx tsx scripts/lint-council-seat-efforts.ts --refresh` (needs OPENROUTER_API_KEY); validate with the same script (no network). Exists because the gemini seat carried effort=xhigh against a model supporting only high/medium/low from 2026-07-11 to 2026-08-27 and nothing caught it.",
+  "refreshed_at": "2026-09-28T05:09:37Z",
+  "refreshed_from": "https://openrouter.ai/api/v1/models",
+  "models": {
+    "anthropic/claude-fable-5.1": {
+      "supported_efforts": [
+        "max",
+        "xhigh",
+        "high",
+        "medium",
+        "low"
+      ],
+      "reasoning_mandatory": true,
+      "default_effort": "high",
+      "max_completion_tokens": 128000,
+      "endpoints": [
+        {
+          "tag": "amazon-bedrock",
+          "provider_name": "Amazon Bedrock"
+        },
+        {
+          "tag": "anthropic",
+          "provider_name": "Anthropic"
+        },
+        {
+          "tag": "azure",
+          "provider_name": "Azure"
+        },
+        {
+          "tag": "google-vertex/global",
+          "provider_name": "Google"
+        }
+      ]
+    },
+    "google/gemini-3.8-flash": {
+      "supported_efforts": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "reasoning_mandatory": true,
+      "default_effort": "medium",
+      "max_completion_tokens": 65536,
+      "endpoints": [
+        {
+          "tag": "google-ai-studio",
+          "provider_name": "Google AI Studio"
+        },
+        {
+          "tag": "google-ai-studio/flex",
+          "provider_name": "Google AI Studio"
+        },
+        {
+          "tag": "google-ai-studio/priority",
+          "provider_name": "Google AI Studio"
+        },
+        {
+          "tag": "google-vertex/global",
+          "provider_name": "Google"
+        },
+        {
+          "tag": "google-vertex/global/flex",
+          "provider_name": "Google"
+        },
+        {
+          "tag": "google-vertex/global/priority",
+          "provider_name": "Google"
+        }
+      ]
+    },
+    "openai/gpt-6-astra": {
+      "supported_efforts": [
+        "max",
+        "xhigh",
+        "high",
+        "medium",
+        "low"
+      ],
+      "reasoning_mandatory": true,
+      "default_effort": "medium",
+      "max_completion_tokens": 128000,
+      "endpoints": [
+        {
+          "tag": "amazon-bedrock/us-west-2",
+          "provider_name": "Amazon Bedrock"
+        },
+        {
+          "tag": "azure",
+          "provider_name": "Azure"
+        },
+        {
+          "tag": "azure/us",
+          "provider_name": "Azure"
+        },
+        {
+          "tag": "openai",
+          "provider_name": "OpenAI"
+        },
+        {
+          "tag": "openai/fast",
+          "provider_name": "OpenAI"
+        },
+        {
+          "tag": "openai/flex",
+          "provider_name": "OpenAI"
+        }
+      ]
+    },
+    "moonshotai/kimi-k3": {
+      "supported_efforts": [
+        "max",
+        "high",
+        "low"
+      ],
+      "reasoning_mandatory": false,
+      "default_effort": "max",
+      "max_completion_tokens": 943718,
+      "endpoints": [
+        {
+          "tag": "alibaba",
+          "provider_name": "Alibaba"
+        },
+        {
+          "tag": "baseten/fp8",
+          "provider_name": "BaseTen"
+        },
+        {
+          "tag": "chutes/mxfp4",
+          "provider_name": "Chutes"
+        },
+        {
+          "tag": "deepinfra/bf16",
+          "provider_name": "DeepInfra"
+        },
+        {
+          "tag": "digitalocean",
+          "provider_name": "DigitalOcean"
+        },
+        {
+          "tag": "fireworks",
+          "provider_name": "Fireworks"
+        },
+        {
+          "tag": "fireworks/fast",
+          "provider_name": "Fireworks"
+        },
+        {
+          "tag": "fireworks/us",
+          "provider_name": "Fireworks"
+        },
+        {
+          "tag": "inference-net/fp4",
+          "provider_name": "InferenceNet"
+        },
+        {
+          "tag": "makora",
+          "provider_name": "Makora"
+        },
+        {
+          "tag": "modal/mxfp4",
+          "provider_name": "Modal"
+        },
+        {
+          "tag": "moonshotai/mxfp4",
+          "provider_name": "Moonshot AI"
+        },
+        {
+          "tag": "morph/fp8",
+          "provider_name": "Morph"
+        },
+        {
+          "tag": "parasail/fp4",
+          "provider_name": "Parasail"
+        },
+        {
+          "tag": "phala",
+          "provider_name": "Phala"
+        },
+        {
+          "tag": "relace/fp4",
+          "provider_name": "Relace"
+        },
+        {
+          "tag": "sail-research/fp4",
+          "provider_name": "Sail Research"
+        },
+        {
+          "tag": "together",
+          "provider_name": "Together"
+        },
+        {
+          "tag": "wafer",
+          "provider_name": "Wafer"
+        }
+      ]
+    },
+    "meta/muse-spark-1.3": {
+      "supported_efforts": [
+        "max",
+        "xhigh",
+        "high",
+        "medium",
+        "low",
+        "minimal"
+      ],
+      "reasoning_mandatory": true,
+      "default_effort": "medium",
+      "max_completion_tokens": 943718,
+      "endpoints": [
+        {
+          "tag": "meta",
+          "provider_name": "Meta"
+        }
+      ]
+    },
+    "x-ai/grok-4.7": {
+      "supported_efforts": [
+        "xhigh",
+        "high",
+        "medium",
+        "low"
+      ],
+      "reasoning_mandatory": true,
+      "default_effort": "high",
+      "max_completion_tokens": 450000,
+      "endpoints": [
+        {
+          "tag": "xai",
+          "provider_name": "xAI"
+        },
+        {
+          "tag": "xai/priority",
+          "provider_name": "xAI"
+        },
+        {
+          "tag": "xai/zdr",
+          "provider_name": "xAI"
+        },
+        {
+          "tag": "xai/zdr/priority",
+          "provider_name": "xAI"
+        }
+      ]
+    },
+    "deepseek/deepseek-v4-pro-0813": {
+      "supported_efforts": [
+        "max",
+        "high",
+        "low"
+      ],
+      "reasoning_mandatory": false,
+      "default_effort": "high",
+      "max_completion_tokens": 943718,
+      "endpoints": [
+        {
+          "tag": "alibaba",
+          "provider_name": "Alibaba"
+        },
+        {
+          "tag": "atlas-cloud/fp8",
+          "provider_name": "AtlasCloud"
+        },
+        {
+          "tag": "baidu/fp8",
+          "provider_name": "Baidu"
+        },
+        {
+          "tag": "cloudflare",
+          "provider_name": "Cloudflare"
+        },
+        {
+          "tag": "coreweave/fp8",
+          "provider_name": "CoreWeave"
+        },
+        {
+          "tag": "deepinfra/fp8",
+          "provider_name": "DeepInfra"
+        },
+        {
+          "tag": "deepseek",
+          "provider_name": "DeepSeek"
+        },
+        {
+          "tag": "digitalocean",
+          "provider_name": "DigitalOcean"
+        },
+        {
+          "tag": "fireworks",
+          "provider_name": "Fireworks"
+        },
+        {
+          "tag": "gmicloud/fp8",
+          "provider_name": "GMICloud"
+        },
+        {
+          "tag": "ionstream",
+          "provider_name": "Ionstream"
+        },
+        {
+          "tag": "nextbit/fp8",
+          "provider_name": "NextBit"
+        },
+        {
+          "tag": "novita/fp8",
+          "provider_name": "Novita"
+        },
+        {
+          "tag": "parasail/fp8",
+          "provider_name": "Parasail"
+        },
+        {
+          "tag": "phala",
+          "provider_name": "Phala"
+        },
+        {
+          "tag": "relace/fp4",
+          "provider_name": "Relace"
+        },
+        {
+          "tag": "sail-research/fp4",
+          "provider_name": "Sail Research"
+        },
+        {
+          "tag": "sail-research/us",
+          "provider_name": "Sail Research"
+        },
+        {
+          "tag": "siliconflow/fp8",
+          "provider_name": "SiliconFlow"
+        },
+        {
+          "tag": "streamlake",
+          "provider_name": "StreamLake"
+        },
+        {
+          "tag": "together",
+          "provider_name": "Together"
+        },
+        {
+          "tag": "venice",
+          "provider_name": "Venice"
+        },
+        {
+          "tag": "wafer",
+          "provider_name": "Wafer"
+        }
+      ]
+    }
+  }
+}

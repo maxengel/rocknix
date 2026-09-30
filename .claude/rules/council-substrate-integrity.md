@@ -1,18 +1,18 @@
 ---
-description: Hard, mechanically-enforced rules for any council or council-research invocation. Every council member call MUST go through the Council Facilitator (`tools/council/council-invoke.ts`). `runSubagent`, ad-hoc `curl`/`fetch`, MCP provider tools, and bespoke scripts are FORBIDDEN as council member invocation paths. Auto-loads on every council / council-research artifact so the rule is in the orchestrator's context at the relevant moment, not buried inside a skill reference doc the orchestrator may not open.
+description: "Hard, mechanically-enforced rules for any council or council-research invocation. Every council member call MUST go through the Council Facilitator (`scripts/council-invoke.ts`). `runSubagent`, ad-hoc `curl`/`fetch`, MCP provider tools, and bespoke scripts are FORBIDDEN as council member invocation paths. Auto-loads on every council / council-research artifact so the rule is in the orchestrator's context at the relevant moment, not buried inside a skill reference doc the orchestrator may not open."
 paths:
   - "research/council-research/**"
   - "research/council-runs/**"
   - ".claude/skills/council-research/**"
   - ".claude/skills/council/**"
   - ".claude/agents/council-member-*.agent.md"
-  - "tools/council/council-invoke.ts"
-  - "tools/council/lib/council-verification.ts"
+  - "scripts/council-invoke.ts"
+  - "scripts/lib/council-verification.ts"
 ---
 
 <!--
 PROVENANCE (#260 — adopted, not authored):
-  source: an external repository, .claude/rules/council-substrate-integrity.md
+  source: the source estate, .github/instructions/council-substrate-integrity.instructions.md
   adopted: 2026-08-02 · transform: de-generated (that estate generates it from agent-instructions/;
   scaffold authors it directly), agent paths .github/agents/ -> .claude/agents/ (the corpus
   agents category). No auto-sync: refresh = deliberate re-review.
@@ -31,20 +31,25 @@ the orchestrator's context whenever it touches a council or
 council-research artifact — not buried inside a skill reference doc
 the orchestrator may not have opened on the turn that matters.
 
-> **Adoption scope (scaffold, 2026-08-02 — #260):** rules 1–3 (Facilitator-only
-> invocation, forbidden paths, HALT on exit 3) bind EVERYWHERE the council skills
-> are seeded, unconditionally. Rules 4, 5, and 7 reference the pinned-verifier
-> lint stack (`lint-council-research-*.ts`, `verifier-pins.json`) which that estate
-> carries and scaffolded estates do not yet — where that tooling is absent, the
-> orchestrator performs the same checks manually (verify each provenance record's
-> `facilitator_version` + served-model identity before advancing) and the lint
-> stack's adoption is tracked as follow-up work. Rule 6 (substrate edits are
-> orchestrator-only) binds everywhere as written.
+> **Adoption scope (scaffold, 2026-08-02 — #260; revised 2026-09-10 — #571):**
+> rules 1–3 (Facilitator-only invocation, forbidden paths, HALT on exit 3) bind
+> EVERYWHERE the council skills are seeded, unconditionally. Since corpus 4.7.0 the
+> pinned-verifier stack that rules 4, 5 and 7 lean on ships WITH the corpus —
+> `scripts/verify-pins.ts` + `scripts/lib/verifier-pins.ts` with `verifier-pins.json`
+> (seeded as a repo-owned starting point pinning the corpus's own verifiers), and
+> `scripts/lint-council-seat-efforts.ts` with the pinned catalog snapshot
+> `council-seat-efforts.json` — so the pin and seat checks run as written in every
+> seeded estate (`pipeline.md` § Setup names them). The council-research lint stack
+> (`lint-council-research-*.ts`) is still carried by the source estate only; where it
+> is absent the orchestrator performs those checks manually (verify each provenance
+> record's `facilitator_version` + served-model identity before advancing) and its
+> adoption remains follow-up work. Rule 6 (substrate edits are orchestrator-only)
+> binds everywhere as written.
 
 ## Hard rules (mechanical)
 
 1. **Every council member invocation MUST go through
-   [`tools/council/council-invoke.ts`](../../tools/council/council-invoke.ts).**
+   [`scripts/council-invoke.ts`](../../scripts/council-invoke.ts).**
    This applies to **all phases of all skills** that invoke a member:
    - `council` skill Steps 1–4 + tie-break recursion rounds
    - `council-research` skill Phase 1 (independent research) and
@@ -109,7 +114,7 @@ The R8 vocabulary-research council-research run (2026-05-27,
 issue #3059) is the canonical substrate-collapse incident:
 
 - The orchestrator invoked all 5 council members via `runSubagent`
-  instead of `tools/council/council-invoke.ts`.
+  instead of `scripts/council-invoke.ts`.
 - All 5 produced corpora that attributed themselves to the
   orchestrator's own model (`claude-opus-4.7`).
 - The artifact-shape was structurally correct (`.provenance.json`
@@ -169,10 +174,10 @@ next council-research commit.
 ## Self-check before any council member invocation
 
 - [ ] Am I about to call `runSubagent` with `agentName` starting with
-      `council-member-`? **STOP.** Use `tools/council/council-invoke.ts`.
+      `council-member-`? **STOP.** Use `scripts/council-invoke.ts`.
 - [ ] Am I about to `curl`, `fetch`, or call an MCP tool against an
       LLM provider for council deliberation? **STOP.** Use
-      `tools/council/council-invoke.ts`.
+      `scripts/council-invoke.ts`.
 - [ ] Have I read the relevant phase reference doc and the council
       skill's § Hard rules section on this turn? If no, read them now.
 - [ ] After this invocation completes, will I run the provenance +
@@ -184,7 +189,7 @@ next council-research commit.
   § Hard rules — the original, canonical statement of these rules
 - [`.claude/skills/council-research/references/phase-1-independent-research.md`](../../.claude/skills/council-research/references/phase-1-independent-research.md)
   § Invocation discipline — the Phase 1 -specific application
-- [`tools/council/council-invoke.ts`](../../tools/council/council-invoke.ts)
+- [`scripts/council-invoke.ts`](../../scripts/council-invoke.ts)
   — the Facilitator implementation
 - [`scripts/lint-council-research-provenance.ts`](../../scripts/lint-council-research-provenance.ts)
   — the post-hoc provenance + cross-corpus identity lint
@@ -205,7 +210,7 @@ A second substrate-integrity gap surfaced while finishing the R8 work.
 The working tree had accumulated two classes of silent change to the
 council substrate that no gate caught:
 
-1. **Silent re-pin (Gap 1).** `tools/council/council-invoke.ts` was
+1. **Silent re-pin (Gap 1).** `scripts/council-invoke.ts` was
    legitimately upgraded (Opus 4.7 → 4.8) and `verifier-pins.json` was
    re-hashed to match — but the byte-integrity check (`verify-pins.ts`)
    passes whenever the manifest and the file agree, so a writer who

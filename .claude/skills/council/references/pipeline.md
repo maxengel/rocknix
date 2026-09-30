@@ -1,7 +1,7 @@
 # Pipeline — the 6-step council process
 
-The council pipeline is **member-count-parameterized**: every step that
-says "each member" iterates over the active roster determined in Setup
+The council pipeline requires **all five members**: every step that
+says "each member" iterates over the complete roster verified in Setup
 per [`member-roster.md`](member-roster.md). The roster is fixed for the
 duration of a single council run — you do not re-detect mid-run.
 
@@ -9,30 +9,68 @@ duration of a single council run — you do not re-detect mid-run.
 
 When the user provides a problem context:
 
+Scope the actual member requests using
+[`context-loading.md` § Archive and request scope](context-loading.md#archive-and-request-scope)
+before treating an archive-size estimate as a roster or methodology blocker.
+
 1. **Determine the output directory** per
    [`output-conventions.md`](output-conventions.md):
    `research/council-runs/YYYY-MM-DD-{topic}/`
 2. **Determine the active roster** per
    [`member-roster.md`](member-roster.md). Surface the chosen roster
-   (3 or 4 members) to the user before proceeding.
+   (all five members) to the user before proceeding. A failed seat blocks
+   Setup for diagnosis; do not reduce or change an anchored roster in place.
+For an authorized shadow campaign, apply [shadow experiments](shadow-experiments.md)
+and select its explicit five-seat profile before Setup. Every arm gets a separate
+manifest, genesis, ledger and seals. The default profile is definitive, with Muse in the fifth seat;
+the fifth-seat evaluation runs the `grok-shadow` and `deepseek-shadow` arms beside every definitive run (scaffold#915).
+
 3. **Create the directory layout** (initial analyses at the top level;
    subdirectories for `peer_reviews/`, `revised_approaches/`,
    `peer_votes/`) and write `council-run-manifest.json` per
    [`output-conventions.md`](output-conventions.md) § "Run manifest".
-4. **Anchor the run genesis** before invoking any member:
+4. **Pre-flight the substrate** (scaffold#571 / #524) — run the checks
+   the corpus ships beside the Facilitator; halt Setup on any
+   finding:
 
    ```bash
-   npx tsx scripts/council-run-start.ts --run-dir {output_dir}
+   node scripts/verify-pins.ts
+   node scripts/lint-council-seat-efforts.ts --strict
+   npx tsx --test scripts/__tests__/council-invoke-routing.node-test.ts
+   node --test scripts/council-toolchain.node-test.mjs
    ```
 
-   This writes `verification/genesis.json`, creates
-   `verification-anchors/<run_id>`, commits the genesis file on that
-   branch, and pushes it to the configured remote. It also verifies
-   `verifier-pins.json` before any mutation. If the command fails, halt
-   setup; do not start an unanchored non-legacy run or a run with drifting
-   verifier bytes.
+   The first proves every pinned verifier's bytes match `verifier-pins.json`
+   and that any re-pin carries a reason; the second proves every seat's
+   effort and output ceiling against the pinned catalog snapshot
+   `council-seat-efforts.json`; the third proves route selection and each
+   seat's pin, effort and ceiling, plus buffered/SSE actual-invoker and CLI
+   identity failures (scaffold#665). `council-facilitator@<semver>` in the
+   provenance siblings is the substrate version these checks vouch for.
+   The fourth executes all seven standalone helpers against a fake transport,
+   with local disposable anchors and no provider or Forge writes. It proves
+   tooling behavior, not live key access or council conclusions. Node 24 runs
+   the helpers natively; no application package manager or SDK is required.
+5. **Anchor the run genesis** before invoking any member:
 
-5. **Set up the todo list** with one todo per (step, member) pair plus
+   ```bash
+   node scripts/council-run-start.ts --run-dir {output_dir}
+   ```
+
+   This checks the manifest, recipe binding and accountable pins, then writes
+   `verification/genesis.json` and creates `verification-anchors/<run_id>`
+   with Git plumbing. The working branch and index never change; the anchor
+   tree contains only genesis, never a seal key or unrelated staged files.
+   Live publishing requires the in-tree Forge preflight to report `ready`,
+   selects that same machine credential by file reference, and reads back
+   the remote ref before recording `verification/anchor-receipt.json`.
+   A refusal prints the existing protocol's next action, never a personal-token
+   fallback. `--no-push` is local/offline setup only and cannot authorize calls.
+   Retry identical setup safely; do not replace a missing existing seal key.
+   The generated 0600 key is ignored by the seeded policy; it may alternatively
+   be supplied through `COUNCIL_SEAL_HMAC_KEY`. Neither key belongs in Git.
+
+6. **Set up the todo list** with one todo per (step, member) pair plus
    the cross-step synthesis checkpoints.
 
 ## Mandatory context loading
@@ -62,7 +100,7 @@ in orchestrator-authored artifacts (`model-verification-log.md`,
 Step 2, Step 3, Step 4, or Step 4.5 member prompts.
 
 Source case: the 2026-05-22
-[`step5-meta-retrospective.md`](../../../../research/council-runs/2026-05-22-model-identity-verification-technique/step5-meta-retrospective.md)
+the 2026-05-22 council run step-5 meta-retrospective (the source estate's repository, research/council-runs/)
 documents the self-citation pattern that this rule prevents.
 
 ## Mandatory model-verification gate
@@ -73,14 +111,25 @@ MUST run the model-verification gate per
 [`model-verification.md`](model-verification.md) before advancing. The
 gate compares each member's observed-model against its declared-model:
 
-- **Direct-API (default)** — read each member's per-invocation
+- **OpenRouter (default)** — read each member's per-invocation
   `*.provenance.json` sibling (written by the **Council Facilitator**,
-  `tools/council/council-invoke.ts`). The `final.verification.result` field
+  `scripts/council-invoke.ts`). The `final.verification.result` field
   is the per-member gate outcome; `final.outcome` distinguishes
-  retry-exhaustion classes from model-mismatch FAIL.
-- **Copilot-subagent (legacy fallback)** — read Cache Explorer / OTLP
-  logs when the orchestrator runs at a cost tier that permits
-  premium-model invocation via `runSubagent`.
+  retry-exhaustion classes from model-mismatch FAIL. Content success
+  with missing/blank model identity is `UNVERIFIABLE`, not PASS; the
+  Facilitator retains the content but exits 6. No Setup or later step
+  advances on content success alone.
+- **Historical harness/direct-provider records** are audit material, not
+  proof for a new anchored OpenRouter run.
+
+Current runs also require `final.effort_verification.result == "PASS"`.
+Positive provider reasoning tokens show that a reasoning seat reasoned; they
+do **not** attest its exact effort level. Missing evidence remains UNVERIFIABLE.
+(Mistral's non-reasoning recipe, outside every profile since scaffold#915, needed no
+reasoning field.) Recipe identity is
+bound by `roster_contract`, derived from the installed Facilitator; there is
+no second editable roster JSON. Coordinator preference and observed runtime
+identity remain separate, with `voting: false`.
 
 Record every gate outcome in `model-verification-log.md` (schema in
 [`output-conventions.md`](output-conventions.md)). The gate returns
@@ -88,11 +137,13 @@ PASS / FAIL / UNVERIFIABLE.
 
 - **PASS** → advance to the next step.
 - **FAIL** → halt the run, surface the mismatch, recover per
-  `model-verification.md` § Failure recovery (re-run, degrade roster,
-  or abort — NEVER silently substitute another model into a missing
-  seat).
-- **UNVERIFIABLE** → default to halting and asking the user to enable
-  the file-logging settings + restart the session.
+  `model-verification.md` § Failure recovery (repair and retry, or hold the run — never reduce the roster or
+  silently substitute another model into a missing seat).
+- **UNVERIFIABLE** → halt by default and preserve the evidence. For a
+  direct API response, investigate its provider/transport model field;
+  restarting the harness or enabling Copilot logging cannot supply it.
+  Follow [`model-verification.md`](model-verification.md) before retrying
+  or restarting. All five identities must pass before advancement.
 
 The gate is **the gate that decides whether the prior step can be
 trusted as input to the next step**. Skipping it lets corruption
@@ -103,8 +154,9 @@ propagate silently through the pipeline.
 Invoke each active member via the **Council Facilitator**. Every seat is
 a different provider, so the whole roster can run in parallel (the ledger
 is lock-protected); run smaller batches only if you want to watch each
-seat land. Each member reads identical input regardless of ordering. For
-each member:
+seat land. Each member reads identical input regardless of ordering (the
+2026-09-03 limits audit retired the "one at a time" guidance — it only
+added wall-clock). For each member:
 
 1. Compose the Step 1 prompt (a shared prompt that lists the required
    source-document `read_file` instructions per
@@ -116,27 +168,36 @@ each member:
 3. Invoke the Council Facilitator:
 
    ```bash
-   npx tsx tools/council/council-invoke.ts \
-     --member <claude|gemini|gpt|kimi|mistral> \
+   node scripts/council-invoke.ts \
+     --member <claude|gemini|gpt|kimi|muse> \
      --prompt-file {output_dir}/_prompts/step1-shared.md \
-     --output {output_dir}/{member}-analysis.md
+     --output {output_dir}/{member}-analysis.md \
+     --source-manifest {output_dir}/source-manifest.json
    ```
 
    This writes the member's analysis content to
    `{member}-analysis.md` and the per-invocation provenance to
    `{member}-analysis.md.provenance.json` (the verification-gate input).
-   If the command exits non-zero, stop and surface the provider failure;
-   do not synthesize a substitute output.
+   If the command exits non-zero, stop and surface the classified failure
+   or identity uncertainty; do not synthesize a substitute output.
+
+   The source manifest contains `sources: [{"path": "repo-relative.md",
+   "sha256": "<digest>"}]` for the full mandatory context. The Facilitator
+   embeds verified bytes; filenames alone do not give a stateless model file
+   access. Anchored calls reject ignored sources, traversal and symlinks.
+   Existing output/sidecar files are never overwritten. A previous failed or
+   unverifiable invocation halts further calls in that run; preserve it for
+   the recovery decision rather than deleting evidence to retry.
 
 Member-to-file mapping:
 
 | Member                   | Output file                                  | Required env        |
 | ------------------------ | -------------------------------------------- | ------------------- |
-| `council-member-claude`  | `claude-analysis.md` (+ `.provenance.json`)  | `ANTHROPIC_API_KEY` |
-| `council-member-gemini`  | `gemini-analysis.md` (+ `.provenance.json`)  | `GOOGLE_AI_API_KEY` |
-| `council-member-gpt`     | `gpt-analysis.md` (+ `.provenance.json`)     | `AZURE_AI_API_KEY`  |
-| `council-member-kimi`    | `kimi-analysis.md` (+ `.provenance.json`)    | `AZURE_AI_API_KEY`  |
-| `council-member-mistral` | `mistral-analysis.md` (+ `.provenance.json`) | `AZURE_AI_API_KEY`  |
+| `council-member-claude`  | `claude-analysis.md` (+ `.provenance.json`)  | `OPENROUTER_API_KEY` |
+| `council-member-gemini`  | `gemini-analysis.md` (+ `.provenance.json`)  | `OPENROUTER_API_KEY` |
+| `council-member-gpt`     | `gpt-analysis.md` (+ `.provenance.json`)     | `OPENROUTER_API_KEY` |
+| `council-member-kimi`    | `kimi-analysis.md` (+ `.provenance.json`)    | `OPENROUTER_API_KEY` |
+| `council-member-muse`    | `muse-analysis.md` (+ `.provenance.json`)    | `OPENROUTER_API_KEY` |
 
 **After all members complete:**
 
@@ -147,10 +208,10 @@ Member-to-file mapping:
    (observed 2026-08-17, q3q4 run, step 1 boundary).
 
    ```bash
-   npx tsx scripts/write-step-seal.ts --run-dir {output_dir} --step 1
-   npx tsx tools/council/lint-council-run.ts --at-step 1 --strict {output_dir}
-   npx tsx scripts/verify-chain.ts --strict {output_dir}
-   npx tsx scripts/verify-seals.ts --strict {output_dir}
+   node scripts/write-step-seal.ts --run-dir {output_dir} --step 1
+   node scripts/lint-council-run.ts --at-step 1 --strict {output_dir}
+   node scripts/verify-chain.ts --strict {output_dir}
+   node scripts/verify-seals.ts --strict {output_dir}
    ```
 
 2. Stop on any lint finding — the lint verifies every Step 1 output,
@@ -170,8 +231,8 @@ Member-to-file mapping:
    `final.outcome != "success"` (e.g. retries exhausted, permanent
    provider error), surface the partial-step state to the user before
    options per [`model-verification.md`](model-verification.md) §
-   Failure recovery: fix-and-rerun the missing member, degrade the
-   roster, or abort.
+   Failure recovery: diagnose and repair the missing member, then retry;
+   otherwise hold the run with its evidence intact.
 5. Briefly **summarize the key themes and divergences** across the
    analyses before proceeding to Step 2.
 
@@ -180,12 +241,12 @@ Member-to-file mapping:
 Each member reads the **other members'** analyses (not their own) and
 writes a peer review. Invoke via the Council Facilitator with a
 Step 2 prompt generated by `scripts/build-council-prompt.ts`; the
-helper reads `council-run-manifest.json`, injects the other members'
-Step 1 analyses, and fails closed with `required_sibling_missing` if a
-declared sibling is absent.
+helper reads `council-run-manifest.json`, verifies the prior step's artifacts,
+ledger and seals, and injects every other member's Step 1 analysis exactly once.
+Missing or invalid siblings fail with `prior_step_unverified`; self is excluded.
 
 ```bash
-npx tsx scripts/build-council-prompt.ts \
+node scripts/build-council-prompt.ts \
    --step 2 \
    --member <member> \
    --run-dir {output_dir} \
@@ -204,7 +265,7 @@ when present; otherwise it uses the canonical future-run template in
 | `council-member-gemini`  | every other member's `*-analysis.md` | `peer_reviews/gemini_peer_review.md` (+ provenance)                                           |
 | `council-member-gpt`     | every other member's `*-analysis.md` | `peer_reviews/gpt_peer_review.md` (+ provenance)                                              |
 | `council-member-kimi`    | every other member's `*-analysis.md` | `peer_reviews/kimi_peer_review.md` (+ provenance)                                             |
-| `council-member-mistral` | every other member's `*-analysis.md` | `peer_reviews/mistral_peer_review.md` (+ provenance)                                          |
+| `council-member-muse`    | every other member's `*-analysis.md` | `peer_reviews/muse_peer_review.md` (+ provenance)                                             |
 
 **After all members complete:**
 
@@ -212,10 +273,10 @@ when present; otherwise it uses the canonical future-run template in
    Step 1 boundary note):
 
    ```bash
-   npx tsx scripts/write-step-seal.ts --run-dir {output_dir} --step 2
-   npx tsx tools/council/lint-council-run.ts --at-step 2 --strict {output_dir}
-   npx tsx scripts/verify-chain.ts --strict {output_dir}
-   npx tsx scripts/verify-seals.ts --strict {output_dir}
+   node scripts/write-step-seal.ts --run-dir {output_dir} --step 2
+   node scripts/lint-council-run.ts --at-step 2 --strict {output_dir}
+   node scripts/verify-chain.ts --strict {output_dir}
+   node scripts/verify-seals.ts --strict {output_dir}
    ```
 
 2. Stop on any lint finding before invoking the next step.
@@ -235,7 +296,7 @@ via the Council Facilitator with a Step 3 prompt generated by
 `scripts/build-council-prompt.ts`:
 
 ```bash
-npx tsx scripts/build-council-prompt.ts \
+node scripts/build-council-prompt.ts \
    --step 3 \
    --member <member> \
    --run-dir {output_dir} \
@@ -254,7 +315,7 @@ when present; otherwise it uses the canonical future-run template in
 | `council-member-gemini`  | every other member's `peer_reviews/*_peer_review.md` | `revised_approaches/gemini-revised_plan.md` (+ provenance)  |
 | `council-member-gpt`     | every other member's `peer_reviews/*_peer_review.md` | `revised_approaches/gpt-revised_plan.md` (+ provenance)     |
 | `council-member-kimi`    | every other member's `peer_reviews/*_peer_review.md` | `revised_approaches/kimi-revised_plan.md` (+ provenance)    |
-| `council-member-mistral` | every other member's `peer_reviews/*_peer_review.md` | `revised_approaches/mistral-revised_plan.md` (+ provenance) |
+| `council-member-muse`    | every other member's `peer_reviews/*_peer_review.md` | `revised_approaches/muse-revised_plan.md` (+ provenance)    |
 
 **After all members complete:**
 
@@ -262,10 +323,10 @@ when present; otherwise it uses the canonical future-run template in
    Step 1 boundary note):
 
    ```bash
-   npx tsx scripts/write-step-seal.ts --run-dir {output_dir} --step 3
-   npx tsx tools/council/lint-council-run.ts --at-step 3 --strict {output_dir}
-   npx tsx scripts/verify-chain.ts --strict {output_dir}
-   npx tsx scripts/verify-seals.ts --strict {output_dir}
+   node scripts/write-step-seal.ts --run-dir {output_dir} --step 3
+   node scripts/lint-council-run.ts --at-step 3 --strict {output_dir}
+   node scripts/verify-chain.ts --strict {output_dir}
+   node scripts/verify-seals.ts --strict {output_dir}
    ```
 
 2. Stop on any lint finding before invoking the next step.
@@ -286,7 +347,7 @@ the Council Facilitator with a Step 4 prompt generated by
 `scripts/build-council-prompt.ts`:
 
 ```bash
-npx tsx scripts/build-council-prompt.ts \
+node scripts/build-council-prompt.ts \
    --step 4 \
    --member <member> \
    --run-dir {output_dir} \
@@ -305,7 +366,7 @@ when present; otherwise it uses the canonical future-run template in
 | `council-member-gemini`  | every other member's `revised_approaches/*-revised_plan.md` | `peer_votes/gemini_vote.md` (+ provenance)  |
 | `council-member-gpt`     | every other member's `revised_approaches/*-revised_plan.md` | `peer_votes/gpt_vote.md` (+ provenance)     |
 | `council-member-kimi`    | every other member's `revised_approaches/*-revised_plan.md` | `peer_votes/kimi_vote.md` (+ provenance)    |
-| `council-member-mistral` | every other member's `revised_approaches/*-revised_plan.md` | `peer_votes/mistral_vote.md` (+ provenance) |
+| `council-member-muse`    | every other member's `revised_approaches/*-revised_plan.md` | `peer_votes/muse_vote.md` (+ provenance)    |
 
 **After all members complete:**
 
@@ -313,10 +374,10 @@ when present; otherwise it uses the canonical future-run template in
    Step 1 boundary note):
 
    ```bash
-   npx tsx scripts/write-step-seal.ts --run-dir {output_dir} --step 4
-   npx tsx tools/council/lint-council-run.ts --at-step 4 --strict {output_dir}
-   npx tsx scripts/verify-chain.ts --strict {output_dir}
-   npx tsx scripts/verify-seals.ts --strict {output_dir}
+   node scripts/write-step-seal.ts --run-dir {output_dir} --step 4
+   node scripts/lint-council-run.ts --at-step 4 --strict {output_dir}
+   node scripts/verify-chain.ts --strict {output_dir}
+   node scripts/verify-seals.ts --strict {output_dir}
    ```
 
 2. Stop on any lint finding before invoking the next step.
@@ -333,7 +394,7 @@ when present; otherwise it uses the canonical future-run template in
   [`voting-rules.md`](voting-rules.md) § "Margin-driven consensus
   integration", offer the opt-in Step 4.5 consensus integration round;
   otherwise proceed to Step 5.
-- **Plurality winner (4-member only):** summarize the reasoning,
+- **Plurality winner (2-1-1-1, all five valid ballots):** summarize the reasoning,
   present the plurality result + dissent to the user, and ask whether
   to accept the plurality or recurse for stronger consensus.
 - **Tie:** **do not pause for user input.** Recurse through Steps 2–4
@@ -349,7 +410,7 @@ the winning plan remains the base, and conflicting dissents are carried
 as explicit dissent rather than flattened.
 
 Source case: the 2026-05-22
-[`step5-meta-retrospective.md`](../../../../research/council-runs/2026-05-22-model-identity-verification-technique/step5-meta-retrospective.md)
+the 2026-05-22 council run step-5 meta-retrospective (the source estate's repository, research/council-runs/)
 identified the 3-1-1 vote's unresolved dissent primitives as a handoff
 risk.
 
@@ -370,12 +431,12 @@ When the user opts in:
 5. Write and verify the Step 4.5 seal:
 
    ```bash
-   npx tsx scripts/write-step-seal.ts --run-dir {output_dir} --step 4_5
-   npx tsx scripts/verify-chain.ts --strict {output_dir}
-   npx tsx scripts/verify-seals.ts --strict {output_dir}
+   node scripts/write-step-seal.ts --run-dir {output_dir} --step 4_5
+   node scripts/verify-chain.ts --strict {output_dir}
+   node scripts/verify-seals.ts --strict {output_dir}
    ```
 
-6. Run `npx tsx tools/council/lint-council-run.ts --full --strict
+6. Run `node scripts/lint-council-run.ts --full --strict
 {output_dir}` and the model-verification gate for the consensus-plan
    invocation. Halt on FAIL, UNVERIFIABLE, or missing provenance.
 7. Use `consensus_plan.md` as the Step 5 handoff input.
@@ -396,9 +457,10 @@ Required `consensus_plan.md` shape:
 
 ## Step 5 — Create issue
 
-After the user selects (or accepts) a winning plan, invoke **one**
-member subagent (preferably the author of the winning plan) to create a
-comprehensive GitHub issue based on the selected plan. The issue should:
+After the user selects (or accepts) a winning plan, the orchestrator creates
+or updates the corresponding **Forge** issue through the estate's approved
+machine route. Reconcile existing stories instead of creating duplicates;
+member models do not receive publishing credentials. The issue should:
 
 - Open with a one-paragraph context summary
 - List clear phases with specific, actionable todos
@@ -412,12 +474,16 @@ comprehensive GitHub issue based on the selected plan. The issue should:
 Before handoff, write the close-out summaries:
 
 ```bash
-npx tsx scripts/council-run-summary.ts --run-dir {output_dir}
+node scripts/council-run-summary.ts --run-dir {output_dir}
 ```
 
 This writes `run-summary.json` and `run-summary.md`, including token
 usage, attempt duration, `tokens_per_second`, and any
 `usage_unavailable` rows. Link `run-summary.md` from the run `README.md`.
+The summary refuses incomplete, legacy or invalid runs before writing, and
+includes each recursion round separately. Its totals cover manifest-declared
+outputs, not Setup probes. Missing usage is unknown, not observed zero; HMAC
+seals prove local continuity, not independent provider-signed attestation.
 
 Hand off to the user. The issue from Step 5 is the starting point for
 execution. Remind the user of the execution principles:

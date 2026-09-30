@@ -1,56 +1,85 @@
 # Where this council came from, and what was changed on the way in
 
-Imported 2026-09-05 (fork issue #70, D-WORKFLOW-003) from the
-`pfi/pfi-collaboration` lineage on the forge, via marvin's clone at
-`~/Development/pfi-collaboration`:
+**Since 2026-09-30 the council toolchain is scaffold's own export, at scaffold's own
+paths, byte for byte** (D-WORKFLOW-088). The bundle the maintainer's agent on marvin
+delivered -- `COUNCIL-BUNDLE.md` and `COUNCIL-BUNDLE.SHA256SUMS` beside this file, from
+scaffold `main` at `7be6721be24458910e75ca639f318d25ffe7e8d5` (2026-09-30, corpus 4.29.1
+plus #976) -- holds 94 files: `scripts/council-*`, `scripts/lint-council-*`, the verifiers,
+`scripts/lib/`, `scripts/__tests__/`, `seed/corpus/`, `verifier-pins.json`,
+`council-seat-efforts.json`, `.claude/agents/council-member-*.agent.md`,
+`.claude/skills/council/`, `.claude/skills/council-research/` and `docs/council-*.md`.
+They are committed here unchanged, so the pins verify as delivered and the next drop
+applies by copying over.
 
-| What | Source commit |
-| --- | --- |
-| repository HEAD at import | `7666e87ac5a48e6baf5b99f467311c2b6d62107f` (2026-09-04) |
-| `.claude/skills/council/**`, member agents, rules | `d51c09c9d60b332d57f3bbbaf364ba0c9efc3317` (2026-09-03, "limits audit + roster docs for the lifted limits") |
-| Facilitator, its library, the lint | `8a4ef909b2832174db43a85448ecb1f46358a0d1` (2026-09-03, "lift the limits that cost a Step 1") |
-
-That estate's copy (`7bcac00`, 2026-08-02) is older and lacks
-`lint-council-run.ts`; do not refresh from it.
-
-## Layout here, and the patches that follow from it
-
-| Estate path | Here | Why |
+| Bundle path | Here | Why |
 | --- | --- | --- |
-| every council script — `council-invoke.ts`, `lint-council-run.ts`, `council-run-start.ts`, `build-council-prompt.ts`, `write-step-seal.ts`, `council-run-summary.ts`, `verify-pins.ts`, `verify-chain.ts`, `verify-seals.ts`, `check-stale-blob-drift.ts`, `lint-council-seat-efforts.ts`, and `lib/council-verification.ts`, `lib/verifier-pins.ts` | `tools/council/` | `scripts/` is the build engine in this repo; fork-only tools live under `tools/` and are enumerated in `.githooks/pre-push` |
-| `.github/instructions/*.instructions.md` | `.claude/rules/council-substrate-integrity.md`, `.claude/rules/adversarial-council.md` | this repo's rules; `applyTo:` became `paths:` |
-| `.claude/agents/council-member-*.agent.md` | same path | the Facilitator does not read them; they document each seat. Copilot-only front-matter keys (`tools:`, `model:`) are kept as `x-tools:` / `x-declared-model:` so Claude Code does not reject the file |
-| `research/council-runs/` | same path | output home; a personal path on `next`, never in an upstream PR |
+| everything under `scripts/`, `seed/`, `docs/`, `.claude/agents/`, `.claude/skills/`, and the two root JSON files | same path, same bytes | the pins hash these; `verifier-pins.ts` reads `verifier-pins.json` at the repository root |
+| `.github/instructions/*.instructions.md` | `.claude/rules/*.md`, `applyTo:` as a `paths:` list, `description` first (D-WORKFLOW-009) | this repo's rules directory; `.github/instructions/` is retired here. `adversarial-council.md` keeps the fork's own section (the maintainer's 2026-09-05 words on seat length) |
+| `.gitignore` | the council lines merged into ours (`.council-*`, `research/**/verification/seal-key.local`; `.work/` was already ignored) | the toolchain tests copy the root ignore file into their fixture, and run-start refuses a seal key that is not ignored |
+| `COUNCIL-BUNDLE.md`, `SHA256SUMS` | this directory | the bundle's own record |
 
-Patches applied (recorded so a refresh can re-apply them):
+Patches applied here, each pinned file re-pinned with a `repin_reason` in
+`verifier-pins.json` (D-WORKFLOW-089, the maintainer's direction of 2026-09-30:
+*"remove references to [the source estate] directly and just change framing and
+phrasing to be about Rasteratops"*):
 
-1. Both scripts: `REPO_ROOT = resolve(__dirname, "..")` → `"../.."` — they now sit two levels below the repo root.
-2. Every literal `scripts/council-invoke.ts`, `scripts/lint-council-run.ts`, `scripts/lib/council-verification.ts` and the two instruction-file paths rewritten across the skill, references, rules and agents.
-3. `tools/council/package.json` (`"type": "module"`, `tsx`, the Bedrock client the Facilitator imports) so `npx tsx` runs the ESM sources; `node_modules/` is gitignored.
-4. `verifier-pins.json` and `council-seat-efforts.json` live **beside the scripts** (`tools/council/`), not at the repo root: `lib/verifier-pins.ts` (`readVerifierPins`, the `git show <ref>:…` accountability read), `council-run-start.ts` and `lint-council-seat-efforts.ts` are patched to that path. The pins were regenerated against the patched files with an accountable `repin_reason` naming the source pins; `tools/council/run verify-pins` passes.
-5. `docs/council-limits.md` (the 2026-09-03 limits audit) is carried under `docs/`.
+1. `scripts/council-run-start.ts`: a live anchor lands on the fork's own repository
+   (rasteratops on GitHub, over the box's ssh key or https), pushed with plain git and
+   read back with `ls-remote`; the Forge write preflight, the custody file and the token
+   helper are gone, so no credential enters argv, config or the environment. Without it
+   every run failed `remote_scope` and none could be anchored here. The two tests in
+   `scripts/council-toolchain.node-test.mjs` that asserted the Forge helper and the
+   Forge remote assert the fork's remote instead.
+2. The wordlist sweep: every line that named the source estate, in 22 delivered files
+   (both skills' prose, the Facilitator's two `HTTP-Referer` strings and its Azure
+   Foundry default host, comments in three scripts and one test, five corpus-manifest
+   paths, one pin reason), now says "the source estate", "scaffold's forge",
+   "estate-local", names this fork, or carries a placeholder host. Behaviour unchanged
+   except the referer. `scripts/forge-write-status.mjs` stays pinned, unimported, with
+   placeholder defaults.
+3. Ten fixture key literals in the two test files are built at run time (`join`), the
+   fork's credential scanner's rule; identical strings at run time.
+4. `.claude/agents/council-member-mistral.agent.md`: one historical line names a
+   placeholder host instead of the source estate's Foundry.
 
-`tools/council/run <command>` fronts every script (`invoke`, `lint`, `start`, `prompt`, `seal`, `summary`, `verify-pins`, `verify-chain`, `verify-seals`, `efforts`, `drift`).
+A refresh re-applies all four with the scripts kept beside the session's records; the
+hook's own pattern (`~/.config/rocknix/forbidden-terms`, never written anywhere) is the
+check, run over every council file before the commit.
 
-Not imported: `council-research` (the 5-phase research wrapper) and its
-`researcher.agent.md`. Fetch them from the same source when a run needs
-fresh tool-using research first.
+Not installed: the Mistral token counter's Python environment
+(`scripts/lib/council-mistral-requirements.txt`) -- Mistral sits in no profile since
+scaffold#915. The `forge-write-status.mjs` and `owner-queue-lint.mjs` scripts are pinned
+imports of run-start's Forge branch and never run here.
+
+## Before 2026-09-30
+
+Imported 2026-09-05 (fork issue #70, D-WORKFLOW-003) from the `pfi/pfi-collaboration`
+lineage via marvin's clone, relocated to `tools/council/` with path patches
+(`REPO_ROOT` two levels up, pins beside the scripts) and re-pinned. That relocation is
+what made every refresh a patch job, and it was 12 Facilitator versions behind by the
+time it was replaced. The runner at `tools/council/run` survives: it loads
+`~/.config/council/env` and execs the root scripts.
 
 ## Running it
 
 Provider keys never enter the repo or the shell history. They live in
-`~/.config/council/env` (0600) as `export` lines — one `OPENROUTER_API_KEY`
-seats the whole roster; direct keys are optional upgrades. Use the wrapper,
-which loads that file and execs the Facilitator or the lint:
+`~/.config/council/env` (0600) as `export` lines -- one `OPENROUTER_API_KEY` seats the
+whole roster. Use the wrapper, which loads that file, changes to the repository root
+(the Facilitator refuses any other working directory) and execs the script under the
+tsx in `tools/council/node_modules`:
 
 ```bash
-tools/council/run invoke --member claude --prompt "…" --output research/council-runs/<run>/step1-claude.md
-tools/council/run lint --at-step 1 research/council-runs/<run>
+tools/council/run verify-pins                       # every pinned verifier's bytes, every re-pin accountable
+tools/council/run efforts --strict                  # every seat's effort against the pinned catalogue snapshot
+tools/council/run test                              # the toolchain, routing and seat-effort tests, no provider calls
+tools/council/run invoke --member muse --prompt "…" --output research/seat-probes/<dir>/muse.txt
+tools/council/run start --run-dir research/council-runs/<run>
+tools/council/run lint --at-step 1 --strict research/council-runs/<run>
 ```
 
 ## Refreshing
 
-`ssh marvin 'cd ~/Development/pfi-collaboration && git pull && git log -1 --format=%H -- .claude/skills/council'`,
-fetch the same file set, re-apply the three patches above, and update this
-table. Compare with `diff -r` before overwriting: local edits to the skill are
-expected to be none.
+Ask for a fresh export (`COUNCIL-BUNDLE.md` says how it was made), check its
+`SHA256SUMS`, copy it over the same paths, re-apply patch 1 above, re-pin what changed
+with a reason, run `verify-pins`, `efforts --strict` and `test`, then probe the five seats
+(`research/seat-probes/`). Never relocate the files again.

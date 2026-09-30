@@ -12,20 +12,11 @@ strongest elements of each other's work usually converges within
 
 ## When recursion triggers
 
-| Roster   | Tally that triggers recursion                                     |
-| -------- | ----------------------------------------------------------------- |
-| 3-member | 1-1-1 (every plan gets exactly 1 vote)                            |
-| 4-member | 2-2 (two plans tied at 2 votes each)                              |
-| 5-member | 2-2-1 (two plans tie at 2 and one plan receives an outlier vote)  |
-| 5-member | Fragmented vote where no candidate has converged beyond 1 support |
-
-A 4-member **plurality** (2-1-1 or 2 with no other at 2) does NOT
-trigger recursion — it pauses for user input per
-[`voting-rules.md`](voting-rules.md). Recursion is reserved for genuine
-ties where no one plan has more support than another. A 5-member 2-2-1
-tie is genuine: the 1-vote outlier is recorded as dissent but remains
-in the full candidate set for the next peer-review / refinement / vote
-cycle.
+A complete five-ballot round recurses on **2-2-1** or **1-1-1-1-1**.
+Keep all five members and every current revised plan eligible; the outlier
+can contain the dissent that improves the next round. A five-ballot
+plurality (2-1-1-1) pauses for user acceptance or a requested recursion.
+An incomplete round is a failure-recovery checkpoint, not a tie-break.
 
 ## Per-round procedure
 
@@ -74,7 +65,7 @@ The recursion terminates when **any** of these is true:
 
 1. **Majority emerges** — a plan wins per the active roster's majority
    rule. Proceed to Step 5 with the winning plan.
-2. **Plurality emerges (4-member only)** — pause for user input per
+2. **Plurality emerges (2-1-1-1, all five ballots)** — pause for user input per
    [`voting-rules.md`](voting-rules.md).
 3. **Max-round cap is hit** — see below.
 

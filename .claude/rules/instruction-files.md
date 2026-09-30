@@ -116,7 +116,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `rclone-cloud-sync.md` | the cloud-sync subsystem: config conventions, the bounded automatic sync, last-good behaviour | the rclone package, `rocknix/sources/scripts/**`, the five cloud tools |
 | `generic-x64-vm-testing.md` | building and QA'ing the GENERIC_X64 VM image, and the harness that drives it | GENERIC_X64, `projects/ROCKNIX/packages/**`, `scripts/mkimage`, `scripts/image`, the VM tools, `docs/vm-qa-log.md` |
 | `handheld-evidence.md` | what a handheld keeps across a power cycle and what to capture first when one misbehaves | device packages and kernels, `docs/**` |
-| `council-substrate-integrity.md` | every council member call goes through the Facilitator; no ad-hoc provider calls | council artifacts, skills, agents and `tools/council/**` |
+| `council-substrate-integrity.md` | every council member call goes through the Facilitator; no ad-hoc provider calls | council artifacts, skills, agents, `scripts/council-invoke.ts` and `scripts/lib/council-verification.ts` |
 
 Three documents under `docs/` carry interface law and load **nowhere** — open
 them when the work is theirs: `docs/es-menu-map.md` (where a row belongs; and

@@ -14,7 +14,7 @@ each member agent and the per-invocation provenance JSON the Council
 Facilitator emits.
 
 **Substrate-of-record:** direct-API via the **Council Facilitator**
-(`tools/council/council-invoke.ts`). The Facilitator captures the response
+(`scripts/council-invoke.ts`). The Facilitator captures the response
 body of every invocation and writes a structured `*.provenance.json`
 sibling alongside each member's output. The gate reads that JSON
 directly — no Cache Explorer view, no OTLP log scrape, no human-eye-
@@ -56,7 +56,7 @@ invocation.
 
 ### Substrate A — direct-API via the Council Facilitator (substrate-of-record)
 
-All five members can be invoked through `tools/council/council-invoke.ts`
+All five members can be invoked through `scripts/council-invoke.ts`
 ("Council Facilitator"), which calls each provider's HTTPS API
 directly:
 
@@ -64,7 +64,7 @@ directly:
 | ------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | claude  | `api.anthropic.com/v1/messages` (with `thinking.type=adaptive`, `output_config.effort=high`)              | `model: "claude-fable-5-1"`              |
 | gpt     | `cognitiveservices.azure.com/openai/deployments/gpt-5.5/chat/completions` (with `reasoning_effort=xhigh`) | `model: "gpt-5.5-<datecode>"`            |
-| gemini  | `generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`                  | `modelVersion: "gemini-3.1-pro-preview"` |
+| gemini  | `generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent`                  | `modelVersion: "gemini-3.8-flash"` |
 | kimi    | `cognitiveservices.azure.com/openai/deployments/Kimi-K2.6/chat/completions`                               | `model: "Kimi-K2.6"`                     |
 | mistral | `cognitiveservices.azure.com/openai/deployments/Mistral-Large-3/chat/completions`                         | `model: "mistral-large-3"`               |
 
@@ -76,7 +76,7 @@ provenance JSON directly; no debug panel inspection required.
 **What the Council Facilitator captures:**
 
 - `facilitator_version` — the provenance contract version emitted by
-  `tools/council/council-invoke.ts`.
+  `scripts/council-invoke.ts`.
 - `attempts[].content_sha256` — SHA-256 of the assistant content
   extracted from a provider response before it is written to disk.
 - `final.file_artifact_sha256` — SHA-256 of the output Markdown file
@@ -136,8 +136,8 @@ comparing the local `verification/genesis.json` to the anchor branch.
 
 If the anchor push fails, halt the run-start and resolve the git/remote
 failure before invoking any member. Do not continue with an unanchored
-run unless the user explicitly chooses to restart as a legacy/degraded
-run and records that choice in the run README. If an anchor branch is
+run. Historical legacy receipts remain readable but cannot authorize a new
+run or waive the five-seat and verification requirements. If an anchor branch is
 later force-pushed or its genesis file differs from the local file,
 treat the run as tampered until a human compares the branch history,
 local ledger, and artifact provenance trail.
@@ -197,11 +197,11 @@ intermediate substrate that could lie about the model identity.
 
 **Declared-vs-observed matching is SEMANTIC, not literal.** Observed
 strings are version-stamped or sometimes lowercase
-(`anthropic/claude-5-fable-20260609`, `openai/gpt-5.6-sol-20260709`,
+(`anthropic/claude-fable-5.1-20260831`, `openai/gpt-6-astra-20260903`,
 `mistral-large-3`); declared strings in the
 agent file are human-readable
-(`anthropic/claude-fable-5 (OpenRouter, effort=max)`,
-`openai/gpt-5.6-sol (OpenRouter via Azure, effort=max)`,
+(`anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)`,
+`openai/gpt-6-astra (OpenRouter, via openai, effort=max)`,
 `Mistral-Large-3 (Azure AI Foundry)`). The Facilitator implements
 per-member `modelMatches()` predicates that PASS when the observed
 string encodes the declared model. Both strings are recorded verbatim
@@ -217,35 +217,92 @@ the single required var is `OPENROUTER_API_KEY`.)
 
 ### Substrate C — OpenRouter (all-member, single-key)
 
-All five members are invoked through `tools/council/council-invoke.ts` on OpenRouter
+All five members are invoked through `scripts/council-invoke.ts` on OpenRouter
 by default (`--provider openrouter` is the explicit equivalent; use
 `--provider direct` only for the max-independence fallback), routing every
 seat through OpenRouter's OpenAI-compatible endpoint with a single
 `OPENROUTER_API_KEY`. Each seat is pinned to one model slug
-(`anthropic/claude-fable-5`, `google/gemini-3.1-pro-preview`,
-`openai/gpt-5.6-sol`, `moonshotai/kimi-k2.6`; mistral keeps its env-overridable
-slug) with **no `models[]` fallback array** — OpenRouter may route across
+(`anthropic/claude-fable-5.1`, `google/gemini-3.8-flash`,
+`openai/gpt-6-astra`, `moonshotai/kimi-k3`, `meta/muse-spark-1.3`; the shadow arms
+pin `x-ai/grok-4.7` and `deepseek/deepseek-v4-pro-0813`; Mistral, outside every
+profile since scaffold#915, keeps its env-overridable slug) with **no `models[]` fallback array** — OpenRouter may route across
 providers of the SAME model (infra backup), but a request can never resolve to
-a DIFFERENT model. Each reasoning seat also requests its maximum supported
-reasoning effort via OpenRouter's unified `reasoning.effort` (`max` for Fable
-5 + GPT-5.6 Sol, `xhigh` for Gemini + Kimi; Mistral-Large-3 is not a reasoning
-model).
+a DIFFERENT model. Each reasoning seat also requests its declared reasoning
+effort via OpenRouter's unified `reasoning.effort` (`max` for GPT-6 Astra —
+operator direction 2026-09-09 — and for Kimi K3, its own default once output
+budgets sit at the model maximum (2026-09-03 limits audit); `xhigh` for
+Fable 5.1, the evidence-based ceiling on bounded corpora; `high` for Gemini,
+the maximum it advertises; `max` for Muse Spark 1.3 and the DeepSeek shadow and
+`xhigh` for the Grok shadow, each its model's highest). Pins of record:
+`OPENROUTER_SEATS` and `SHADOW_OPENROUTER_SEATS` in `scripts/council-invoke.ts` — canonical in the
+scaffold corpus (scaffold#571) and checked against the pinned catalog snapshot
+by `scripts/lint-council-seat-efforts.ts`; each run additionally attests
+reasoning evidence (`effort_verification` in the provenance sibling).
 
 The **gpt seat** additionally pins `provider: { order: ["openai"],
 allow_fallbacks: false }`. The first full-corpus activation on the Azure route
 returned two HTTP-200 empty envelopes (no model identity, no content); the run
 halted correctly as UNVERIFIABLE. OpenAI is the subsequently live-verified
-route for `gpt-5.6-sol`; fallbacks remain disabled. The provider pin is an
+route for the gpt seat (verified for `gpt-5.6-sol` in 2026-07 and again for
+`gpt-6-astra` on 2026-09-09); fallbacks remain disabled. The provider pin is an
 availability/correctness lever — identity is still response-attested per call.
 
 **Primary mechanism:** identical to Substrate A — the Facilitator captures the
 response-body `model` field and verifies it against the pinned slug. OpenRouter
 echoes the served model order-insensitively and with a build/date suffix
-(`anthropic/claude-fable-5` → `anthropic/claude-5-fable-20260609`), so the
+(`anthropic/claude-fable-5.1` → `anthropic/claude-fable-5.1-20260831`), so the
 per-member matcher (`openRouterModelMatches`) accepts that form but **rejects
 sibling / version / variant / wrong-provider substitutions** (covered by
-`scripts/__tests__/council-invoke-routing.test.ts`). The response also carries a
-`provider` field as a cross-check.
+`scripts/__tests__/council-invoke-routing.node-test.ts`).
+
+**Routing attestation (scaffold#917/#943, Facilitator 1.14.0).** A provider pin is
+enforced in the request, but only the response can show that it held. OpenRouter
+names the serving provider in a `provider` field, on a buffered body and on every
+SSE chunk (live-checked 2026-09-28: 7 of 7 chunks named CoreWeave). The Facilitator
+records **every nonblank observation in response order, including repeats**, as
+`served_provider_observations` on each attempt and `observed_providers` in
+`final.provider_verification`. The verdict checks the complete list. `served_provider`
+and `observed` retain the last observation for compatibility, never as the routing proof.
+A buffered response contributes zero or one observation. The final record is
+`{ result, declared, evidence: "response_provider_field", observed, observed_providers }`:
+
+| Seat                                   | Response names                 | `result`       | Effect                                                         |
+| -------------------------------------- | ------------------------------ | -------------- | -------------------------------------------------------------- |
+| Pinned (gpt, kimi, Muse, Grok, DeepSeek, Mistral) | all observed providers admitted | `PASS`         | Normal success                                                 |
+| Pinned                                 | any other provider             | `FAIL`         | `provider_mismatch_no_retry`, exit 7, never retried, no content |
+| Pinned                                 | no provider (absent or blank)  | `UNVERIFIABLE` | Content kept, exit 0; the run lint and the next call's preflight refuse it |
+| Unpinned (Claude, Gemini)              | anything, or nothing           | `NOT_PINNED`   | Recorded, not gated. It is deliberately not `PASS`             |
+
+`declared` is the seat's `servedProviders`: the names the catalogue reports for
+the endpoints its pin admits (`coreweave/fp8` → "CoreWeave"). They are not typed
+on faith. `council-seat-efforts.json` stores each model's endpoint list, and the
+seat-effort lint and the anchored-run catalogue check both require `servedProviders`
+to equal `admittedProviderNames(pin, endpoints)`. Names compare trimmed and
+case-insensitively. **The field names a provider, not an endpoint:** OpenAI's
+standard, flex and fast endpoints all report "OpenAI", and Mistral's EU and ZDR
+endpoints both report "Mistral". Region, quantization and tier still rest on the
+request pin (`only`/`order` with `allow_fallbacks: false`). The run summary shows
+each attempt's complete `served_provider_observations`, and the console line prints
+`providers=` beside `model=`. Any out-of-pin observation fails, even if a later
+provider is allowed or the stream subsequently breaks or times out; no retry can hide it.
+
+**Staged reading applies the same rule, bound to the frozen seat.** A staged seat
+freezes the Facilitator's bytes, and its admitted providers follow from them. So the
+controller and the reading guard read the list from the installed recipe, and only when
+the installed Facilitator is the frozen one; the receipt's own `declared` never decides it.
+- **Mismatch:** the attempt is captured as `provider_mismatch_no_retry` and reconciled as
+  a nonretryable `provider_mismatch`. It keeps its usage and reservation, and no retry
+  follows.
+- **Pinned success without proof, or an unbindable policy:** the attempt reconciles as
+  `routing_unverified`.
+- **Accepted reading:** needs `PASS`, or `NOT_PINNED` for an unpinned recipe.
+- **Historical capture verification:** receipts before 1.13.0 retain the no-routing
+  shape, and 1.13 receipts retain the single-provider shape. Both re-verify unchanged
+  in storage. From 1.14.0 both observation lists are required and must agree with
+  each other and the compatibility scalars; missing fields never imply an old contract.
+- **New transitions and readings:** a receipt must match the exact frozen producer.
+  An unbound policy is refused for every claimed version, including legacy. Historical
+  storage verification grants no retry, transition or new-reading authority.
 
 **Assurance tier:** `local_capture_provider_attested` — the same enum value as
 Substrate A, because identity comes from a captured response field, not from
@@ -272,7 +329,7 @@ declared premium models — `runSubagent` returns
 `model exceeds the current model's cost tier (15x vs 0x)` before the
 subagent can be reached. That cost-tier rejection was Finding #1 of
 the 2026-05-22 test council run (see
-[`research/council-runs/2026-05-22-model-identity-verification-technique/model-verification-log.md`](../../../../research/council-runs/2026-05-22-model-identity-verification-technique/model-verification-log.md))
+the 2026-05-22 model-identity-verification run log (the source estate's repository, research/council-runs/))
 and is the reason direct-API became the substrate-of-record.
 
 When this path is available, verification relies on VS Code debug
@@ -316,8 +373,9 @@ each tie-break recursion round), the Orchestrator runs this gate
      `*.provenance.json` sibling that the Facilitator wrote alongside
      each member's output. The `final.verification.observed` field is
      the model the provider self-reported; `final.outcome` is the
-     terminal status (`success`, `model_mismatch_no_retry`, etc.).
-     This is the substrate-of-record.
+     provider/content status (`success`, `model_mismatch_no_retry`, etc.).
+     Check both: content success alone never proves identity. This is
+     the substrate-of-record.
    - **Copilot subagents (legacy fallback)** — open Cache Explorer
      (or read the OTLP log file for the corresponding turn), find the
      subagent's invocation, read the model name. Use only if the
@@ -342,11 +400,18 @@ each tie-break recursion round), the Orchestrator runs this gate
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **PASS**         | Every member's invocation in this step ran on its declared model                                                                                  | Append PASS row(s) to the log and advance to the next step                                                                                                            |
 | **FAIL**         | Any member's invocation ran on a model other than its declared model                                                                              | **Halt the run.** Surface the mismatch to the user; do NOT advance. The contaminated step's outputs cannot be used as input to the next step. See § Failure recovery. |
-| **UNVERIFIABLE** | The verification mechanism for that member is unavailable in this session (Cache Explorer disabled, OTLP not on disk, response body not captured) | Surface the limitation to the user; ask whether to proceed (degraded trust) or halt. Default is to halt and ask the user to fix the substrate prereq + retry.         |
+| **UNVERIFIABLE** | Observed model identity is missing, blank or unusable, or the verification mechanism is unavailable | Halt advancement. Preserve the captured evidence and investigate the selected provider/transport before retrying; all five identities must pass. |
 
-The gate is symmetric across all roster sizes — 5-member council
-verifies five models; 4-member verifies four; 3-member trio verifies
-three. The same procedure applies in tie-break recursion rounds.
+From `council-facilitator@1.5.1` (scaffold#665), a complete response
+with no usable observed model keeps its content, usage and
+`final.outcome: "success"`, but records `UNVERIFIABLE` and exits **6**
+(`model_identity_unverifiable`). It grants no Setup, reading or next-step
+credit. Never fill in the requested model as an observed identity.
+Historical receipts remain immutable: an older `PASS` with a null or
+blank observation is not identity proof and must not advance the run.
+
+The gate requires all five models at every member stage, including
+tie-break recursion rounds. A missing identity blocks advancement.
 
 ## Failure recovery
 
@@ -366,13 +431,12 @@ When the gate returns FAIL:
    - **Fix and re-run the step** — if the cause is recoverable
      (e.g., quota refresh, settings tweak). Re-running discards the
      contaminated outputs.
-   - **Degrade the roster** — if the model is permanently
-     unreachable today, the orchestrator can drop that member's seat
-     and continue as a smaller council per
-     [`member-roster.md`](member-roster.md). Note the degradation in
-     the verification log.
-   - **Abort the run** — if the degraded roster would fall below
-     3 members or the user prefers to wait.
+   - **Hold the run** — preserve the failure evidence while the route
+     is repaired. A missing member never authorizes a reduced roster.
+   - **Restart with an approved replacement** — only after explicit
+     owner selection and canonical tooling support, under
+     [`member-roster.md`](member-roster.md); fresh genesis and independent
+     Step 1 for all five, never a mid-run substitution.
 
 The "silently substitute another model into the missing seat" option
 is **explicitly NOT on the menu.** That is what destroyed the
@@ -396,14 +460,18 @@ not bother the user, but a model-mismatch absolutely should.
 | HTTP 401 / 403 / 404 (auth/config)       | ❌ no                            | Credentials or endpoint wrong; retry won't help                                                  |
 | HTTP 400 / 422 (bad request)             | ❌ no                            | Body shape is wrong (e.g. Mistral with `max_completion_tokens`); retry won't help                |
 | HTTP 200 + **observed model ≠ declared** | ❌ **NEVER**                     | This is the silent-substitution failure mode the gate exists to catch. Auto-retry would mask it. |
+| HTTP 200 + complete content + **unusable model identity** | ❌ **NEVER** | Identity uncertainty is not a content failure; preserve the response and halt with exit 6. |
+| HTTP 200 + a pinned seat **served outside its pin** | ❌ **NEVER** | The routing twin of a model mismatch (scaffold#917): the request's routing contract did not hold. Exit 7, no content. |
+| HTTP 200 + a pinned seat whose response **names no provider** | ❌ **NEVER** | Recorded `UNVERIFIABLE`; the content is kept and the run gates refuse it. A retry would not supply the evidence. |
 
 When the Facilitator exhausts its retry budget on a retryable class,
 or encounters a non-retryable failure, it writes a `provenance.json`
 with `final.outcome != "success"` and exits with a distinct code
 (1=transient exhaustion, 2=empty exhaustion, 3=model mismatch,
-5=permanent provider). The Orchestrator inspects the outcome and
-surfaces the partial-step state to the user per § Failure recovery
-above.
+5=permanent provider, 7=provider mismatch). Exit 6 is the separate content-success/identity-
+unverifiable case above. The Orchestrator checks both the exit status
+and `final.verification`, not just `final.outcome`, and surfaces the
+partial-step state per § Failure recovery above.
 
 ## Verification log schema
 
@@ -414,14 +482,14 @@ outcome chronologically. Schema lives in
 A minimal entry:
 
 ```markdown
-### Step 1 · r1 · 2026-07-11T04:09:54Z
+### Step 1 · r1 · 2026-09-09T04:30:12Z
 
-| Member | Declared model                                           | Observed model                    | Result | Notes |
-| ------ | -------------------------------------------------------- | --------------------------------- | ------ | ----- |
-| claude | anthropic/claude-fable-5 (OpenRouter, effort=max)        | anthropic/claude-5-fable-20260609 | PASS   | —     |
-| gemini | google/gemini-3.1-pro-preview (OpenRouter, effort=xhigh) | google/gemini-3.1-pro-preview     | PASS   | —     |
-| gpt    | openai/gpt-5.6-sol (OpenRouter via Azure, effort=max)    | openai/gpt-5.6-sol-20260709       | PASS   | —     |
-| kimi   | moonshotai/kimi-k2.6 (OpenRouter, effort=xhigh)          | moonshotai/kimi-k2.6              | PASS   | —     |
+| Member | Declared model                                          | Observed model                       | Result | Notes |
+| ------ | ------------------------------------------------------- | ------------------------------------ | ------ | ----- |
+| claude | anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)   | anthropic/claude-fable-5.1-20260831  | PASS   | —     |
+| gemini | google/gemini-3.8-flash (OpenRouter, effort=high)       | google/gemini-3.8-flash-20260902     | PASS   | —     |
+| gpt    | openai/gpt-6-astra (OpenRouter, via openai, effort=max) | openai/gpt-6-astra-20260903          | PASS   | —     |
+| kimi   | moonshotai/kimi-k3 (OpenRouter, effort=max)             | moonshotai/kimi-k3                   | PASS   | —     |
 
 Gate outcome: **PASS** — advancing to Step 2.
 ```
@@ -432,7 +500,7 @@ Every member's `model:` field is a **single-element prioritized list**:
 
 ```yaml
 model:
-  - "anthropic/claude-fable-5 (OpenRouter, effort=max)"
+  - "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)"
 ```
 
 A multi-element chain like:
@@ -440,7 +508,7 @@ A multi-element chain like:
 ```yaml
 # DO NOT DO THIS in member agents
 model:
-  - "anthropic/claude-fable-5 (OpenRouter, effort=max)"
+  - "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)"
   - "Claude Sonnet 4.5 (copilot)"
 ```
 
@@ -452,18 +520,17 @@ plus Fable-in-Fable's-seat are not two distinct perspectives. They are
 the same model family analysing the same problem with marginally
 different weights, masquerading as two separate seats.
 
-The roster-degradation machinery (4→3→refuse) is the **only**
-permitted response to a missing model. The single-element array form
-forces failures to surface there, where they belong.
+A missing model halts the five-seat run for diagnosis and repair.
+The single-element array forces that failure to surface. No reduced
+roster or silent reserve substitution is permitted.
 
 ## Cross-references
 
-- [`tools/council/council-invoke.ts`](../../../../tools/council/council-invoke.ts)
+- [`scripts/council-invoke.ts`](../../../../scripts/council-invoke.ts)
   — the **Council Facilitator**: per-member direct-API dispatcher,
   retry policy, and `provenance.json` emitter that this gate reads
 - [`member-roster.md`](member-roster.md) — declares the active
-  roster and the 4→3→refuse degradation rules that this file
-  defers to
+  roster and the five-seat recovery rules that this file defers to
 - [`pipeline.md`](pipeline.md) — every per-member step ends with
   "Run the model-verification gate per `model-verification.md` before
   advancing"
@@ -472,13 +539,13 @@ forces failures to surface there, where they belong.
   log artifact
 - [`.vscode/settings.json`](../../../../.vscode/settings.json) —
   the two file-logging keys the legacy Copilot-subagent path depends on
-- [`docs/reference/agent-file-conventions.md`](../../../../docs/reference/agent-file-conventions.md)
+- the agent-file conventions reference (the source estate's repository, docs/reference/)
   — documents the prioritized-array `model:` form repo-wide
 - [`scripts/lint-agent-model-arrays.ts`](../../../../scripts/lint-agent-model-arrays.ts)
   — PR-time lint that enforces the array-form invariants this gate
   depends on (`.github/instructions/lint-with-rule.instructions.md`
   pattern: the rule and the lint ship together)
-- [`research/council-runs/2026-05-22-model-identity-verification-technique/model-verification-log.md`](../../../../research/council-runs/2026-05-22-model-identity-verification-technique/model-verification-log.md)
+- the 2026-05-22 model-identity-verification run log (the source estate's repository, research/council-runs/)
   — the run that surfaced the runSubagent cost-tier ceiling and drove
   the direct-API pivot
 - VS Code docs — [Custom agents](https://code.visualstudio.com/docs/copilot/customization/custom-agents)
