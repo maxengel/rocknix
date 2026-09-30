@@ -1,0 +1,136 @@
+{
+  "artifact_path": "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/revised_approaches/gemini-revised_plan.md",
+  "output_file_sha256": "f84326022d93a19b6a7590b13877ea2cfb1cc3eecedd5a2c4422a3afa9171dd9",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "prev_verdict_sha256": "301658595d6c75b612e40050bbeb22f1388d2194eeae51b7fc130d9e389ccc70",
+  "member": "gemini",
+  "declared_model": "google/gemini-3.8-flash (OpenRouter, effort=high)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-30T14:48:17.090Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "fdbdb3cce784aeaf3a1f89555adfb213e04f37bfd25b01119f4619ad3423bafc"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-30T14:48:17.090Z",
+      "duration_ms": 55836,
+      "max_tokens": 65536,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "google/gemini-3.8-flash",
+      "finish_reason": "stop",
+      "content_length": 19825,
+      "tokens": {
+        "prompt": 20257,
+        "completion": 12021,
+        "total": 32278,
+        "reasoning": 6969
+      },
+      "model_identity_source": "provider_response",
+      "served_provider": "Google AI Studio",
+      "served_provider_observations": [
+        "Google AI Studio"
+      ],
+      "content_sha256": "f84326022d93a19b6a7590b13877ea2cfb1cc3eecedd5a2c4422a3afa9171dd9",
+      "usage": {
+        "prompt_tokens": 20257,
+        "completion_tokens": 12021,
+        "total_tokens": 32278,
+        "cost": 0,
+        "is_byok": true,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.120543,
+          "upstream_inference_prompt_cost": 0.0303855,
+          "upstream_inference_completions_cost": 0.0901575
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 6969,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "82370e73cf13b1af799aaeb551da054ec9200f98de70af8e807846b2692242f9"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 55840,
+    "retries_used": 0,
+    "file_artifact_sha256": "f84326022d93a19b6a7590b13877ea2cfb1cc3eecedd5a2c4422a3afa9171dd9",
+    "usage": {
+      "prompt_tokens": 20257,
+      "completion_tokens": 12021,
+      "total_tokens": 32278,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.120543,
+        "upstream_inference_prompt_cost": 0.0303855,
+        "upstream_inference_completions_cost": 0.0901575
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 6969,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 20257,
+      "completion": 12021,
+      "total": 32278,
+      "reasoning": 6969
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "google/gemini-3.8-flash (OpenRouter, effort=high)",
+      "observed": "google/gemini-3.8-flash",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "high",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 6969
+    },
+    "provider_verification": {
+      "result": "NOT_PINNED",
+      "declared": null,
+      "evidence": "response_provider_field",
+      "observed": "Google AI Studio",
+      "observed_providers": [
+        "Google AI Studio"
+      ]
+    }
+  },
+  "genesis_sha256": "4072e7351e98dbf4aa830685bc3b088dc184993487c03ba0290f8faf4eebbe07"
+}

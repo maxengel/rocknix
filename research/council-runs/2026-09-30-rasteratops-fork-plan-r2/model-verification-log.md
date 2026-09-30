@@ -27,3 +27,15 @@ Gate outcome: **PASS** — all five analyses on their declared models at their d
 | muse   | OpenRouter (Meta-pinned) | meta/muse-spark-1.3 (OpenRouter, via meta, effort=max) | meta/muse-spark-1.3 | Response body `model` field | PASS | effort PASS (7646 reasoning tokens); served by Meta; 2.2 min |
 
 Gate outcome: **PASS** — all five on their declared models at their declared efforts; advancing to Step 3 after the seal, lint, chain and seals.
+
+### Step 3 · r1 · 2026-09-30T14:55:01Z
+
+| Member | Substrate | Declared model | Observed model | Verification mechanism | Result | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| claude | OpenRouter | anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh) | anthropic/claude-fable-5.1 | Response body `model` field | PASS | effort PASS (7415 reasoning tokens); served by Anthropic; 4.2 min |
+| gemini | OpenRouter | google/gemini-3.8-flash (OpenRouter, effort=high) | google/gemini-3.8-flash | Response body `model` field | PASS | effort PASS (6969 reasoning tokens); served by Google AI Studio; 0.9 min |
+| gpt    | OpenRouter (OpenAI-pinned) | openai/gpt-6-astra (OpenRouter, via openai, effort=max) | openai/gpt-6-astra | Response body `model` field | PASS | effort PASS (8286 reasoning tokens); served by OpenAI; 5.6 min |
+| kimi   | OpenRouter (provider pin) | moonshotai/kimi-k3 (OpenRouter, via modal/sail-research/together/moonshotai, effort=max) | moonshotai/kimi-k3 | Response body `model` field | PASS | effort PASS (12803 reasoning tokens); served by Modal; 3.3 min |
+| muse   | OpenRouter (Meta-pinned) | meta/muse-spark-1.3 (OpenRouter, via meta, effort=max) | meta/muse-spark-1.3 | Response body `model` field | PASS | effort PASS (11055 reasoning tokens); served by Meta; 2.1 min |
+
+Gate outcome: **PASS** — all five on their declared models at their declared efforts; advancing to Step 4 after the seal, lint, chain and seals.
