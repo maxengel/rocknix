@@ -46,6 +46,8 @@ A refresh re-applies all four with the scripts kept beside the session's records
 hook's own pattern (`~/.config/rocknix/forbidden-terms`, never written anywhere) is the
 check, run over every council file before the commit.
 
+Unused here by decision (D-WORKFLOW-109, 2026-09-30): the `grok-shadow` and `deepseek-shadow` profiles, the fifth-seat evaluation, and the Mistral recipe; the fork's council is the five definitive seats. They stay in the files so a refresh remains a byte-identical copy.
+
 Not installed: the Mistral token counter's Python environment
 (`scripts/lib/council-mistral-requirements.txt`) -- Mistral sits in no profile since
 scaffold#915. The `forge-write-status.mjs` and `owner-queue-lint.mjs` scripts are pinned
