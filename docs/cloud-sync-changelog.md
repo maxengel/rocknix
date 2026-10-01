@@ -2816,6 +2816,15 @@ carries the five new screens; `tools/es-menu-map-check` reads 0 missing.
   SETTINGS row lines up with the rows above it** (ES `551c5a762`); it sat
   flush with the panel's left edge.
 
+- **A new handheld set up on a cloud your other handhelds already use sees
+  your saves at once** -- when they are still in the earlier `/ROCKNIX`
+  folder (or in upstream's `/GAMES`), the setup joins that folder instead of
+  making an empty `/Rasteratops` beside it, and the move is offered on the
+  first transfer page as on the others (D-CLOUD-169). A handheld that came
+  from stock ROCKNIX no longer gets a `/GAMES` folder made by the setup, and
+  KEEP USING /ROCKNIX keeps `/ROCKNIX` on it. A cloud that cannot be read is
+  no longer mistaken for an empty one by the folder check.
+
 ### The phone keyboard page works again, and says when it cannot reach the handheld (2026-09-29, `69e6039f8f`, #330)
 
 Found by the maintainer pairing Dropbox on the Retroid Pocket Nova with the phone keyboard page: `Checking…` under the title for as long as the page was open, taps on the pointer pad doing nothing, the Show button off the right edge of the screen. The page's script had declared the window's state as `up` over the pad's `up(e)` handler (the fix round's change), so it died at load on every browser before it polled or bound the tap and mouse handlers -- drags still moved the pointer, because that handler was bound before the throw. The state is renamed (D-NET-014); the page now puts a dead script on its state line with the browser's words, says `Your phone can't reach your handheld. Both need to be on the same Wi-Fi, and a VPN on your phone can get in the way.` after five failed probes in a row while it keeps trying, and its five-button row shares the width of a phone's screen. Reproduced and proven on the VM with the guest's own WebKit playing the phone and headless Firefox at 390 px (`docs/qa-frames/2026-09-29/330/`); the script harness now loads the page's script under node and refuses a var that shares a function's name, both of which fail against RC1's page. Not in RC1's images; RC2 carries it.

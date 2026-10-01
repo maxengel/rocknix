@@ -1,0 +1,187 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# cloud-pair-migration -- the mixed-installation test (D-CLOUD-158's gate,
+# #354's fifth phase) on tools/vm-pair: one QA cloud, a device updated in
+# place from the previous build and a fresh install of the new one.
+#
+#   ./tools/cloud-pair-migration <previous img.gz> <new img.gz> <new tar>
+#
+# Guest a boots the previous image, whose default cloud folder is an earlier
+# one this project shipped (/ROCKNIX); guest b is a fresh install of the new
+# image. Both share the QA WebDAV (tools/cloud-test-backend), which is reset
+# first. Every step is the shipped scripts over ssh -- the commands the
+# interface's pages run -- and every check is read from the cloud, the conf
+# or the file itself:
+#
+#   1. a (previous build) backs up a save and its settings to the earlier
+#      folder; the cloud also holds a ROM there.
+#   2. b (fresh) is set up as the wizard sets it up (cloud_setup
+#      --seed-folders): it joins the earlier folder rather than making an
+#      empty /Rasteratops beside it, its restore brings a's save, and its
+#      scan reads the state that offers the move (not CREATE IT).
+#   3. a is updated in place through /storage/.update: the new BUILD_ID, and
+#      its conf still on the earlier folder (the configured root wins).
+#   4. a's scan reads the move; MOVE (cloud_migrate_layout --apply) copies,
+#      verifies and only then removes, unit by unit in its own log; the
+#      cloud then holds /Rasteratops whole with its marker and nothing under
+#      the earlier saves folder, and a's conf points at /Rasteratops.
+#   5. b's next backup follows (its old folder is empty now): its conf points
+#      at /Rasteratops and its new save lands there; a's restore brings it.
+#   6. Both confs read the shipped /Rasteratops folders.
+#   7. A provider error is not an absence: b pointed at a dead endpoint --
+#      its scan ends non-zero with no state written, and nothing in its conf
+#      moves.
+#
+# Exit 0 when every check passed, 1 when one failed, 2 when the test could
+# not run (a pair already up: another run owns the QA cloud -- one writer
+# per QA cloud folder). The log and an rc file go to
+# /workspace/artifacts/rocknix-images/qa-<new id>-pair-migration-from-<old id>-<date>/.
+# The pair is taken down at the end; --keep leaves it up.
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/.." && pwd)
+KEEP=0
+[ "${1:-}" = "--keep" ] && { KEEP=1; shift; }
+OLD=${1:-}; NEW=${2:-}; TAR=${3:-}
+for f in "$OLD" "$NEW" "$TAR"; do
+  [ -n "$f" ] && [ -f "$f" ] || { sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; echo "cloud-pair-migration: no such file: '$f'" >&2; exit 2; }
+done
+VP="$HERE/vm-pair"; BE="$HERE/cloud-test-backend"
+
+# A pair that is already up belongs to another run (vm-qa, the rehearsal),
+# and this test resets the QA cloud under it.
+alive=0
+for p in $("$VP" info 2>/dev/null | grep -o 'pid [0-9][0-9]*' | awk '{print $2}'); do kill -0 "$p" 2>/dev/null && alive=1; done
+[ "$alive" = 0 ] || { echo "cloud-pair-migration: a guest pair is already up -- another run owns the QA cloud; not starting" >&2; exit 2; }
+
+idof() { basename "$(dirname "$1")" | grep -oE '[0-9a-f]{10}$' || echo unknown; }
+OUT=/workspace/artifacts/rocknix-images/qa-$(idof "$NEW")-pair-migration-from-$(idof "$OLD")-$(date -u +%Y%m%d-%H%M)
+mkdir -p "$OUT"; LOG=$OUT/pair-migration.log; : > "$LOG"
+say() { echo "=== $(date -u '+%H:%M:%S') $*" | tee -a "$LOG"; }
+PASSES=0; FAILS=0
+check() { # <0|nonzero> <what> [detail on failure]
+  if [ "$1" = 0 ]; then echo "PASS $2" | tee -a "$LOG"; PASSES=$((PASSES + 1))
+  else echo "FAIL $2${3:+ -- $3}" | tee -a "$LOG"; FAILS=$((FAILS + 1)); fi
+}
+# A guest's output goes to the log through the read filter: a conf or a
+# script's line can carry a sign-in (engineering-practices.md, D-QA-021).
+mask() { grep -v -i -E 'key|pass|token|user|psk'; }
+on() { local g="$1"; shift; "$VP" ssh "$g" ". /etc/profile >/dev/null 2>&1; $*"; }
+ptrs() { on "$1" "for k in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do sed -n \"s/^\$k=\\\"\\(.*\\)\\\"\$/\\1/p\" /storage/.config/cloud_sync.conf | head -1; done | tr '\\n' ' '" 2>/dev/null | sed 's/ $//'; }
+cloud_files() { "$BE" ls "$1" 2>/dev/null | awk '{print $2}' | tr '\n' ' '; }
+finish() {
+  say "RESULT $([ "$FAILS" = 0 ] && echo PASS || echo FAIL): $PASSES passed, $FAILS failed (log $LOG)"
+  [ "$KEEP" = 1 ] || "$VP" down >>"$LOG" 2>&1
+  local rc=$(( FAILS == 0 ? 0 : 1 )); [ -n "${1:-}" ] && rc=$1
+  echo "$rc" > "$OUT/rc"; exit "$rc"
+}
+
+# The shipped folders, from the tree's defaults (blindspot 71: never a literal).
+CUR_SAVES=$("$BE" shipped-default SAVES_REMOTE) || { echo "no shipped saves default" >&2; exit 2; }
+CUR_BACKUPS=$("$BE" shipped-default SETTINGS_REMOTE) || exit 2
+CUR_CONTENT=$("$BE" shipped-default CONTENT_REMOTE) || exit 2
+CUR_ROOT="${CUR_SAVES%/*}"
+
+say "backend: $("$BE" status 2>&1 | head -1)"; "$BE" up >>"$LOG" 2>&1 || true
+"$BE" reset >>"$LOG" 2>&1
+say "pair up from $(basename "$OLD"), then b rebuilt from $(basename "$NEW")"
+"$VP" up "$OLD" >>"$LOG" 2>&1 || { say "vm-pair up FAILED"; finish 2; }
+"$VP" reimage b "$NEW" >>"$LOG" 2>&1 || { say "vm-pair reimage b FAILED"; finish 2; }
+BID_A0=$(on a 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2'); BID_NEW=$(on b 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2')
+say "a on ${BID_A0:0:10} (previous), b on ${BID_NEW:0:10} (new)"
+[ -n "$BID_A0" ] && [ -n "$BID_NEW" ] && [ "$BID_A0" != "$BID_NEW" ]; check $? "the two guests run two different builds" "a '${BID_A0}' b '${BID_NEW}'"
+
+say "the QA remote on both; the automatic syncs off, so only the steps below write"
+CONF=$("$BE" rclone-conf)
+for g in a b; do
+  on "$g" "mkdir -p /storage/.config/rclone /storage/roms/nes; cat > /storage/.config/rclone/rclone.conf <<'RC'
+$CONF
+RC
+chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; true" >>"$LOG" 2>&1
+done
+A_PTRS0=$(ptrs a); B_PTRS0=$(ptrs b)
+EARLY_SAVES=${A_PTRS0%% *}; EARLY_ROOT="${EARLY_SAVES%/*}"
+say "a's folders: $A_PTRS0   b's folders: $B_PTRS0"
+on b "/usr/bin/cloud_migrate_layout --superseded" 2>/dev/null | grep -qFx -- "$EARLY_SAVES"
+check $? "the previous build's default ($EARLY_SAVES) is one the new build lists as superseded -- the premise of this test"
+[ "$B_PTRS0" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "the fresh install starts on the shipped folders" "$B_PTRS0"
+
+say "1. a (previous build) backs up a save and its settings to $EARLY_ROOT; a ROM is put there too"
+on a 'head -c 4000 /dev/urandom > /storage/roms/nes/FromA.srm; /usr/bin/cloud_backup --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "saves backup rc=$?"; /usr/bin/backuptool backup >/dev/null 2>&1; /usr/bin/cloud_backup --yes --system-only >/dev/null 2>&1; echo "settings backup rc=$?"' 2>&1 | mask | tee -a "$LOG"
+SUM_A=$(on a 'sha256sum /storage/roms/nes/FromA.srm | cut -c1-64')
+ROMD=$(mktemp -d); mkdir -p "$ROMD/ROMs/nes"; head -c 50000 /dev/urandom > "$ROMD/ROMs/nes/Pair.nes"
+"$BE" put "$ROMD" "${EARLY_ROOT#/}/Content" >>"$LOG" 2>&1; rm -rf "$ROMD"
+cloud_files "${EARLY_SAVES#/}" | grep -q 'nes/FromA.srm'; check $? "1: a's save is in ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
+cloud_files "${EARLY_ROOT#/}/Backups" | grep -q '_SETTINGS.tar.gz'; check $? "1: a's settings backup is in ${EARLY_ROOT}/Backups" "$(cloud_files "${EARLY_ROOT#/}/Backups")"
+
+say "2. b (fresh) is set up as the wizard does it: --seed-folders"
+on b '/usr/bin/cloud_setup --seed-folders; echo "seed rc=$?"' 2>&1 | mask | tee -a "$LOG"
+B_PTRS1=$(ptrs b)
+[ "$B_PTRS1" = "$EARLY_SAVES $EARLY_ROOT/Backups $EARLY_ROOT/Content" ]; check $? "2: the fresh install joined the folder the saves are in, with its backups and content (D-CLOUD-158)" "b's folders: $B_PTRS1"
+[ -z "$(cloud_files "${CUR_ROOT#/}")" ]; check $? "2: nothing was made at ${CUR_ROOT} beside them" "$(cloud_files "${CUR_ROOT#/}")"
+on b '/usr/bin/cloud_restore --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "restore rc=$?"' 2>&1 | tee -a "$LOG"
+[ -n "$SUM_A" ] && [ "$(on b 'sha256sum /storage/roms/nes/FromA.srm 2>/dev/null | cut -c1-64')" = "$SUM_A" ]; check $? "2: b's restore brought a's save, byte for byte"
+on b '/usr/bin/cloud_scan >/dev/null 2>&1; echo "scan rc=$?"' 2>&1 | tee -a "$LOG"
+B_STATE=$(on b 'cat /storage/.cache/cloud_sync/scan/state 2>/dev/null' | mask | tr '\n' ' ')
+echo "$B_STATE" | grep -q 'STATE=superseded-with-files' && echo "$B_STATE" | grep -q "SOURCE=$EARLY_SAVES"; check $? "2: b's scan reads the state that offers the move from ${EARLY_SAVES}, not CREATE IT" "$B_STATE"
+
+say "3. a is updated in place to $(basename "$TAR")"
+"$VP" scp a "$TAR" /storage/.update/ >>"$LOG" 2>&1 || say "scp FAILED"
+BOOT0=$(on a 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+on a 'sync; reboot' >/dev/null 2>&1
+BID_A1=""
+for _ in $(seq 1 60); do
+  B=$(on a 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+  if [ -n "$B" ] && [ "$B" != "$BOOT0" ]; then BID_A1=$(on a 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "$BID_A1" = "$BID_NEW" ] && break; fi
+  sleep 5
+done
+[ "$BID_A1" = "$BID_NEW" ]; check $? "3: a runs the new build after the update" "a reads '${BID_A1}'"
+[ "$(ptrs a)" = "$A_PTRS0" ]; check $? "3: a's conf still names the folder it was set to (the configured root wins on update)" "$(ptrs a)"
+
+say "4. a's scan, then MOVE"
+on a '/usr/bin/cloud_scan >/dev/null 2>&1; echo "scan rc=$?"' 2>&1 | tee -a "$LOG"
+on a 'cat /storage/.cache/cloud_sync/scan/state 2>/dev/null' | mask | tr '\n' ' ' | grep -q 'STATE=superseded-with-files'; check $? "4: a's scan reads the move"
+on a '/usr/bin/cloud_migrate_layout --apply > /tmp/pair-move.out 2>&1; echo "move rc=$?"' 2>&1 | tee -a "$LOG"
+MOVE=$(on a 'cat /tmp/pair-move.out' | mask); printf '%s\n' "$MOVE" | grep -E '^>>> (unit|doing)' >> "$LOG"
+# Unit by unit, the remove never comes before that unit's copy and verify.
+ORDER=$(printf '%s\n' "$MOVE" | awk '
+  /^>>> unit /     { u = $0; c = 0; v = 0; next }
+  /^>>> doing copy/   { c = 1; next }
+  /^>>> doing verify/ { if (!c) bad = bad "verify before copy in " u "; "; v = 1; next }
+  /^>>> doing remove/ { removes++; if (!c || !v) bad = bad "remove before copy and verify in " u "; "; next }
+  END { if (removes == 0) bad = bad "no remove at all; "; printf "%s", bad }')
+[ -z "$ORDER" ]; check $? "4: each unit was copied and verified before anything of it was removed" "$ORDER"
+cloud_files "${CUR_SAVES#/}" | grep -q 'nes/FromA.srm'; check $? "4: the saves are at ${CUR_SAVES}" "$(cloud_files "${CUR_SAVES#/}")"
+cloud_files "${CUR_BACKUPS#/}" | grep -q '_SETTINGS.tar.gz'; check $? "4: the settings backups are at ${CUR_BACKUPS}"
+cloud_files "${CUR_CONTENT#/}" | grep -q 'ROMs/nes/Pair.nes'; check $? "4: the ROM is at ${CUR_CONTENT}"
+[ "$("$BE" cat "${CUR_ROOT#/}/.layout" 2>/dev/null | head -1)" = "layout=2" ]; check $? "4: the fleet's marker is at ${CUR_ROOT}"
+[ -z "$(cloud_files "${EARLY_SAVES#/}")" ]; check $? "4: nothing is left under ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
+[ "$(ptrs a)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "4: a's conf points at the current folders" "$(ptrs a)"
+
+say "5. b's next backup follows the fleet; its new save goes up; a restores it"
+on b 'head -c 3000 /dev/urandom > /storage/roms/nes/FromB.srm; /usr/bin/cloud_backup --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "backup rc=$?"' 2>&1 | tee -a "$LOG"
+SUM_B=$(on b 'sha256sum /storage/roms/nes/FromB.srm | cut -c1-64')
+[ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "5: b followed: its conf points at the current folders" "$(ptrs b)"
+cloud_files "${CUR_SAVES#/}" | grep -q 'nes/FromB.srm'; check $? "5: b's new save is at ${CUR_SAVES}" "$(cloud_files "${CUR_SAVES#/}")"
+[ -z "$(cloud_files "${EARLY_SAVES#/}")" ]; check $? "5: and nothing was written back under ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
+on a '/usr/bin/cloud_restore --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "restore rc=$?"' 2>&1 | tee -a "$LOG"
+[ -n "$SUM_B" ] && [ "$(on a 'sha256sum /storage/roms/nes/FromB.srm 2>/dev/null | cut -c1-64')" = "$SUM_B" ]; check $? "5: a's restore brought b's save, byte for byte"
+
+say "6. both devices on the shipped folders"
+[ "$(ptrs a)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ] && [ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "6: both confs read ${CUR_SAVES}, ${CUR_BACKUPS} and ${CUR_CONTENT}" "a: $(ptrs a); b: $(ptrs b)"
+
+say "7. a provider error is not an absence: b against a dead endpoint"
+on b 'cp /storage/.config/rclone/rclone.conf /tmp/pair-rclone.conf' >/dev/null 2>&1
+DEAD=$("$BE" dead-conf)
+on b "cat > /storage/.config/rclone/rclone.conf <<'RC'
+$DEAD
+RC
+/usr/bin/cloud_scan >/dev/null 2>&1; echo \"scan rc=\$?\"" 2>&1 | tee -a "$LOG" > "$OUT/dead-scan.txt"
+grep -qE '^scan rc=[1-9][0-9]*$' "$OUT/dead-scan.txt"; check $? "7: the scan against a cloud that refuses ends non-zero" "said: $(cat "$OUT/dead-scan.txt")"
+[ -z "$(on b 'grep -h "^STATE=" /storage/.cache/cloud_sync/scan/state 2>/dev/null')" ]; check $? "7: and writes no state the interface could offer from"
+[ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "7: and nothing in b's conf moved" "$(ptrs b)"
+on b 'cp /tmp/pair-rclone.conf /storage/.config/rclone/rclone.conf; rm -f /tmp/pair-rclone.conf' >/dev/null 2>&1
+
+finish

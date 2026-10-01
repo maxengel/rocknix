@@ -150,6 +150,7 @@ both lists and to this table, or it is invisible.**
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `vm-upgrade-rehearsal` | boot the previous image in a guest, seed a player's state, update in place, check every piece survived | `upgrade-and-install.md` |
+| `cloud-pair-migration` | the mixed-installation test: one cloud, a device updated in place from the previous build and a fresh install, the folder's join, move and follow read from the cloud and both confs (D-CLOUD-158) | `rclone-cloud-sync.md` |
 | `es-syntax-check` | compile an EmulationStation edit syntax-only with the image build's own command, before the pin moves | `es-native-ui.md` |
 | `png-blackout` | paint a rectangle of a frame black with the standard library, so a screendump carrying the QA account's name is filed with the band painted out | `generic-x64-vm-testing.md` |
 | `fork-newdrive` | move the build estate to another volume | `device-builds.md` |

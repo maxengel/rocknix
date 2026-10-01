@@ -89,7 +89,7 @@ os_name() {
 why_for_rc() {
     case "$1" in
         3|4) why "COULDN'T FIND YOUR CLOUD FOLDER" ;;
-        5)   why "YOUR CLOUD STOPPED ANSWERING" ;;
+        5|124) why "YOUR CLOUD STOPPED ANSWERING" ;;   # 124: a bounded step's timeout (the join)
         7|8) why "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         *)   why "SOMETHING WENT WRONG" ;;
     esac
@@ -158,6 +158,17 @@ date +%s > "${OUT}/started"
 echo ">>> unit CLOUD FOLDER||"
 echo ">>> doing scan"
 layout=$(sibling cloud_migrate_layout)
+# A fresh install beside a fleet still on the earlier folder joins it first
+# (cloud_migrate_layout --join, a setting): the state below then reads the
+# folder the player's saves are in, and the move is offered from there
+# rather than CREATE IT beside them. 3 is "nothing to join"; anything else
+# that is not 0 is the cloud not answering, and stops the scan with its why.
+timeout 20 "${layout}" --join >/dev/null 2>&1; rc=$?
+case "${rc}" in
+    0) log "scan: joined the fleet's earlier folder" ;;
+    3) ;;
+    *) stop_on "${rc}" "--join" ;;
+esac
 "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
 # A device left on a superseded folder with nothing in it, whose current
 # folder another device has already made, follows the fleet here (the

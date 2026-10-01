@@ -4401,7 +4401,7 @@ src_of "${F1RA:-projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/G
 #       keyboard's reach (#308).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
-for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
+for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id cloud_migrate_layout; do
     src_of "${RCLONE_REL}/${rel}" "${CS}/src/${rel}"
 done
 # busybox for the applets the device has, where this machine has the image's.
@@ -4413,6 +4413,8 @@ if [ -n "${BB}" ]; then CSBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST
 # path-based and holds no folder yet (lsd answers "directory not found").
 C1="${CS}/c1"; mkdir -p "${C1}/shim" "${C1}/repo" "${C1}/storage/.config"
 cp "${CS}/src/cloud_setup" "${C1}/repo/cloud_setup"
+# The layout tool beside it, as on the device: --seed-folders joins a fleet's earlier folder first.
+cp "${CS}/src/cloud_migrate_layout" "${C1}/repo/cloud_migrate_layout" && chmod +x "${C1}/repo/cloud_migrate_layout" || { echo "cannot place cloud_migrate_layout beside cloud_setup" >&2; exit 2; }
 printf 'export PATH=%s\n' "${CSPATH}" > "${C1}/profile"
 printf '#!/bin/sh\nexit 0\n' > "${C1}/shim/logger"
 cat > "${C1}/shim/rclone" <<'EOR'
@@ -4569,10 +4571,11 @@ cat > "${C2}/shim/rclone" <<'EOR'
 #!/bin/bash
 printf '%s\n' "$*" >> /rec/argv
 mode=$(cat /run/mode 2>/dev/null); fail=$(cat /run/fail-lsf 2>/dev/null)
-p=""; files=0; dirs=0; markers=0; ignore=0; src=""
+p=""; files=0; dirs=0; markers=0; ignore=0; src=""; rec=0
 for a in "$@"; do
     case "$a" in
         qa:*) p="$a" ;;
+        -R) rec=1 ;;
         --files-only) files=1 ;; --dirs-only) dirs=1 ;;
         --s3-directory-markers) markers=1 ;; --ignore-existing) ignore=1 ;;
         /*) src="$a" ;;
@@ -4587,6 +4590,9 @@ case "$1" in
   lsf)
     [ -n "${fail}" ] && { echo 'ERROR : Failed to lsf: connection reset' >&2; exit 1; }
     if [ -f "${target}" ]; then basename "${target}"; exit 0; fi
+    if [ -d "${target}" ] && [ "${rec}" -eq 1 ] && [ "${files}" -eq 1 ]; then
+        (cd "${target}" && find . -type f | sed 's|^\./||'); exit 0
+    fi
     if [ -d "${target}" ]; then
         for e in "${target}"/*; do
             [ -e "$e" ] || continue
@@ -4643,6 +4649,32 @@ c2 --seed-folders
 echo "mine" > "${C2}/cloud/Rasteratops/Saves/README.txt"
 c2 --seed-folders
 [ "$(cat "${C2}/cloud/Rasteratops/Saves/README.txt")" = "mine" ]; check $? "and an owner's README in a bucket is left alone" "bucket: the owner's README now reads: $(head -1 "${C2}/cloud/Rasteratops/Saves/README.txt")"
+
+# The mixed-installation test's fresh device (D-CLOUD-158): seeding a cloud whose saves are in the
+# fork's earlier /ROCKNIX joins that folder -- the conf points there, nothing is made at /Rasteratops,
+# and no layout marker is written under /ROCKNIX. The control first: a fresh cloud is seeded at
+# /Rasteratops with its marker, so the absence below is the join's doing and not a shim that never
+# writes one.
+c2reset path; c2 --seed-folders
+grep -q '^rcat qa:/Rasteratops/.layout' "${C2}/rec/argv"; check $? "seeding a fresh cloud writes the layout marker at /Rasteratops (the control)" "argv: $(grep -E '^rcat' "${C2}/rec/argv" | head -2 | tr '\n' ' ')"
+c2reset path
+mkdir -p "${C2}/cloud/ROCKNIX/Saves/snes" "${C2}/cloud/ROCKNIX/Backups"; echo save > "${C2}/cloud/ROCKNIX/Saves/snes/a.srm"
+c2 --seed-folders
+[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"' "${CONF2}" && grep -q '^SETTINGS_REMOTE="/ROCKNIX/Backups"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/ROCKNIX/Content"' "${CONF2}" \
+    && [ ! -e "${C2}/cloud/Rasteratops" ] && ! grep -q '^rcat ' "${C2}/rec/argv" && grep -qx 'OK /ROCKNIX/Saves' "${C2}/out"; check $? "seeding a cloud whose saves are in /ROCKNIX joins that folder: the conf points there, nothing at /Rasteratops, no marker written (D-CLOUD-158's fresh device)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200); said: $(tr '\n' ' ' < "${C2}/out" | cut -c1-160)"
+
+# A carried /GAMES at the seeding (D-CLOUD-161, D-CLOUD-169): seeding it put a README in /GAMES that every
+# later check read as saves. With the player's saves in /ROCKNIX it joins them; with nothing anywhere it is
+# no folder at all, and the seeding makes the current folders, as for any new cloud. Neither makes /GAMES.
+c2games() { sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/GAMES"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/GAMES/backup"|' -e 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${CONF2}"; }
+c2reset path; c2games
+mkdir -p "${C2}/cloud/ROCKNIX/Saves/snes"; echo save > "${C2}/cloud/ROCKNIX/Saves/snes/a.srm"
+c2 --seed-folders
+[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/ROCKNIX/Content"' "${CONF2}" && [ ! -e "${C2}/cloud/GAMES" ] && [ ! -e "${C2}/cloud/Rasteratops" ]; check $? "seeding a carried /GAMES whose cloud holds /ROCKNIX/Saves joins /ROCKNIX and makes no /GAMES (the Nova's shape)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
+c2reset path; c2games
+c2 --seed-folders
+[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"' "${CONF2}" && grep -q '^SETTINGS_REMOTE="/Rasteratops/Backups"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"' "${CONF2}" \
+    && [ ! -e "${C2}/cloud/GAMES" ] && [ -f "${C2}/cloud/Rasteratops/Saves/README.txt" ] && grep -q '^rcat qa:/Rasteratops/.layout' "${C2}/rec/argv"; check $? "seeding a carried /GAMES on an empty cloud makes the current folders, with the marker, and no /GAMES (D-CLOUD-161)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
 
 # #308 claude F-RS-13, gpt F-RS-19: one run, three low-level retries, on every
 # call these two make -- not rclone's three runs of ten under the wizard's
@@ -13200,13 +13232,20 @@ case "$cmd" in
   lsd) exit 0 ;;
   backend) echo '{"Hashes":["md5"],"CaseInsensitive":false}' ;;
   lsf)
+    # fail-rocknix: every listing under /ROCKNIX fails as a provider error does
+    # (exit 1), and the root lists ROCKNIX/, so the walk that tells a missing
+    # folder from a broken one reads it as broken
+    [ -e /rec/fail-rocknix ] && case "$path" in qa:/ROCKNIX*) exit 1 ;; esac
     case "$path" in
       qa:/GAMES/*|qa:/GAMES) [ -e /rec/games-files ] && echo "snes/a.srm" ;;
       qa:/ROCKNIX/Saves/*|qa:/ROCKNIX/Saves) [ -e /rec/rocknix-files ] && echo "snes/a.srm" ;;
       qa:/ROCKNIX/Saves-replaced/*|qa:/ROCKNIX/Saves-replaced) [ -e /rec/replaced-files ] && echo "2026_09_01-000000/gb/L.srm" ;;
-      qa:/Rasteratops/Saves/*|qa:/Rasteratops/Saves) [ -e /rec/cur-exists ] && echo "snes/" ;;
-      qa:/Rasteratops|qa:/Rasteratops/) [ -e /rec/cur-exists ] && echo "Saves/" ;;
-      qa:|qa:/) echo "Other/" ;;
+      qa:/Rasteratops/Saves/*|qa:/Rasteratops/Saves)
+        # cur-readme: the seeding's folder, holding only its README
+        if [ -e /rec/cur-exists ]; then echo "snes/"
+        elif [ -e /rec/cur-readme ]; then case " $* " in *" /README.txt "*) ;; *) echo "README.txt" ;; esac; fi ;;
+      qa:/Rasteratops|qa:/Rasteratops/) { [ -e /rec/cur-exists ] || [ -e /rec/cur-readme ]; } && echo "Saves/" ;;
+      qa:|qa:/) echo "Other/"; [ -e /rec/fail-rocknix ] && echo "ROCKNIX/" ;;
     esac ;;
   cat) [ -e /rec/marker ] && echo "layout=2" ;;
   rcat) cat > /rec/rcat ;;
@@ -13274,6 +13313,57 @@ ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ 
 ! grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/' "${LY}/rec/argv"; check $? "with nothing differing, nothing is shelved from the old folder"
 rm -f "${LY}/rec/argv"; touch "${LY}/rec/differ"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/[0-9_-]+-move --files-from-raw' "${LY}/rec/argv" && grep -q '1 saves file(s) differ' "${LY}/out"; check $? "a file that differs is shelved from the old folder before the update copy (rc ${LYRC})" "$(ly_out)"
+# The mixed-installation test's fresh device (D-CLOUD-158, #354): on the current default, no saves in
+# the current folder, the fork's earlier /ROCKNIX holding them. --join points the device there -- a
+# setting, nothing copied -- so it reads the player's saves at once and is offered the move as every
+# device on that folder is; without it the scan offered CREATE IT beside them.
+LYCONF="${LY}/storage/.config/cloud_sync.conf"
+ly_ptrs() { echo "$(sed -n 's/^SAVES_REMOTE="\(.*\)"$/\1/p' "${LYCONF}") $(sed -n 's/^SETTINGS_REMOTE="\(.*\)"$/\1/p' "${LYCONF}") $(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${LYCONF}")"; }
+LYCUR="$(ly_conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--join points a fresh device at the earlier folder holding the saves, with its backups and content (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+LYJ=$(cat "${LYCONF}")
+ly_run "${LYJ}" --state; grep -q '^STATE=superseded-with-files$' "${LY}/out" && grep -q '^SOURCE=/ROCKNIX/Saves$' "${LY}/out"; check $? "and the joined device then reads superseded-with-files, so the move is offered from there (D-CLOUD-160)" "$(ly_out)"
+ly_run "$(ly_conf /Rasteratops/Saves /Rasteratops/Backups /Mine/ROMs)" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /Mine/ROMs" ]; check $? "--join leaves a content folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+touch "${LY}/rec/cur-readme"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "a current folder the seeding made, holding only its README, is joined past (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+rm -f "${LY}/rec/cur-readme"; touch "${LY}/rec/cur-exists"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "a current folder that holds saves is never joined away from (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+rm -f "${LY}"/rec/*; touch "${LY}/rec/games-files" "${LY}/rec/rocknix-files"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "with /GAMES and /ROCKNIX/Saves both holding saves, the fork's newer folder is the one joined (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+rm -f "${LY}"/rec/*
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "an empty cloud has nothing to join (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+# The Nova's shape (2026-09-30): a carried /GAMES with nothing in it, the saves in /ROCKNIX/Saves. --join points
+# it there, so the move is offered from the folder that holds them and KEEP USING /ROCKNIX keeps /ROCKNIX -- it
+# recorded the empty /GAMES before. A /GAMES that holds saves, or one the player kept, is not joined away from.
+LYGAMES="$(ly_conf /GAMES /GAMES/backup "")"
+rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
+ly_run "${LYGAMES}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--join points a carried, empty /GAMES at the /ROCKNIX/Saves that holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+LYJG=$(cat "${LYCONF}")
+ly_run "${LYJG}" --keep; [ "${LYRC}" = 0 ] && grep -q '^LAYOUT_KEEP="/ROCKNIX/Saves"$' "${LYCONF}"; check $? "and KEEP USING after it keeps /ROCKNIX/Saves, the folder the dialog names (rc ${LYRC})" "$(grep -E '^LAYOUT_KEEP=' "${LYCONF}")"
+touch "${LY}/rec/games-files"
+ly_run "${LYGAMES}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/GAMES /GAMES/backup " ]; check $? "a /GAMES that holds saves is not joined away from (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+rm -f "${LY}/rec/games-files"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")
+LAYOUT_KEEP=\"/GAMES\"" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/GAMES /GAMES/backup " ]; check $? "nor a /GAMES the player chose to keep (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+# --settle, the seeding's step: the join, else a carried default with nothing anywhere goes to the current folders.
+rm -f "${LY}"/rec/*
+ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "--settle points a carried /GAMES with nothing anywhere at the current folders (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+ly_run "${LYCUR}" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "and leaves a device already on them alone (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "$(ly_conf /Custom/Saves /Custom/Backups /Custom/Content)" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Custom/Saves /Custom/Backups /Custom/Content" ]; check $? "and a folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+touch "${LY}/rec/rocknix-files"
+ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--settle joins rather than resets when an earlier folder holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+rm -f "${LY}"/rec/*
+# Blindspot 72: list_or_stop's stop is the script's only while no listing helper runs inside $(...).
+lysub=$(grep -nE '\$\((list_or_stop|has_files|has_entries|exists|superseded_source|earlier_source|layout_join|layout_settle)[ )]' "${LY}/repo/cloud_migrate_layout" || true)
+[ -z "${lysub}" ]; check $? "no listing helper of cloud_migrate_layout runs inside \$(...), where its stop would end only a subshell (blindspot 72)" "in a substitution: $(echo "${lysub}" | head -3 | tr '\n' '|' | cut -c1-240)"
+# A provider error is not an absence (#354 phase 5). The earlier-folder lookup ran inside $(...), where
+# list_or_stop's stop ended only the subshell: a carried /GAMES whose /ROCKNIX listing failed read
+# superseded-empty, rc 0 -- the interface's CREATE IT over a cloud it could not read.
+touch "${LY}/rec/fail-rocknix"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; [ "${LYRC}" -ne 0 ] && ! grep -q '^STATE=' "${LY}/out"; check $? "--state on a carried /GAMES whose /ROCKNIX listing fails ends non-zero and states nothing (rc ${LYRC})" "rc ${LYRC}; $(ly_out)"
+ly_run "${LYCUR}" --join; [ "${LYRC}" != 0 ] && [ "${LYRC}" != 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "--join stops the same way and changes nothing (rc ${LYRC})" "rc ${LYRC}; pointers '$(ly_ptrs)'"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; [ "${LYRC}" -ne 0 ] && ! grep -q 'Would move\|Already on' "${LY}/out"; check $? "and --check for that /GAMES device stops rather than planning from a guess (rc ${LYRC})" "rc ${LYRC}; $(ly_out)"
 rm -f "${LY}"/rec/*
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
 
@@ -13296,6 +13386,7 @@ case "$1" in
   --state) if [ -e /rec/superseded ] && [ ! -e /rec/followed ]; then printf 'SAVES=/ROCKNIX/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=superseded-empty\n'
            else printf 'SAVES=/Rasteratops/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=current\n'; fi; exit 0 ;;
   --follow) touch /rec/followed; exit 0 ;;
+  --join) if [ -e /rec/join-fail ]; then exit 5; elif [ -e /rec/join-timeout ]; then exit 124; elif [ -e /rec/join ]; then touch /rec/joined; exit 0; else exit 3; fi ;;
 esac
 exit 1
 EOR
@@ -13346,6 +13437,17 @@ rm -f "${SC}"/rec/*; touch "${SC}/rec/scan-fail"; sc_run --content
 [ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/content-done" ] && grep -q '^>>> unit ROMS AND BIOS||' "${SC}/out"; check $? "a content listing the cloud refused (5): the ROMS AND BIOS item, the why, no content stamp (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/superseded"; sc_run
 [ "${SCRC}" = 0 ] && grep -qx -- '--follow' "${SC}/rec/argv" && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(grep -cx -- '--state' "${SC}/rec/argv")" = 2 ]; check $? "a superseded, empty folder beside a current one that exists is followed in the scan, and the state re-read (rc ${SCRC})" "$(sc_out) $(tr '\n' ' ' < "${SC}/rec/argv")"
+
+# The scan's join (D-CLOUD-169): run before --state; nothing to join (3) and a join (0) both go on to the
+# state; a join the cloud refused, or one that ran out its time, ends the scan with the card's sentence, no
+# state and no done stamp -- a cloud that cannot be read is not an empty one.
+rm -f "${SC}"/rec/*; touch "${SC}/rec/join"; sc_run
+[ "${SCRC}" = 0 ] && [ -e "${SC}/rec/joined" ] && [ "$(grep -nx -- '--join' "${SC}/rec/argv" | cut -d: -f1)" -lt "$(grep -nx -- '--state' "${SC}/rec/argv" | head -1 | cut -d: -f1)" ] && [ -f "${SCO}/done" ]; check $? "the scan joins before it reads the state, and goes on (rc ${SCRC})" "$(sc_out); argv: $(tr '\n' ' ' < "${SC}/rec/argv" | cut -c1-160)"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/join-fail"; sc_run
+[ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && ! grep -qx -- '--state' "${SC}/rec/argv" && [ ! -f "${SCO}/done" ]; check $? "a join the cloud refused ends the scan with its why, before any state is written (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/join-timeout"; sc_run
+[ "${SCRC}" = 124 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/done" ]; check $? "and one that ran out its time says the cloud stopped answering (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*
 
 echo "  ac. the Retroid Pocket Nova's ledcontrol (#332): LED BRIGHTNESS writes the LEDs, rgb with no colour set lights white, off zeroes"
 # The quirk script on the host, bash, against a fixture LED_PATH, with get_setting/set_setting shimmed and the

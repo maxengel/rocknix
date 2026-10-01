@@ -34,6 +34,16 @@
 #                                    made it (no question; D-CLOUD-160's "the other
 #                                    devices follow"); 0 when it did, 3 when there was
 #                                    nothing to follow
+#   cloud_migrate_layout --join      point a device whose own folder holds no saves --
+#                                    the current default, or a default this project once
+#                                    shipped -- at the earlier folder that does hold them
+#                                    (no question; a fresh install, or a carried /GAMES,
+#                                    beside a fleet still on the earlier folder); 0 when
+#                                    it did, 3 when there was nothing to join
+#   cloud_migrate_layout --settle    the seeding's step (cloud_setup --seed-folders):
+#                                    --join, else a carried default with nothing in it
+#                                    anywhere is pointed at the current folders, which
+#                                    the seeding then makes, as for any new cloud
 #
 # Only the two folders we wrote are moved. Anything else under the old folder
 # is left exactly where it is, because it is not ours.
@@ -58,15 +68,51 @@ LAYOUT_VERSION=2
 LAYOUT_MARKER=".layout"
 
 # Which superseded default's saves folder holds files in this cloud, the
-# configured one first; nothing when none does.
+# configured one first, then the others newest first: into SOURCE_FOUND,
+# empty when none does. Called directly, never inside $(...): its listings
+# stop the run when the cloud cannot be read (list_or_stop), and inside a
+# substitution that stop ended only the subshell -- a listing that failed
+# read as "no folder holds the saves", a provider error taken for absence,
+# and --state then said superseded-empty and the interface offered CREATE
+# IT (found 2026-10-01 reading for the mixed-installation test).
+SOURCE_FOUND=""
 superseded_source() { # <remote> <configured saves folder>
-    local remote="$1" saves="$2" s
-    has_files "${remote}${saves}/" && { echo "${saves}"; return 0; }
-    for s in "${SUPERSEDED_DEFAULT_SAVES[@]}"; do
-        same_folder "${s}" "${saves}" && continue
-        has_files "${remote}${s}/" && { echo "${s}"; return 0; }
+    local remote="$1" saves="$2"
+    SOURCE_FOUND=""
+    if has_files "${remote}${saves}/"; then SOURCE_FOUND="${saves}"; return 0; fi
+    earlier_source "${remote}" "${saves}"
+}
+
+# The newest superseded default, other than <except>, whose saves folder
+# holds files: into SOURCE_FOUND. Newest first, because where both an
+# upstream /GAMES and the fork's /ROCKNIX/Saves hold saves, the fork's is
+# the one its other devices write.
+earlier_source() { # <remote> [except]
+    local remote="$1" except="${2:-}" i s
+    SOURCE_FOUND=""
+    for (( i = ${#SUPERSEDED_DEFAULT_SAVES[@]} - 1; i >= 0; i-- )); do
+        s="${SUPERSEDED_DEFAULT_SAVES[i]}"
+        [ -n "${except}" ] && same_folder "${s}" "${except}" && continue
+        if has_files "${remote}${s}/"; then SOURCE_FOUND="${s}"; return 0; fi
     done
     return 1
+}
+
+# The pointers of the layout an earlier saves folder belongs to, into
+# E_SAVES E_BACKUPS E_CONTENT: its siblings, or the nested /GAMES/backup of
+# the first layout. Content goes with it only where this device's own was
+# unset or the current default; a folder the player chose for ROMs stays
+# theirs.
+earlier_layout() { # <saves folder> <this device's content pointer>
+    local src="$1" content="$2" parent
+    parent="${src%/*}"; [ -n "${parent}" ] || parent="${src}"
+    E_SAVES="${src}"
+    if [ "${src}" = "/GAMES" ]; then E_BACKUPS="/GAMES/backup"; else E_BACKUPS="${parent}/Backups"; fi
+    if [ -z "${content}" ] || same_folder "${content}" "${NEW_CONTENT}"; then
+        E_CONTENT="${parent}/Content"
+    else
+        E_CONTENT="${content}"
+    fi
 }
 
 superseded_default() { # <saves folder>: 0 when it is a default this project once shipped
@@ -718,7 +764,7 @@ layout_state() { # <remote> <saves> <backups> <content>
     elif [ -n "${keep}" ] && same_folder "${saves}" "${keep}"; then
         state=kept
     elif superseded_default "${saves}"; then
-        source=$(superseded_source "${remote}" "${saves}")
+        superseded_source "${remote}" "${saves}"; source="${SOURCE_FOUND}"
         if [ -n "${source}" ]; then state=superseded-with-files; else state=superseded-empty; fi
     else
         state=own
@@ -769,6 +815,70 @@ layout_follow() { # <remote> <saves> <backups> <content>
     fi
     say "Followed: this device now uses ${remote}${NEW_SAVES}, which another device already made."
     logger -t cloud_migrate_layout "followed the fleet from ${saves} to ${NEW_SAVES}" 2>/dev/null
+    return 0
+}
+
+# A fresh install beside a fleet still on the earlier folder: this device
+# is on the current default, the current saves folder holds no saves (it
+# is not there, or only the seeding's folders and README are), and a
+# folder this project once shipped as its default does hold them. Without
+# this the device was offered CREATE IT beside the player's saves, and saw
+# none of them on its first restore -- the mixed-installation test's fresh
+# device (D-CLOUD-158). It is pointed at the earlier folder's layout -- a
+# setting, nothing copied -- so it reads and writes where the saves are,
+# and is then offered the move as every device on that folder is
+# (D-CLOUD-160). 0 when it joined, 3 when there was nothing to join, 1
+# when the conf could not be written.
+layout_join() { # <remote> <saves> <content>
+    local remote="$1" saves="$2" content="$3" keep
+    if same_folder "${saves}" "${NEW_SAVES}"; then
+        has_files "${remote}${NEW_SAVES}/" --exclude '/README.txt' && return 3
+    elif superseded_default "${saves}"; then
+        # The Nova's shape (2026-09-30): a carried /GAMES with nothing in it,
+        # the saves in /ROCKNIX/Saves beside it. Joined, the move is offered
+        # from the folder that holds them and KEEP USING keeps that folder;
+        # left on /GAMES, KEEP USING /ROCKNIX recorded /GAMES.
+        keep=$(conf_value LAYOUT_KEEP) || return 2
+        [ -n "${keep}" ] && same_folder "${saves}" "${keep}" && return 3
+        has_files "${remote}${saves}/" && return 3
+    else
+        return 3
+    fi
+    earlier_source "${remote}" "${saves}" || return 3
+    earlier_layout "${SOURCE_FOUND}" "${content}"
+    set_pointer SAVES_REMOTE "${E_SAVES}" || return 1
+    set_pointer SETTINGS_REMOTE "${E_BACKUPS}" || return 1
+    set_pointer CONTENT_REMOTE "${E_CONTENT}" || return 1
+    say "Joined: this device now uses ${remote}${E_SAVES}, where your saves already are."
+    logger -t cloud_migrate_layout "joined the fleet at ${E_SAVES}: no saves in ${NEW_SAVES}" 2>/dev/null
+    return 0
+}
+
+# The wizard's seeding step (cloud_setup --seed-folders): join the earlier
+# folder that holds the saves; else a device still on a default this
+# project once shipped, with nothing in it and nothing anywhere, is on no
+# folder at all (D-CLOUD-161) and is pointed at the current folders, which
+# the seeding then makes and lists, as it does for any new cloud. Seeding
+# the carried /GAMES itself put a README there, which every later check
+# read as saves: the move was offered from /GAMES and left the player's
+# saves in /ROCKNIX (2026-10-01). 0 when the device was pointed somewhere,
+# 3 when its folder stands.
+layout_settle() { # <remote> <saves> <backups> <content>
+    local remote="$1" saves="$2" backups="$3" content="$4" rc keep
+    layout_join "${remote}" "${saves}" "${content}"; rc=$?
+    [ "${rc}" -ne 3 ] && return "${rc}"
+    superseded_default "${saves}" || return 3
+    keep=$(conf_value LAYOUT_KEEP) || return 2
+    [ -n "${keep}" ] && same_folder "${saves}" "${keep}" && return 3
+    has_files "${remote}${saves}/" && return 3
+    set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 1
+    set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 1
+    if [ -z "${content}" ] || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+       || same_folder "${content}" "${saves%/}/Content"; then
+        set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 1
+    fi
+    say "Your cloud had nothing in ${remote}${saves}; this device now uses ${remote}${NEW_SAVES}."
+    logger -t cloud_migrate_layout "settled a carried ${saves} with nothing in it on ${NEW_SAVES}" 2>/dev/null
     return 0
 }
 
@@ -867,6 +977,8 @@ main() {
         --state)  layout_state "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
         --keep)   layout_keep "${saves}"; return $? ;;
         --follow) layout_follow "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
+        --join)   layout_join "${remote}" "${saves}" "${content}"; return $? ;;
+        --settle) layout_settle "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
     esac
 
     local sabs sib_parent
@@ -914,7 +1026,7 @@ main() {
     # (or the nested /GAMES/backup for the first layout).
     if superseded_default "${saves}" && ! has_files "${remote}${saves}/"; then
         local src
-        src=$(superseded_source "${remote}" "${saves}") || src=""
+        superseded_source "${remote}" "${saves}"; src="${SOURCE_FOUND}"
         if [ -n "${src}" ] && ! same_folder "${src}" "${saves}"; then
             say "Your saves are in ${remote}${src}, not in ${remote}${saves} as this device was set; moving from there."
             local src_parent="${src%/*}"; [ -n "${src_parent}" ] || src_parent="${src}"

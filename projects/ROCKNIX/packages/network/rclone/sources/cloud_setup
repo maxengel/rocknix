@@ -724,6 +724,20 @@ case "$1" in
         # layout seeded rather than ours.
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         [ -z "${REMOTE}" ] && { echo "ERROR no remote"; exit 2; }
+        # The folder is settled before anything is made
+        # (cloud_migrate_layout --settle, D-CLOUD-169). A fresh install, or
+        # a carried /GAMES, beside a fleet still on the earlier folder joins
+        # it: seeding an empty /Rasteratops beside the player's saves left a
+        # new device reading a folder with none of them in it (the
+        # mixed-installation test, D-CLOUD-158), and seeding the carried
+        # /GAMES put a README there that every later check read as saves. A
+        # carried default with nothing anywhere is pointed at the current
+        # folders, which the seeding makes, as for any new cloud. A settle
+        # that could not answer changes nothing and the seeding goes on.
+        layout_tool="$(dirname "$(readlink -f "$0")")/cloud_migrate_layout"
+        [ -x "${layout_tool}" ] || layout_tool=/usr/bin/cloud_migrate_layout
+        [ -x "${layout_tool}" ] && timeout 30 "${layout_tool}" --settle >/dev/null 2>&1 \
+            && log_message "Seeding: this device's cloud folder was settled first (cloud_migrate_layout --settle)"
         # Read as text, never eval'd: the config is shell, and a value an
         # earlier build wrote could carry a command (PL-051). A folder in a
         # form the scripts cannot read makes nothing: read as empty, it
@@ -764,7 +778,12 @@ case "$1" in
         # every device before it offers a move or a creation
         # (cloud_migrate_layout --state). Written here because seeding is
         # where a cloud first takes the current shape.
-        if ! printf 'layout=2\n' | rclone rcat "${REMOTE}${SAVES%/*}/.layout" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null; then
+        # Not beside a folder this project once shipped as its default: a
+        # device that joined one marks nothing, and a layout=2 marker at
+        # /ROCKNIX would say a thing about that cloud that is not so.
+        if [ -x "${layout_tool}" ] && "${layout_tool}" --superseded 2>/dev/null | grep -qFx -- "${SAVES%/}"; then
+            :
+        elif ! printf 'layout=2\n' | rclone rcat "${REMOTE}${SAVES%/*}/.layout" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null; then
             log_message "Seeding: the layout marker could not be written at ${SAVES%/*}/.layout"
         fi
 

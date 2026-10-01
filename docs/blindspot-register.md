@@ -1156,3 +1156,26 @@ out of `cloud_sync.conf.defaults` and exits non-zero for a key with no
 default; `vm-qa`, `seed-content`, `seed-device` and `cloud-round-trip` take
 the names from it; `tools/last-good-scripts-test` (A5) fails when a QA tool
 names a superseded default outside a comment.
+
+## 72. A comment held an invariant the code had stopped keeping, and the guard it described ended only a subshell (2026-10-01)
+
+`cloud_migrate_layout`'s `list_or_stop` ends the run when a listing fails, so
+that a cloud that cannot be read is never taken for an empty one (#307
+PL-027), and its comment says it is "never called inside $(...), so the stop
+is the script's". The epic then called `superseded_source` -- which lists
+through it -- as `source=$(superseded_source ...)` in `--state` and
+`src=$(...) || src=""` in `--apply`. Inside a command substitution the stop
+ended the subshell; the caller read the empty result as "no folder holds the
+saves", and `--state` printed `superseded-empty`, rc 0: the interface's
+CREATE IT over a cloud it could not read. The comment was read as the
+behaviour (blindspot 51's family: a claim by an author taken for an
+observation), and no case fed the lookup a listing that failed. Found by
+reading for the mixed-installation test's "provider errors not mistaken for
+absence", not by a run.
+
+**Guard:** `tools/last-good-scripts-test` (section aa) fails when any listing
+helper of `cloud_migrate_layout` (`list_or_stop`, `has_files`, `has_entries`,
+`exists`, `superseded_source`, `earlier_source`, `layout_join`) is called
+inside `$(...)`, and a case feeds `--state` and `--join` a listing under
+`/ROCKNIX` that fails and asserts they end non-zero and state nothing (both
+fail against the tool before the fix).
