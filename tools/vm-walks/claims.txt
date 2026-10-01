@@ -16,3 +16,11 @@ d72084ccad run-transfer-frames/05-systems-page.png 230 470 1050 680 #308  # the 
 d72084ccad run-transfer-frames/06-selected-all.png 230 470 1050 680 #308  # the same page, all selected
 d72084ccad run-transfer-frames/07-t02.png 670 320 710 345 #308  # ITEM 1 OF 5: the PICO-8 unit counted (same change)
 d72084ccad confirm-cloud-folder/04-folder-result.png 240 545 1040 575 #308  # the same row's line on the hub reopened after the folder change (ES 39d5a9d6d); the reopened hub sits on CHANGE CLOUD FOLDER again (ES 4313a8f53, G-E2-O1) so nothing else on the frame differs
+
+# The cloud epic (#354; 1acdaf2cce, vm-qa run 96), against the d72084ccad baseline:
+d72084ccad confirm-cloud-folder/03-folder-editor.png 200 222 434 272 #353  # the CLOUD FOLDER editor holds /Rasteratops/Saves, the fork's default (D-CLOUD-156); the caret after it is masked
+d72084ccad confirm-cloud-folder/05-after-dismiss.png 200 222 434 272 #353  # the same editor, reopened after the dismiss
+d72084ccad to-change-cloud-folder/03-folder-editor.png 200 222 434 272 #353  # the same editor on the other walk
+d72084ccad run-transfer-frames/08-t05.png 565 288 714 338 #308  # the run carries PICO-8's files too (26 files, 1.1 MB against 23, 640 KB) and still ends at ELAPSED 0:03 (t08: COMPLETED); the t05 sample can catch ITEM 5 OF 5 a moment before the end
+d72084ccad run-transfer-frames/08-t05.png 499 560 782 573 #308  # the same sample: the footer still THIS CAN TAKE A WHILE.
+d72084ccad run-transfer-frames/08-t05.png 588 743 691 765 #308  # the same sample: the help bar still CANCEL

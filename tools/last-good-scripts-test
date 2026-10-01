@@ -8861,6 +8861,30 @@ sa_run "${MG}" cloud_migrate_layout --apply
 [ -f "${MG}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${MG}/cloud/Rasteratops/Saves/savefiles/gb/A.srm" ] && [ -f "${MG}/cloud/Rasteratops/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ] && [ -f "${MG}/cloud/Rasteratops/Content/BIOS/bios.bin" ]; check $? "PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS" "cloud now: $(mg_tree)"
 [ "$(mg_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ] && [ "${RC}" -eq 0 ]; check $? "PL-025: and the three pointers follow them (rc ${RC})" "pointers '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}")"
 
+# The check's plan line, the one thing the hub's TIDY UP row reads: the
+# tiers holding files, in move order, and the folder they move into. Until
+# 2026-10-01 the row's own text named /ROCKNIX on a build whose folder is
+# /Rasteratops, and the preview never listed the content move --apply made.
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --check
+grep -qx '>>> plan backups,saves,content /Rasteratops' "${MG}/out" && grep -q 'qa:/GAMES/Content  ->  qa:/Rasteratops/Content' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "--check plans backups, saves and content into /Rasteratops on one line, and lists the content move it would make (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+mg_seed
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/Rasteratops/Saves"|; s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/Rasteratops/Backups"|' "${MGC}"
+mkdir -p "${MG}/cloud/Rasteratops/Saves" "${MG}/cloud/Rasteratops/Backups"
+sa_run "${MG}" cloud_migrate_layout --check
+grep -qx '>>> plan content /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "a device whose saves and backups are current plans the content folder alone (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+rm -rf "${MG}/cloud/GAMES/Content"; mkdir -p "${MG}/cloud/GAMES/Content"
+sa_run "${MG}" cloud_migrate_layout --check
+grep -qx '>>> plan none /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "and with nothing stored there the plan is none: a setting alone would change, and the row stays away (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+
+# And the fixtures that stand in for a cloud take the folder names from the
+# shipped defaults (cloud-test-backend shipped-default), never from a literal
+# that goes stale when the default moves (blindspot 71): a superseded default
+# name may appear in these tools only in a comment or a quoted history.
+stale=$(grep -nE '(ROCKNIX|GAMES)/(Saves|Backups|Content)' tools/vm-qa tools/cloud-test-backend tools/cloud-round-trip tools/vm-upgrade-rehearsal 2>/dev/null | grep -vE '^[^:]+:[0-9]+:\s*#' | grep -vE "^[^:]+:[0-9]+:\s*(\"\"\"|'|#|.*# )" || true)
+[ -z "${stale}" ]; check $? "no QA tool seeds a superseded default by its literal name (ROCKNIX/..., GAMES/...)" "literals: $(echo "${stale}" | head -3 | tr '\n' '|' | cut -c1-240)"
+[ "$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>/dev/null)" = "/Rasteratops/Saves" ] && [ "$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>/dev/null)" = "/Rasteratops/Content" ] && ! tools/cloud-test-backend shipped-default NO_SUCH_KEY >/dev/null 2>&1; check $? "cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default" "SAVES '$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>&1)', CONTENT '$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>&1)'"
+
 # PL-026 (F-CS-09 gpt): killed between the two moves, the next run finishes.
 mg_seed
 printf '%s\t%s\n' '^copy ' 2 > "${MG}/ctl/kill"

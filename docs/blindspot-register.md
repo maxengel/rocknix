@@ -1134,3 +1134,25 @@ a description that carries an assistant, a decision ID, a fork tool, the
 plural or a template; the `release-notes` skill says what a PR body is.
 What no tool can check -- whether a reviewer can read it in a sitting --
 is the maintainer's read before anything is resubmitted (D-WORKFLOW-080).
+
+## 71. A QA fixture seeded the product's default by its literal name, and the default moved (2026-10-01)
+
+The cloud epic moved the fork's folder from /ROCKNIX to /Rasteratops
+(D-CLOUD-156) and every script, string and sandbox fixture in the product
+followed; `tools/vm-qa` went on making `ROCKNIX/Saves` and
+`ROCKNIX/Backups` in the QA cloud, `tools/cloud-test-backend` went on
+seeding content at `ROCKNIX/Content` and writing that folder into the
+guest's conf, and run 96 read fourteen suites PASS against a cloud laid
+out the way the previous build would have laid it out. The frames said
+it: the hub carried TIDY UP YOUR CLOUD FOLDERS, offering to move the
+content folder the fixture had put where no fresh device of this build
+puts it -- under a line that itself still named /ROCKNIX. The tell: a
+default copied into a fixture as a literal is a second copy of the
+default, and a second copy drifts (the two lists of `instruction-files.md`,
+blindspot 65's path a device never writes).
+
+**Guard:** `tools/cloud-test-backend shipped-default <KEY>` reads the folder
+out of `cloud_sync.conf.defaults` and exits non-zero for a key with no
+default; `vm-qa`, `seed-content`, `seed-device` and `cloud-round-trip` take
+the names from it; `tools/last-good-scripts-test` (A5) fails when a QA tool
+names a superseded default outside a comment.

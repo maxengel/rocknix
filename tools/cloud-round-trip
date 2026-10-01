@@ -1119,7 +1119,7 @@ echo "${saw:-0}/${all:-0}"
                           "the migration check calls the chosen sibling layout current",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"rm -f {shlex.quote(f'{bk_dir}/{bk_name}')}; "
-            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or rpath('ROCKNIX/Saves'))} >/dev/null 2>&1; "
+            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or rpath(backend("shipped-default", "SAVES_REMOTE").strip()))} >/dev/null 2>&1; "
             f"rclone purge {shlex.quote(remote_name + rpath('QA-Custom'))} >/dev/null 2>&1 || true", check=False)
     for k, v in prev.items():
         if v:

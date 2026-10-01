@@ -295,7 +295,17 @@ ensure_remote() {
   SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
   scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
   rm -f "$conf"
-  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "vm-qa: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
+  SSH "chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; $(shipped_folders_cmd); echo \"vm-qa: seeded the QA remote \${r} (the guest had none)\"" 2>/dev/null
+}
+# The guest-side command that makes the shipped saves and backups folders in
+# the remote: their names from cloud_sync.conf.defaults, through the backend
+# tool, never a literal here (blindspot 71). Fails closed: a missing default
+# is a loud exit, not an empty folder name.
+shipped_folders_cmd() {
+  local saves backups
+  saves=$("$ROOT/tools/cloud-test-backend" shipped-default SAVES_REMOTE) || exit 2
+  backups=$("$ROOT/tools/cloud-test-backend" shipped-default SETTINGS_REMOTE) || exit 2
+  printf 'r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}%s" >/dev/null 2>&1; rclone mkdir "${r}%s" >/dev/null 2>&1' "$saves" "$backups"
 }
 # Time to play (#135). --quick is the bounded form -- one repeat of the
 # launch, the exit sync and a game-to-game, no reboot and no host fixtures --
@@ -370,6 +380,11 @@ ensure_fixture() {
   scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$scr" root@127.0.0.1:/tmp/qa-seed-device.sh
   rm -f "$scr"
   SSH 'bash /tmp/qa-seed-device.sh >/dev/null 2>&1; rm -f /tmp/qa-seed-device.sh; echo "walks: seeded the content fixture (cloud seed-content, device ROMs) -- the guest had no ROMs"' 2>/dev/null
+  # The shipped saves and backups folders beside the content, since the reset
+  # took them: RESTORE FROM THE CLOUD's scan (D-CLOUD-167) reaches the options
+  # page only when the cloud has the saves folder; without it the walk ends
+  # on the offer to create one (D-CLOUD-161), which guest d's proofs cover.
+  SSH "$(shipped_folders_cmd)" 2>/dev/null
 }
 case ",$ONLY," in *,walks,*)
   ensure_fixture

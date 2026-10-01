@@ -44,6 +44,7 @@ SYNC_CONF="/storage/.config/cloud_sync.conf"
 NEW_SAVES="/Rasteratops/Saves"
 NEW_BACKUPS="/Rasteratops/Backups"
 NEW_CONTENT="/Rasteratops/Content"
+NEW_ROOT="${NEW_SAVES%/*}"   # the folder the tiers move into; named by the plan line below
 # Every saves folder this project ever shipped as its default. A device whose
 # saves folder is one of these is on a layout it never chose, so the move is
 # offered (D-CLOUD-160); any other folder is the player's own and stays
@@ -653,6 +654,7 @@ migrate_content() {
         fi
         say "Would copy, verify, then remove  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
         if [ "${mode}" != "--apply" ]; then
+            echo ">>> plan content ${NEW_ROOT}"
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
@@ -671,6 +673,7 @@ migrate_content() {
     else
         say "Nothing is stored at ${remote}${content}, so only the setting changes."
         if [ "${mode}" != "--apply" ]; then
+            echo ">>> plan none ${NEW_ROOT}"
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
@@ -1010,19 +1013,37 @@ main() {
     fi
 
     say "Would move, server-side, leaving anything else where it is:"
-    ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" \
-        && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
-    ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" \
-        && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
+    local plan=""
+    if ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/"; then
+        say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"; plan="${plan:+${plan},}backups"
+    fi
+    if ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/"; then
+        say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"; plan="${plan:+${plan},}saves"
+    fi
     # The set-aside of conflict losers beside the saves folder
     # (<saves>-replaced, cloud_backup's) is ours and travels with the saves
     # (D-CLOUD-165): to a player the change is a renamed shelf, not a new
     # one, and nothing of ours stays under the old name.
     local old_replaced="${saves%/}-replaced"
-    ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/" \
-        && say "  ${remote}${old_replaced}  ->  ${remote}${NEW_SAVES}-replaced"
+    if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
+        say "  ${remote}${old_replaced}  ->  ${remote}${NEW_SAVES}-replaced"; plan="${plan:+${plan},}discarded"
+    fi
+    # The content folder derived beside the saves moves too (the same test
+    # the items count makes below). It was moved and never listed here, so
+    # the hub's preview said less than --apply did (2026-10-01).
+    if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
+       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+       && has_entries "${remote}${content}/"; then
+        say "  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"; plan="${plan:+${plan},}content"
+    fi
 
     if [ "${mode}" != "--apply" ]; then
+        # One line the interface reads (the TIDY UP row's description says
+        # what moves and where): the tiers holding files, in move order --
+        # backups, saves, discarded, content -- or none when only a setting
+        # would change. The row named /ROCKNIX on a build whose folder is
+        # /Rasteratops until this line existed (2026-10-01).
+        echo ">>> plan ${plan:-none} ${NEW_ROOT}"
         say ""
         say "Nothing has been changed. Run with --apply to do it."
         return 0
