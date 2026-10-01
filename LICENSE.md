@@ -6,20 +6,11 @@
 
 ROCKNIX is a Linux distribution that is made up of many open-source components.  Components are provided under their respective licenses.  This distribution includes components licensed for non-commercial use only.
 
-### ROCKNIX Branding
+### Rasteratops Branding
 
-ROCKNIX branding and images are licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+The name Rasteratops, the name Rasterabot and the project's logo are this project's marks; [`TRADEMARK.md`](TRADEMARK.md) says what they allow. The logo and the identity's artwork are copyright the project's maintainer, all rights reserved, with one grant: they may be redistributed, unmodified, as part of this project's unmodified builds and source tree.
 
-You are free to:
-
-- Share: copy and redistribute the material in any medium or format
-- Adapt: remix, transform, and build upon the material
-
-Under the following terms:
-
-- Attribution: You must give appropriate credit, provide a link to the license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use.
-- NonCommercial: You may not use the material for commercial purposes.
-- ShareAlike: If you remix, transform, or build upon the material, you must distribute your contributions under the same license as the original.
+ROCKNIX's branding and images, which the ROCKNIX project licenses under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/), are not this project's and are not used by it; any that remain in this tree during the transition stay under ROCKNIX's terms and credit.
 
 ### ROCKNIX Software
 
