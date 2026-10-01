@@ -401,6 +401,25 @@ check_clean() { # <rclone check's exit status> <its output>
 # 0 when the tier moved; 1 when its copy or check failed, the old folder
 # whole; 2 when its pointer could not be written, which set_pointer has
 # said, the old folder whole too.
+# The second device's move, onto a current folder the fleet already made
+# (RELOCATE_MERGE=1, D-CLOUD-168): the first device's move made the folder
+# and removed the old one, and a device still on the old build then wrote
+# its saves back under the old name (the mixed-installation test, step 3),
+# so when it upgrades its old folder holds files and the new one exists.
+# Refusing would strand it on NOT NOW for ever; merging is the sync's own
+# rule -- the newer copy of each file wins -- made non-destructive: every
+# version that differs between the two folders is set aside first, under
+# the same <saves>-replaced/<stamp> shelf the backup keeps its conflict
+# losers on, then the copy runs with --update and the new folder's own
+# overwritten copies go to that shelf too (--backup-dir), and the old
+# folder is removed only once every name it held is present in the new
+# one. Nothing in the new folder is deleted, and nothing is lost: each
+# byte that was in the cloud is in the new folder or on the shelf.
+RELOCATE_MERGE=0
+merge_shelf() { # <dst>: the set-aside beside the destination, one folder per run
+    echo "${1%/}-replaced/$(date +%Y_%m_%d-%H%M%S)-move"
+}
+
 relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     local src="$1" dst="$2" what="$3" key="$4" out list
     shift 4
@@ -427,6 +446,10 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     fi
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
     printf '%s\n' "${LISTING}" > "${list}"
+    if [ "${RELOCATE_MERGE}" = 1 ]; then
+        merge_into "${src}" "${dst}" "${what}" "${key}" "${list}"
+        return $?
+    fi
     say "Copying ${what}..."
     # Under --apply the move runs on a page (GuiCloudTransfer, fork #353):
     # ">>> doing" names the step for its row 3, and the copy's own progress
@@ -474,6 +497,72 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
         && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
         || say "(could not remove the old folder; the copy is complete and verified)"
     rm -f "${list}"
+    return 0
+}
+
+# relocate's merge half (RELOCATE_MERGE, above): shelf, copy --update, verify
+# by presence, remove. <list> is the source's own file listing.
+merge_into() { # <src> <dst> <what> <pointer key> <list>
+    local src="$1" dst="$2" what="$3" key="$4" list="$5" shelf differ missing out rc
+    shelf="${dst%%:*}:$(merge_shelf "${dst#*:}")"
+    differ=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { rm -f "${list}"; return 1; }
+    missing="${differ}.missing"
+    say "Merging ${what} into ${dst}: the newer copy of each file is kept, the other set aside under ${shelf#*:}."
+    # 1. What differs between the two folders is shelved from the source
+    #    first; the destination's own copies the update replaces follow
+    #    through --backup-dir. A check that cannot run shelves nothing and
+    #    stops here (guards fail closed).
+    rclone check "${src}" "${dst}" --one-way --files-from-raw "${list}" --differ "${differ}" "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; rc=$?
+    case "${rc}" in 0|1) ;; *)
+        say "Couldn't compare ${what} with the new folder, so nothing was merged."
+        rm -f "${list}" "${differ}" "${missing}"; return 1 ;;
+    esac
+    if [ -s "${differ}" ]; then
+        [ "${MODE}" = "--apply" ] && echo ">>> doing copy"
+        if ! out=$(rclone copy "${src}" "${shelf}" --files-from-raw "${differ}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); then
+            printf '%s\n' "${out}" | tail -3
+            say "Couldn't set aside the ${what} that differ, so nothing was merged."
+            rm -f "${list}" "${differ}" "${missing}"; return 1
+        fi
+        say "$(grep -c . "${differ}") ${what} file(s) differ between the folders; the old folder's copies are on the shelf."
+    fi
+    # 2. The copy, newer wins; a file the new folder had a newer copy of is
+    #    left as it is, and one it replaces goes to the shelf.
+    say "Copying ${what}..."
+    local copy_rc
+    if [ "${MODE}" = "--apply" ]; then
+        echo ">>> doing copy"
+        rclone copy "${src}" "${dst}" --files-from-raw "${list}" --update --backup-dir "${shelf}" --create-empty-src-dirs=false --progress --stats 2s \
+            "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1 | tee "${list}.out"; copy_rc=${PIPESTATUS[0]}
+        out=$(cat "${list}.out" 2>/dev/null); rm -f "${list}.out"
+    else
+        out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --update --backup-dir "${shelf}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); copy_rc=$?
+    fi
+    if [ "${copy_rc}" -ne 0 ]; then
+        printf '%s\n' "${out}" | tail -3
+        say "Couldn't finish merging ${what}. Nothing was removed from the old folder."
+        rm -f "${list}" "${differ}" "${missing}"; return 1
+    fi
+    # 3. Verified by presence: every name the old folder held is in the new
+    #    one. Content may differ where the new folder's copy was newer, and
+    #    that copy is the one kept, so a content check is not the test here.
+    say "Verifying ${what}..."
+    [ "${MODE}" = "--apply" ] && echo ">>> doing verify"
+    : > "${missing}"
+    rclone check "${src}" "${dst}" --one-way --files-from-raw "${list}" --missing-on-dst "${missing}" "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; rc=$?
+    if [ "${rc}" -gt 1 ] || [ -s "${missing}" ]; then
+        say "Not every ${what} file reached the new folder ($(grep -c . "${missing}" 2>/dev/null) missing), so nothing was removed from the old folder."
+        rm -f "${list}" "${differ}" "${missing}"; return 1
+    fi
+    if [ -n "${key}" ] && ! set_pointer "${key}" "${dst#*:}"; then
+        rm -f "${list}" "${differ}" "${missing}"; return 2
+    fi
+    say "Removing the old ${what} folder..."
+    [ "${MODE}" = "--apply" ] && echo ">>> doing remove"
+    { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+        && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
+        || say "(could not remove the old folder; the merge is complete and verified)"
+    rm -f "${list}" "${differ}" "${missing}"
     return 0
 }
 
@@ -552,11 +641,15 @@ migrate_content() {
 
     if has_entries "${remote}${content}/"; then
         if exists "${remote}${NEW_CONTENT}" && ! resumable "${remote}${content}" "${remote}${NEW_CONTENT}"; then
-            say "REFUSING: ${remote}${NEW_CONTENT} already exists, and ${remote}${content}"
-            say "holds files. Nothing moved and the config is unchanged -- merging two"
-            say "content folders is not something to do without being asked."
-            [ "${mode}" = "--apply" ] && echo ">>> why THE NEW FOLDER ALREADY HAS FILES IN IT"
-            return 4
+            if fleet_made "${remote}"; then
+                RELOCATE_MERGE=1   # the fleet's folder: the second device's content merges (D-CLOUD-168)
+            else
+                say "REFUSING: ${remote}${NEW_CONTENT} already exists, and ${remote}${content}"
+                say "holds files. Nothing moved and the config is unchanged -- merging two"
+                say "content folders is not something to do without being asked."
+                [ "${mode}" = "--apply" ] && echo ">>> why THE NEW FOLDER ALREADY HAS FILES IN IT"
+                return 4
+            fi
         fi
         say "Would copy, verify, then remove  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
         if [ "${mode}" != "--apply" ]; then
@@ -674,6 +767,14 @@ layout_follow() { # <remote> <saves> <backups> <content>
     say "Followed: this device now uses ${remote}${NEW_SAVES}, which another device already made."
     logger -t cloud_migrate_layout "followed the fleet from ${saves} to ${NEW_SAVES}" 2>/dev/null
     return 0
+}
+
+# Did another device of ours make the current layout? The marker at the
+# folder's parent says so (write_marker, after a move or a seeding). A
+# current folder with no marker is somebody's own folder of the same name,
+# which the refusals below still protect.
+fleet_made() { # <remote>
+    rclone cat "${1}${NEW_SAVES%/*}/${LAYOUT_MARKER}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1 | grep -q '^layout='
 }
 
 write_marker() { # <remote>
@@ -880,20 +981,33 @@ main() {
     # source holds nothing has nothing to merge, and only its pointer moves --
     # the state an earlier build left when it was cut after its moves and
     # before its pointers.
-    local blocked=0
+    # Unless the fleet made the new folder (its marker, D-CLOUD-168): then
+    # this is the second device's move and the tiers merge (merge_into).
+    local blocked=0 merging=0
     if ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" \
        && exists "${remote}${NEW_BACKUPS}" \
        && ! resumable "${remote}${backups}" "${remote}${NEW_BACKUPS}"; then
-        say "REFUSING: ${remote}${NEW_BACKUPS} already exists."
-        blocked=1
+        if fleet_made "${remote}"; then merging=1; else
+            say "REFUSING: ${remote}${NEW_BACKUPS} already exists."
+            blocked=1
+        fi
     fi
     if ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" \
        && exists "${remote}${NEW_SAVES}" \
        && ! resumable "${remote}${saves_src}" "${remote}${NEW_SAVES}"; then
-        say "REFUSING: ${remote}${NEW_SAVES} already exists."
-        blocked=1
+        if fleet_made "${remote}"; then merging=1; else
+            say "REFUSING: ${remote}${NEW_SAVES} already exists."
+            blocked=1
+        fi
     fi
-    [ "${blocked}" = "1" ] && return 4
+    if [ "${blocked}" = "1" ]; then
+        [ "${mode}" = "--apply" ] && echo ">>> why THE NEW FOLDER ALREADY HAS FILES IN IT"
+        return 4
+    fi
+    if [ "${merging}" = 1 ]; then
+        say "Another device has already moved to ${remote}${NEW_SAVES%/*}: this one's folders merge into it, the newer copy of each file kept and the other set aside."
+        RELOCATE_MERGE=1
+    fi
 
     say "Would move, server-side, leaving anything else where it is:"
     ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" \
@@ -924,7 +1038,8 @@ main() {
     ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" && items=$((items + 1))
     ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/" && items=$((items + 1))
     [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
-       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" && items=$((items + 1))
+       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+       && has_entries "${remote}${content}/" && items=$((items + 1))
     announce() { item=$((item + 1)); echo ">>> unit $1|${item}|${items}"; }
     # The backups first (PL-025). In the original layout they sit inside the
     # saves folder; moved first, they are out of it before the saves move
@@ -954,6 +1069,15 @@ main() {
         else
             set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 5
         fi
+        # A content pointer at the cloud's root (empty, the shape a stock
+        # conf carries up: the Nova's, 2026-09-30) is a value nobody chose,
+        # and left alone it put the seeded ROMs and BIOS folders at the root
+        # of the cloud beside /Rasteratops (guest d, 2026-10-01, case B). It
+        # follows the saves to the current layout, as --follow's does.
+        if [ -z "${content}" ]; then
+            set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 5
+            content="${NEW_CONTENT}"
+        fi
     fi
     if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
         announce "DISCARDED SAVES"
@@ -974,7 +1098,7 @@ main() {
     # string compare sent through the move and so onto itself.
     if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
        && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")"; then
-        announce "ROMS, BIOS, AND GAME CONTENT"
+        has_entries "${remote}${content}/" && announce "ROMS, BIOS, AND GAME CONTENT"
         migrate_content "${remote}" "${content}" "${mode}" || content_rc=$?
     elif [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
         say "Leaving CONTENT_REMOTE at ${content} -- it is not a path this migration set."

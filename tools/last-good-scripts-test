@@ -13165,6 +13165,12 @@ case "$cmd" in
     esac ;;
   cat) [ -e /rec/marker ] && echo "layout=2" ;;
   rcat) cat > /rec/rcat ;;
+  check)
+    # --differ F / --missing-on-dst F: the merge reads these files; the shim
+    # writes them -- a differing name when told, else empty
+    prev=""; for a in "$@"; do case "$prev" in --differ) if [ -e /rec/differ ]; then echo "snes/a.srm" > "$a"; else : > "$a"; fi ;; --missing-on-dst) : > "$a" ;; esac; prev="$a"; done
+    if [ -e /rec/check-clean ]; then echo "0 differences found"; exit 0; else echo "1 differences found"; exit 1; fi ;;
+  copy|delete|rmdirs|copyto|purge) exit 0 ;;
 esac
 exit 0
 EOR
@@ -13173,7 +13179,7 @@ ly_run() { # <conf text> <verb>: stdout in ${LY}/out, exit in LYRC
   printf '%s\n' "$1" > "${LY}/storage/.config/cloud_sync.conf"
   LYRC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
       --ro-bind /etc /etc --ro-bind "${LY}/profile" /etc/profile --ro-bind "${LY}/shim" /shim --bind "${LY}/rec" /rec --ro-bind "${LY}/repo" /repo \
-      --dev /dev --proc /proc --tmpfs /tmp --bind "${LY}/storage" /storage \
+      --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/run --bind "${LY}/storage" /storage \
       bash /repo/cloud_migrate_layout "$2" > "${LY}/out" 2>&1; echo $? ) 2>/dev/null )
 }
 ly_conf() { printf 'SAVESPATH="/storage/roms"\nSETTINGS_BACKUPS="/storage/roms/backup"\nSAVES_REMOTE="%s"\nSETTINGS_REMOTE="%s"\nCONTENT_REMOTE="%s"\nRCLONE_NET_OPTS=""\n' "$1" "$2" "$3"; }
@@ -13211,6 +13217,19 @@ rm -f "${LY}/rec/rocknix-files"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ]; check $? "and follows once the old folder is empty (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files" "${LY}/rec/replaced-files"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced' "${LY}/out"; check $? "--check lists the set-aside of conflict losers among what moves (D-CLOUD-165)" "$(ly_out)"
+# D-CLOUD-168 (the mixed-installation test's fourth step): the second device's move onto a current folder the fleet
+# made merges -- newer wins, what differs is shelved first, the old folder goes only once every name is present;
+# the same folder with no marker is somebody's own and is still refused.
+rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files" "${LY}/rec/cur-exists"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 4 ] && grep -q 'REFUSING: qa:/Rasteratops/Saves already exists' "${LY}/out" && grep -q '^>>> why THE NEW FOLDER ALREADY HAS FILES IN IT' "${LY}/out" && ! grep -q '^copy ' "${LY}/rec/argv"; check $? "a current folder with no marker is somebody's own: the move is refused with its why and nothing is copied (rc ${LYRC})" "$(ly_out)"
+touch "${LY}/rec/marker"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'Another device has already moved' "${LY}/out" && [ "${LYRC}" = 0 ] && ! grep -q '^copy ' "${LY}/rec/argv"; check $? "--check on the fleet's folder says the tiers merge and changes nothing (rc ${LYRC})" "$(ly_out)"
+rm -f "${LY}/rec/argv"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves .*--update --backup-dir qa:/Rasteratops/Saves-replaced/[0-9_-]+-move' "${LY}/rec/argv" && grep -q '^delete qa:/ROCKNIX/Saves ' "${LY}/rec/argv" && grep -q '^rmdirs qa:/ROCKNIX/Saves' "${LY}/rec/argv" && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^>>> unit SAVES|1|1$' "${LY}/out"; check $? "--apply onto the fleet's folder merges the saves: copy --update with the shelf as --backup-dir, the old folder removed after the presence check, the pointer moved, the item announced (rc ${LYRC})" "$(ly_out) $(grep -E '^(copy|delete|rmdirs)' "${LY}/rec/argv" | cut -c1-120 | tr '\n' '|')"
+! grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/' "${LY}/rec/argv"; check $? "with nothing differing, nothing is shelved from the old folder"
+rm -f "${LY}/rec/argv"; touch "${LY}/rec/differ"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/[0-9_-]+-move --files-from-raw' "${LY}/rec/argv" && grep -q '1 saves file(s) differ' "${LY}/out"; check $? "a file that differs is shelved from the old folder before the update copy (rc ${LYRC})" "$(ly_out)"
+rm -f "${LY}"/rec/*
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
 
 
