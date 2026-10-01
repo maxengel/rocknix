@@ -13145,6 +13145,7 @@ ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; gr
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ]; check $? "--follow does nothing while no device has made /Rasteratops (rc ${LYRC})" "$(ly_out)"
 touch "${LY}/rec/cur-exists" "${LY}/rec/marker"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --state; grep -q '^CURRENT_EXISTS=1$' "${LY}/out" && grep -q '^MARKER=layout=2$' "${LY}/out"; check $? "--state sees the current folder and the marker once they exist" "$(ly_out)"
+rm -f "${LY}/rec/rocknix-files"   # the old folder is empty once a move removed it: the state a follow is for
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^SETTINGS_REMOTE="/Rasteratops/Backups"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q 'followed the fleet' "${LY}/rec/log"; check $? "--follow re-points all three pointers once the current folder exists, with a journal line (rc ${LYRC})" "$(ly_out)"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /Mine/ROMs)" --follow; [ "${LYRC}" = 0 ] && grep -q '^CONTENT_REMOTE="/Mine/ROMs"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--follow leaves a content folder the player chose (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}/rec/cur-exists" "${LY}/rec/marker"
@@ -13154,6 +13155,15 @@ ly_run "${LYK}" --state; grep -q '^STATE=kept$' "${LY}/out"; check $? "after --k
 touch "${LY}/rec/cur-exists"
 ly_run "${LYK}" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a kept folder is not followed even when the current one exists (rc ${LYRC})" "$(ly_out)"
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a carried /GAMES with an empty content root follows to all three (rc ${LYRC})" "$(ly_out)"
+# The futro's two criteria (2026-10-01): the state verb looks across every superseded folder, and a follow
+# never strands files. The Nova's real case: /GAMES in the conf, its saves in /ROCKNIX/Saves.
+rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; grep -q '^STATE=superseded-with-files$' "${LY}/out" && grep -q '^SOURCE=/ROCKNIX/Saves$' "${LY}/out"; check $? "a device set to /GAMES whose cloud holds /ROCKNIX/Saves reads superseded-with-files from /ROCKNIX/Saves (the Nova's case)" "$(ly_out)"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; grep -q 'moving from there' "${LY}/out" && grep -q 'qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves' "${LY}/out"; check $? "--check for that device offers the move from /ROCKNIX/Saves, not the creation of /Rasteratops (rc ${LYRC})" "$(ly_out)"
+touch "${LY}/rec/cur-exists"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--follow refuses a device whose old folder still holds files, even with the current folder there (rc ${LYRC})" "$(ly_out)"
+rm -f "${LY}/rec/rocknix-files"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ]; check $? "and follows once the old folder is empty (rc ${LYRC})" "$(ly_out)"
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
