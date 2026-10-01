@@ -127,7 +127,7 @@ package-clean:
 # digest; this line moves with it, by hand. A locally built container is
 # tagged (DOCKER_IMAGE_LOCAL), never pinned.
 docker-%: DOCKER_IMAGE_DIGEST := sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
-docker-%: DOCKER_IMAGE := ghcr.io/rasteratops/build@$(DOCKER_IMAGE_DIGEST)
+docker-%: DOCKER_IMAGE = ghcr.io/rasteratops/build@$(DOCKER_IMAGE_DIGEST)
 docker-%: DOCKER_IMAGE_LOCAL := ghcr.io/rasteratops/build:local
 
 # DOCKER_WORK_DIR is the directory in the Docker image - it is set to /work by default
