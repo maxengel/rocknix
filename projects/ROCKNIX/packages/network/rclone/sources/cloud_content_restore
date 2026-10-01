@@ -1296,7 +1296,15 @@ case "${1}" in
             echo "Your cloud couldn't be read. Try again." >&2
             exit "${scan_rc}"
         fi
-        sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|' > "${TMP}/legacy"
+        # The pre-tier rows (a system straight under the content root) are
+        # offered only for a folder this device has or a system it supports
+        # -- the rule resolve_src applies, which this listing never did (fork
+        # #352: on a device whose content root was the Dropbox root, every
+        # folder in the account -- "my Hello sign directory, documents,
+        # videos" -- was listed as a system to restore).
+        sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|' \
+            | awk -F'|' -v loc=" $(legacy_dirs | tr '\n' ' ') " -v sup="$(printf '\n%s\n' "${SUP}")" \
+                  '{ if (index(loc, " " $1 " ") || index(sup, "\n" $1 "\n")) print }' > "${TMP}/legacy"
         {
             cut -d'|' -f2 "${TMP}/cloud" | cut -d/ -f1
             local_content_dirs

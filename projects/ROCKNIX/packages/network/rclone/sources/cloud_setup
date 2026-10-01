@@ -527,10 +527,26 @@ case "$1" in
             esac
         done
 
+        # Where the games actually are, when the configured root holds nothing
+        # of ours (fork #352, D-CLOUD-156): the cloud root's Content folder --
+        # the saves folder's parent, /Rasteratops/Content by default -- is
+        # looked at for a ROMs or BIOS folder, and named, so the interface can
+        # offer it before it asks the player to choose.
+        FOUND=""
+        if [ "${AT_PATH}" -eq 0 ] && [ "${AT_ROOT}" -eq 0 ]; then
+            SV="$(conf_get SAVES_REMOTE)" || SV=""
+            SV="${SV%/}"; SP="${SV%/*}"; [ "${SP}" = "${SV}" ] && SP=""
+            CAND="${SP}/Content"
+            if [ "${CAND}" != "${CP%/}" ] \
+               && rclone lsf --dirs-only "${REMOTE}${CAND#/}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qE '^(ROMs|BIOS)/$'; then
+                FOUND="${CAND}"
+            fi
+        fi
         echo "CONTENT_REMOTE=${CP}"
         echo "AT_PATH=${AT_PATH}"
         echo "AT_ROOT=${AT_ROOT}"
         echo "ROOT_DIRS=${ROOT_DIRS% }"
+        echo "FOUND=${FOUND}"
         # An empty CONTENT_REMOTE means the root IS the content path, so content
         # sitting there is correct rather than stranded - otherwise a UI would
         # keep offering to fix something already resolved.
@@ -540,6 +556,8 @@ case "$1" in
             echo "STATE=ok"
         elif [ "${AT_ROOT}" -gt 0 ]; then
             echo "STATE=stranded-at-root"
+        elif [ -n "${FOUND}" ]; then
+            echo "STATE=found-elsewhere"
         else
             echo "STATE=empty"
         fi

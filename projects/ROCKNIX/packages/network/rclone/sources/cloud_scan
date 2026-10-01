@@ -1,0 +1,155 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present rasteratops (https://github.com/rasteratops)
+
+# cloud_scan - what the cloud holds for this device, before anything is offered.
+#
+# The restore flow scans first and offers only what the scan found
+# (D-CLOUD-156, fork #350): the folder's state, the settings archives by
+# device label, where the content is, and the content listing. This runs
+# those reads in order and talks to the scan page in the protocol every
+# cloud page reads (">>> unit", ">>> why"), writing each result to a file
+# the options page builds from. Reads only: nothing in the cloud or on the
+# device changes here, so no lock is taken and a sync may run beside it.
+#
+#   cloud_scan            run every read; 0 when all answered
+#
+# Results, under /storage/.cache/cloud_sync/scan/:
+#   state             cloud_migrate_layout --state, one fact per line
+#   archives          every settings archive in the Backups folder, one per line
+#   settings          LABEL= (this device's), MINE= (its newest), NEWEST= (overall), COUNT=
+#   content-location  cloud_setup --content-location, key=value
+#   scan              cloud_content_restore --scan's rows
+#   systems           the systems this device syncs (--systems)
+#   done              the epoch the scan completed; absent while it runs or failed
+#
+# Exit: 0 all read; 69 no network (the page says SKIPPED - YOU'RE NOT
+# ONLINE); 1 no cloud storage set up; otherwise the failing read's code,
+# with a ">>> why" in the player's words before it (D-UI-028).
+
+. /etc/profile 2>/dev/null
+
+OUT=/storage/.cache/cloud_sync/scan
+SYNC_CONF=/storage/.config/cloud_sync.conf
+readonly EXIT_NO_NETWORK=69
+# Every listing here is bounded as the other readers' are (#308 claude F-RS-13).
+readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
+
+say() { echo "$@"; }
+log() { logger -t cloud_scan "$*" 2>/dev/null; }
+why() { echo ">>> why $*"; }
+
+# The shared reader (cloud_setup's, the content scripts', D-CLOUD-149): a
+# value in a form the sync does not read is nothing here, never a folder.
+conf_get() { # <KEY>
+    [ -f "${SYNC_CONF}" ] || return 0
+    awk -v k="$1" '
+        index($0, k "=") == 1 {
+            s = substr($0, length(k) + 2); v = ""
+            if (s ~ /^"/) { s = substr(s, 2); i = index(s, "\""); if (i == 0) exit 2; v = substr(s, 1, i - 1) }
+            else if (s ~ /^\047/) { s = substr(s, 2); i = index(s, "\047"); if (i == 0) exit 2; v = substr(s, 1, i - 1) }
+            else { i = index(s, "#"); v = (i == 0) ? s : substr(s, 1, i - 1); sub(/[ \t]+$/, "", v) }
+            if (v ~ /[$`\\]/) exit 2
+            print v; exit 0
+        }
+    ' "${SYNC_CONF}"
+}
+
+sibling() { # <name>: the script beside this one, else the installed one
+    local t; t="$(dirname "$(readlink -f "$0")")/$1"
+    [ -x "${t}" ] || t="/usr/bin/$1"
+    echo "${t}"
+}
+device_label() {
+    local tool; tool=$(sibling cloud_device_id)
+    [ -x "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
+}
+os_name() {
+    local name="${OS_NAME}"
+    [ -z "${name}" ] && name=$(sed -n 's/^OS_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
+    [ -z "${name}" ] && name="ROCKNIX"
+    printf '%s\n' "${name}" | tr -cd 'A-Za-z0-9_-'
+}
+
+# What an rclone exit means to a player (es-player-text.md § Outcome vocabulary).
+why_for_rc() {
+    case "$1" in
+        3|4) why "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   why "YOUR CLOUD STOPPED ANSWERING" ;;
+        7|8) why "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        *)   why "SOMETHING WENT WRONG" ;;
+    esac
+}
+
+mkdir -p "${OUT}" || { why "COULDN'T WRITE TO THIS DEVICE"; exit 1; }
+rm -f "${OUT}"/state "${OUT}"/archives "${OUT}"/settings "${OUT}"/content-location "${OUT}"/scan "${OUT}"/scan.err "${OUT}"/systems "${OUT}"/done
+date +%s > "${OUT}/started"
+
+# No route, nothing tried: the page says SKIPPED - YOU'RE NOT ONLINE from the
+# code alone (D-CLOUD-072, D-CLOUD-112).
+if ! ip route show default 2>/dev/null | grep -q .; then
+    log "scan: no default route; skipped"
+    exit "${EXIT_NO_NETWORK}"
+fi
+
+REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+if [ -z "${REMOTE}" ]; then
+    why "YOUR CLOUD STORAGE ISN'T SET UP YET"
+    exit 1
+fi
+
+# 1. The folder: current, kept, superseded or the player's own; the current
+#    folder's presence; the marker (cloud_migrate_layout --state, fork #353).
+echo ">>> unit FOLDER||"
+"$(sibling cloud_migrate_layout)" --state > "${OUT}/state" 2>/dev/null; rc=$?
+if [ "${rc}" -ne 0 ]; then
+    log "scan: --state exited ${rc}"
+    [ "${rc}" -eq "${EXIT_NO_NETWORK}" ] && exit "${rc}"
+    why_for_rc "${rc}"
+    exit "${rc}"
+fi
+
+# 2. The settings archives, by the device that wrote each (the label in the
+#    name, cloud_restore's rule): this device's newest first, else the newest
+#    overall, else none -- the row is offered or dimmed from this (D-CLOUD-162).
+echo ">>> unit SETTINGS||"
+settings_remote=$(conf_get SETTINGS_REMOTE) || { why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"; exit 1; }
+settings_remote="${settings_remote%/}"
+listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${REMOTE}${settings_remote:+${settings_remote#/}}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); rc=$?
+case "${rc}" in
+    0) ;;
+    3|4) listing="" ;;   # no Backups folder yet: nothing to restore, not a failure
+    *) log "scan: archives listing exited ${rc}"; why_for_rc "${rc}"; exit "${rc}" ;;
+esac
+printf '%s\n' "${listing}" | sed '/^$/d' > "${OUT}/archives"
+label=$(device_label); osn=$(os_name); mine=""; newest=""
+if [ -n "${label}" ]; then
+    mine=$(grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" "${OUT}/archives" | sort | tail -1)
+fi
+newest=$(grep -E '^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-' "${OUT}/archives" | sort | tail -1)
+{
+    echo "LABEL=${label}"
+    echo "MINE=${mine}"
+    echo "NEWEST=${newest}"
+    echo "COUNT=$(grep -c . "${OUT}/archives")"
+} > "${OUT}/settings"
+
+# 3. The content: where it is (the configured root, the cloud root's
+#    /Rasteratops/Content, the remote's root), then the listing the page
+#    rows come from. 69 is the page's own sentinel; anything else is a
+#    cloud that could not be read, said in its words.
+echo ">>> unit CONTENT||"
+"$(sibling cloud_setup)" --content-location > "${OUT}/content-location" 2>/dev/null; rc=$?
+[ "${rc}" -eq 0 ] || log "scan: --content-location exited ${rc} (reported, not fatal)"
+"$(sibling cloud_content_restore)" --scan > "${OUT}/scan" 2> "${OUT}/scan.err"; rc=$?
+if [ "${rc}" -ne 0 ]; then
+    log "scan: --scan exited ${rc}: $(head -1 "${OUT}/scan.err" 2>/dev/null)"
+    [ "${rc}" -eq "${EXIT_NO_NETWORK}" ] && exit "${rc}"
+    why_for_rc "${rc}"
+    exit "${rc}"
+fi
+"$(sibling cloud_content_restore)" --systems > "${OUT}/systems" 2>/dev/null || : > "${OUT}/systems"
+
+date +%s > "${OUT}/done"
+log "scan: done ($(grep -c . "${OUT}/scan") content rows, $(grep -c . "${OUT}/archives") archives, $(sed -n 's/^STATE=//p' "${OUT}/state"))"
+exit 0
