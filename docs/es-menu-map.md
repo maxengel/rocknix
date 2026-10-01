@@ -132,7 +132,7 @@ flowchart TD
     BR --> BU[BACK UP TO THE CLOUD] --> SCAN[CHECKING YOUR CLOUD<br/>GuiCloudTransfer running cloud_scan: CLOUD FOLDER · SETTINGS BACKUPS · GAME CONTENT<br/>goes on by itself when complete; TRY AGAIN · CLOSE when not, D-CLOUD-167]
     BR --> RE[RESTORE FROM THE CLOUD] --> SCAN
     SCAN -->|an earlier /ROCKNIX or /GAMES holds saves| MOVEQ[dialog: MOVE · KEEP USING … · NOT NOW, D-CLOUD-160]
-    MOVEQ -->|MOVE| MOVE[MOVING YOUR CLOUD FOLDER<br/>SAVES · SETTINGS BACKUPS · DISCARDED SAVES · content; COPYING… / CHECKING THE COPY…<br/>dismissed by the player, then the scan again]
+    MOVEQ -->|MOVE| MOVE[MOVING YOUR CLOUD FOLDER<br/>SAVES · SETTINGS BACKUPS · DISCARDED SAVES · content; COPYING… / CHECKING THE COPY…<br/>dismissed by the player, then the scan again; from the cloud folder step, the step's own next part]
     SCAN -->|no current folder| CREATEQ[dialog: CREATE IT · CHOOSE A FOLDER · NOT NOW, D-CLOUD-161]
     CREATEQ -->|CREATE IT| CREATE[CREATING YOUR CLOUD FOLDER<br/>then the scan again]
     CREATEQ -->|CHOOSE A FOLDER| KB
@@ -165,8 +165,11 @@ flowchart TD
 
     CONN --> WHICH{{WHICH CONNECTION?<br/><i>openCloudSetup, the wizard's first step</i>}}
     WHICH --> PWPAGE[SSH PASSWORD<br/><i>cloudSetupOpenPasswordPage; device access for the setup route</i>]
-    OAUTH --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
-    FORM --> DONE
+    OAUTH --> FSTEP[CHECKING YOUR CLOUD<br/>the cloud folder step, cloud_scan --folder, D-CLOUD-170<br/>an earlier folder holding saves asks MOVE · KEEP USING … · NOT NOW; a scan that fails goes on]
+    FORM --> FSTEP
+    FSTEP -->|an earlier /ROCKNIX or /GAMES holds saves| MOVEQ
+    FSTEP --> SEED[SETTING UP YOUR CLOUD FOLDERS<br/><i>the seeding, where the answer put the folder</i>]
+    SEED --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
 ```
 
 **Dialogs the cloud raises on its own.** A restore against a cloud whose saves
@@ -192,6 +195,24 @@ above), at the end of the cloud setup, and on SYNC SAVES WITH THE CLOUD's own
 card, which keeps the offer. The transfer page keeps it too, on dismissal, for
 a restore run after NOT NOW. SET IT UP NOW? is asked before the scan page, not
 at the verb.
+
+**The cloud folder step (#363; D-CLOUD-170, 2026-10-01).** No sync checks the
+folder any more; it is settled where the player first meets the cloud. At the
+end of cloud setup, before SETTING UP YOUR CLOUD FOLDERS and CLOUD SETUP
+COMPLETE, the step scans the folder alone (CHECKING YOUR CLOUD, one item) and,
+when an earlier /ROCKNIX or /GAMES holds saves, asks MOVE · KEEP USING … ·
+NOT NOW; every way out goes on to the seeding and the last page, and the CLOUD
+FOLDER row's own rebuild skips the step. At boot, on a device linked to a
+folder an earlier version made its default and not kept, the same step comes
+up once the startup sync has ended and nothing else is open -- the carousel or
+a game list, no menu, no game -- at every boot until the folder is moved,
+kept, followed or created; there an empty earlier folder is offered CREATE IT ·
+CHOOSE A FOLDER · NOT NOW as on a restore. Offline at boot it asks FINISH CLOUD
+SETUP / YOU'RE NOT ONLINE. CONNECT TO FINISH SETTING UP YOUR CLOUD FOLDER. with
+CONNECT TO WI-FI (the WI-FI NETWORKS picker; a network joined runs the step
+again) and NOT NOW. One setup page at a time: after a settings restore FINISH
+RESTORE PROCESS comes first, its FINISH goes on to the step, and its LATER puts
+both off to the next boot. Not in kid or kiosk mode.
 
 **Since RC-11, and since D-UI-078 (#187, #192, #241).** A transfer started from BACK UP TO THE CLOUD, RESTORE FROM THE CLOUD or MATCH runs on a page that owns the screen until it ends; the one way out while it runs is CANCEL, which asks first and names what cancelling means (`WHAT'S ALREADY IN PLACE STAYS. THE NEXT BACKUP OR RESTORE FINISHES WHAT THIS ONE DIDN'T.`), then stops the run and ends the page on `SKIPPED - YOU CANCELLED IT`. (For a week in RC-11 the page could be left with B and the row that launched it followed the run; D-UI-078 reversed that on 2026-09-21 -- "we should only allow things to run in the background when they're fast" -- and this paragraph described the reversed design until audit #258 PL-006.) After the run ends and its page is dismissed, the row that launched it reads `LAST <date> - COMPLETED` (or `COULDN'T FINISH` / `SKIPPED - ...`) until the outcome page has been seen once, then goes back to its one-line description (D-UI-070); the other two rows dim while one is current. Launching a game while a sync runs asks -- the sentence naming it, then STOP IT AND PLAY or KEEP WAITING (D-CLOUD-129 for the sync the player started, since RC-12 build 4; D-CLOUD-130 for the automatic startup and after-a-game syncs, since build 7; until then the first were refused and the second cancelled without asking); the same question guards a transfer that is current, which with the page sat in is not a state a press can reach. The startup card's first step reads `CHECKING THE CONNECTION...` when the interface sees a link and `WAITING FOR A NETWORK, UP TO 60 SECONDS...` when it does not; `SKIPPED - YOU'RE NOT ONLINE` follows the wait as before.
 

@@ -2,7 +2,7 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="551c5a76243c47a5610ea9e3cbbdd4128d80c9c3"
+PKG_VERSION="e108699ea313ecd5ec64b4310a4ea665e05ca19f"
 PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/rasteratops/emulationstation"
