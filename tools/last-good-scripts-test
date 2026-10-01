@@ -4461,6 +4461,19 @@ c1 --check-syncpath /Mine/Content
 c1 --set-saves-remote /Mine/Saves
 [ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content" ' ]; check $? "while /Mine/Saves still derives /Mine/Backups and /Mine/Content beside it" "rc ${RC}; config: $(conf1)"
 
+# --set-content-remote (the chooser, fork #352): the content root alone
+# moves, the other two stay; a top-level folder is fine here; the root,
+# "..", a quote and a space are refused with the config as it was.
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
+c1 --set-saves-remote /Mine/Saves
+c1 --set-content-remote Games/
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Games" ' ] && grep -qx 'OK /Games' "${C1}/out"; check $? "--set-content-remote Games/ stores /Games as the content root and leaves the saves and settings folders alone (rc ${RC})" "rc ${RC}; config: $(conf1); said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
+cp "${CONF1}" "${C1}/conf.before"
+for bad in / '/a/../b' "/It's" '/Two Words'; do
+    c1 --set-content-remote "${bad}"
+    [ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before"; check $? "--set-content-remote refuses '${bad}' and leaves the config as it was (rc ${RC})" "rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
+done
+
 # PL-051: the config is written as text. & and | used to reach sed's
 # replacement: & pasted the matched line into the value, | ended the
 # expression and the write failed while OK was printed.
@@ -13195,7 +13208,7 @@ ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; gr
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
 
 
-echo "  ab. cloud_scan (#350, D-CLOUD-156): the restore flow's scan, three reads announced in order, the facts written, the failures said"
+echo "  ab. cloud_scan (#350, D-CLOUD-156): the opening scan's three items, the content scan's one, the quiet follow, the facts written, the failures said"
 # The script whole under bwrap, its three sibling reads shimmed beside it (the
 # scripts find siblings next to themselves first), rclone answering an
 # archive listing, ip answering a route unless told not to.
@@ -13206,7 +13219,16 @@ printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nSETTINGS_R
 printf '#!/bin/sh\necho "logger $*" >> /rec/log\n' > "${SC}/shim/logger"
 printf '#!/bin/sh\n[ -e /rec/noroute ] || echo "default via 10.0.2.2 dev eth0"\n' > "${SC}/shim/ip"
 printf '#!/bin/sh\ncase "$1" in --label) echo QA;; esac\n' > "${SC}/repo/cloud_device_id"
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> /rec/argv\ncase "$1" in --state) printf "SAVES=/Rasteratops/Saves\\nSTATE=current\\n"; exit 0;; esac\nexit 1\n' > "${SC}/repo/cloud_migrate_layout"
+cat > "${SC}/repo/cloud_migrate_layout" <<'EOR'
+#!/bin/sh
+printf '%s\n' "$*" >> /rec/argv
+case "$1" in
+  --state) if [ -e /rec/superseded ] && [ ! -e /rec/followed ]; then printf 'SAVES=/ROCKNIX/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=superseded-empty\n'
+           else printf 'SAVES=/Rasteratops/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=current\n'; fi; exit 0 ;;
+  --follow) touch /rec/followed; exit 0 ;;
+esac
+exit 1
+EOR
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> /rec/argv\ncase "$1" in --content-location) printf "CONTENT_REMOTE=/Rasteratops/Content\\nSTATE=ok\\n"; exit 0;; esac\nexit 1\n' > "${SC}/repo/cloud_setup"
 cat > "${SC}/repo/cloud_content_restore" <<'EOR'
 #!/bin/sh
@@ -13222,7 +13244,8 @@ cat > "${SC}/shim/rclone" <<'EOR'
 printf '%s\n' "$*" >> /rec/argv
 case "$1" in
   listremotes) [ -e /rec/noremote ] || echo "qa:" ;;
-  lsf) printf '2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz\n2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz\n2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz\nROCKNIX_BACKUP.zip\n' ;;
+  lsf) case "$*" in *--dirs-only*) printf 'Rasteratops/\nPhotos/\n' ;;
+            *) printf '2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz\n2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz\n2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz\nROCKNIX_BACKUP.zip\n' ;; esac ;;
 esac
 exit 0
 EOR
@@ -13230,12 +13253,12 @@ chmod +x "${SC}/shim"/* "${SC}/repo"/*
 sc_run() { SCRC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
       --ro-bind /etc /etc --ro-bind "${SC}/profile" /etc/profile --ro-bind "${SC}/shim" /shim --bind "${SC}/rec" /rec --ro-bind "${SC}/repo" /repo \
       --dev /dev --proc /proc --tmpfs /tmp --bind "${SC}/storage" /storage \
-      bash /repo/cloud_scan > "${SC}/out" 2>&1; echo $? ) 2>/dev/null ); }
+      bash /repo/cloud_scan "$@" > "${SC}/out" 2>&1; echo $? ) 2>/dev/null ); }
 sc_out() { tr '\n' '|' < "${SC}/out" | cut -c1-200; }
 SCO="${SC}/storage/.cache/cloud_sync/scan"
 rm -f "${SC}"/rec/*; sc_run
-[ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit FOLDER|| >>> unit SETTINGS|| >>> unit CONTENT|| " ]; check $? "a full scan announces FOLDER, SETTINGS, CONTENT in that order and exits 0 (rc ${SCRC})" "$(sc_out)"
-[ -f "${SCO}/done" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(grep -c . "${SCO}/scan")" = 2 ] && [ "$(cat "${SCO}/systems")" = gb ]; check $? "its files hold the state, two content rows, the systems and the done stamp" "$(ls "${SCO}" 2>/dev/null | tr '\n' ' ')"
+[ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit CLOUD FOLDER|| >>> unit SETTINGS BACKUPS|| >>> unit GAME CONTENT|| " ] && [ "$(grep -c '^>>> doing scan' "${SC}/out")" = 3 ]; check $? "the opening scan announces CLOUD FOLDER, SETTINGS BACKUPS, GAME CONTENT in that order, each with its doing line, and exits 0 (rc ${SCRC})" "$(sc_out)"
+[ -f "${SCO}/done" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(tr '\n' ' ' < "${SCO}/root-dirs")" = "Rasteratops Photos " ] && [ ! -f "${SCO}/scan" ] && ! grep -q -- '--follow' "${SC}/rec/argv"; check $? "its files hold the state, the root folders and the done stamp; no content listing yet, no follow on a current folder" "$(ls "${SCO}" 2>/dev/null | tr '\n' ' ')"
 [ "$(sed -n 's/^MINE=//p' "${SCO}/settings")" = "2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^NEWEST=//p' "${SCO}/settings")" = "2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^COUNT=//p' "${SCO}/settings")" = 4 ] && [ "$(sed -n 's/^LABEL=//p' "${SCO}/settings")" = QA ]; check $? "the settings facts: this device's newest by label, the newest overall, the count, the label (D-CLOUD-162)" "$(cat "${SCO}/settings" 2>/dev/null | tr '\n' ' ')"
 grep -q 'lsf --files-only --include \*.{zip,tar.gz} qa:Rasteratops/Backups/ --contimeout 15s' "${SC}/rec/argv"; check $? "the archive listing is bounded and reads the Backups folder" "$(grep '^lsf' "${SC}/rec/argv" | head -1)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noroute"; sc_run
@@ -13243,7 +13266,16 @@ rm -f "${SC}"/rec/*; touch "${SC}/rec/noroute"; sc_run
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noremote"; sc_run
 [ "${SCRC}" = 1 ] && grep -q "^>>> why YOUR CLOUD STORAGE ISN'T SET UP YET" "${SC}/out"; check $? "no remote: exit 1 with its why (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/scan-fail"; sc_run
-[ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/done" ] && [ -f "${SCO}/settings" ]; check $? "a content listing the cloud refused (5): the why, no done stamp, the earlier facts kept (rc ${SCRC})" "$(sc_out)"
+[ "${SCRC}" = 0 ] && [ -f "${SCO}/done" ]; check $? "a content listing is not the opening scan's to fail: the scan-fail flag leaves the opening scan at 0 (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; sc_run --content --with-media
+[ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit ROMS, BIOS, AND GAME CONTENT|| " ] && grep -q '^>>> doing compare' "${SC}/out" \
+   && grep -qx -- '--scan --with-media' "${SC}/rec/argv" && [ "$(grep -c . "${SCO}/scan")" = 2 ] && [ "$(cat "${SCO}/systems")" = gb ] && [ -f "${SCO}/content-done" ]; check $? "--content --with-media announces one item in the ticked classes, passes the flag to --scan, writes the rows, the systems and its own stamp (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; sc_run --content --media-only
+[ "${SCRC}" = 0 ] && grep -q '^>>> unit GAME CONTENT||' "${SC}/out" && grep -qx -- '--scan --media-only' "${SC}/rec/argv"; check $? "--content --media-only is the GAME CONTENT item with --scan --media-only (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/scan-fail"; sc_run --content
+[ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/content-done" ] && grep -q '^>>> unit ROMS AND BIOS||' "${SC}/out"; check $? "a content listing the cloud refused (5): the ROMS AND BIOS item, the why, no content stamp (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/superseded"; sc_run
+[ "${SCRC}" = 0 ] && grep -qx -- '--follow' "${SC}/rec/argv" && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(grep -cx -- '--state' "${SC}/rec/argv")" = 2 ]; check $? "a superseded, empty folder beside a current one that exists is followed in the scan, and the state re-read (rc ${SCRC})" "$(sc_out) $(tr '\n' ' ' < "${SC}/rec/argv")"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

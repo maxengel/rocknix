@@ -16,6 +16,8 @@
 #                configured remotes)
 #   --free-auth-port  clear a stale sign-in webserver holding rclone's
 #                OAuth port 53682
+#   --set-content-remote <path>  change the content root alone (CONTENT_REMOTE;
+#                the chooser's, fork #352); nothing moves
 #   --set-saves-remote <path>  change the cloud folder (SAVES_REMOTE) the sync
 #                (--set-syncpath is accepted as the older spelling)
 #                tools use, keeping SETTINGS_REMOTE alongside it; refuses a
@@ -564,6 +566,32 @@ case "$1" in
         exit 0
     ;;
 
+    --set-content-remote)
+        # Point this device's content root at a folder the player chose or
+        # the scan found (the chooser, fork #352; CONTENT_REMOTE alone --
+        # the saves and settings folders stay where they are). Moves
+        # nothing, reversible, instant. The string checks are the saves
+        # folder's: one leading slash, no shell characters, no "..", which
+        # the sync's reader would refuse (conf_get) or rclone would
+        # resolve to a folder nobody named. A folder at the top of the
+        # cloud is fine here, unlike a saves folder (it has no siblings).
+        NEWPATH="$2"
+        [ -z "${NEWPATH}" ] && { echo "ERROR empty path"; exit 1; }
+        NEWPATH="/$(echo "${NEWPATH}" | sed 's:^/*::; s:/*$::')"
+        case "${NEWPATH}" in
+            "/") echo "ERROR root path not allowed"; exit 1 ;;
+            *..*) echo "That folder name can't be used."; exit 1 ;;
+            *[\$\`\\\"\']*|*[[:space:]]*) echo "That folder name has characters your cloud sync settings can't hold."; exit 1 ;;
+        esac
+        if ! conf_set CONTENT_REMOTE "${NEWPATH}"; then
+            echo "Your cloud sync settings couldn't be saved."
+            log_message "Content path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
+            exit 1
+        fi
+        log_message "Content path set to ${NEWPATH} by request"
+        echo "OK ${NEWPATH}"
+        exit 0
+    ;;
     --use-content-root)
         # The safe resolution: point this device back at the root where its
         # content already is. Moves nothing, reversible, instant.

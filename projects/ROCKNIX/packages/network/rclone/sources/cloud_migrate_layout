@@ -428,7 +428,20 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
     printf '%s\n' "${LISTING}" > "${list}"
     say "Copying ${what}..."
-    if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); then
+    # Under --apply the move runs on a page (GuiCloudTransfer, fork #353):
+    # ">>> doing" names the step for its row 3, and the copy's own progress
+    # goes to stdout for the page's counters (COPYING n OF m), as every
+    # transfer's does; the check and the delete print nothing it reads.
+    local copy_rc
+    if [ "${MODE}" = "--apply" ]; then
+        echo ">>> doing copy"
+        rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false --progress --stats 2s \
+            "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1 | tee "${list}.out"; copy_rc=${PIPESTATUS[0]}
+        out=$(cat "${list}.out" 2>/dev/null); rm -f "${list}.out"
+    else
+        out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); copy_rc=$?
+    fi
+    if [ "${copy_rc}" -ne 0 ]; then
         printf '%s\n' "${out}" | tail -3
         # A copy that stopped part-way has put some files in the new
         # folder; only the old one is as it was (G-A-12).
@@ -437,6 +450,7 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
         return 1
     fi
     say "Verifying ${what}..."
+    [ "${MODE}" = "--apply" ] && echo ">>> doing verify"
     out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
     if ! check_clean $? "${out}"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
@@ -455,6 +469,7 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
         return 2
     fi
     say "Removing the old ${what} folder..."
+    [ "${MODE}" = "--apply" ] && echo ">>> doing remove"
     { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
         || say "(could not remove the old folder; the copy is complete and verified)"
@@ -900,6 +915,17 @@ main() {
     fi
 
     say ""
+    # What moves, counted before anything does, so the page reads ITEM 1 OF n
+    # from the first announcement (D-UI-026); each tier announces itself in
+    # the page's own words as its move begins. A tier with nothing stored
+    # moves only its pointer and is not an item.
+    local items=0 item=0
+    ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" && items=$((items + 1))
+    ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" && items=$((items + 1))
+    ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/" && items=$((items + 1))
+    [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
+       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" && items=$((items + 1))
+    announce() { item=$((item + 1)); echo ">>> unit $1|${item}|${items}"; }
     # The backups first (PL-025). In the original layout they sit inside the
     # saves folder; moved first, they are out of it before the saves move
     # looks, as well as excluded from it. Each pointer is written as its
@@ -909,6 +935,7 @@ main() {
     # nothing stored only has its pointer moved.
     if ! same_folder "${backups}" "${NEW_BACKUPS}"; then
         if has_entries "${remote}${backups}/"; then
+            announce "SETTINGS BACKUPS"
             if ! relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups" SETTINGS_REMOTE; then
                 say "Nothing else attempted."
                 return 5
@@ -921,6 +948,7 @@ main() {
     local moved_saves=0
     if ! same_folder "${saves}" "${NEW_SAVES}"; then
         if has_files "${remote}${saves_src}/"; then
+            announce "SAVES"
             relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" SAVES_REMOTE "${SAVES_EXCLUDES[@]}" || return 5
             moved_saves=1
         else
@@ -928,6 +956,7 @@ main() {
         fi
     fi
     if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
+        announce "DISCARDED SAVES"
         if ! relocate "${remote}${old_replaced}" "${remote}${NEW_SAVES}-replaced" "discarded saves" ""; then
             say "Your discarded saves didn't finish moving; they are still at ${remote}${old_replaced}. Try again."
             return 5
@@ -945,6 +974,7 @@ main() {
     # string compare sent through the move and so onto itself.
     if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
        && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")"; then
+        announce "ROMS, BIOS, AND GAME CONTENT"
         migrate_content "${remote}" "${content}" "${mode}" || content_rc=$?
     elif [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
         say "Leaving CONTENT_REMOTE at ${content} -- it is not a path this migration set."

@@ -4,24 +4,36 @@
 
 # cloud_scan - what the cloud holds for this device, before anything is offered.
 #
-# The restore flow scans first and offers only what the scan found
+# The transfer pages scan first and offer only what the scan found
 # (D-CLOUD-156, fork #350): the folder's state, the settings archives by
-# device label, where the content is, and the content listing. This runs
-# those reads in order and talks to the scan page in the protocol every
-# cloud page reads (">>> unit", ">>> why"), writing each result to a file
-# the options page builds from. Reads only: nothing in the cloud or on the
-# device changes here, so no lock is taken and a sync may run beside it.
+# device label, where the content is, and -- once the player has ticked
+# what to move -- the content listing in those classes. This runs those
+# reads and talks to the scan page in the protocol every cloud page reads
+# (">>> unit", ">>> doing", ">>> why"), writing each result to a file the
+# options page builds from.
 #
-#   cloud_scan            run every read; 0 when all answered
+#   cloud_scan                   the opening scan: the folder, the settings
+#                                archives, where the content is (three items)
+#   cloud_scan --content [--with-media|--media-only]
+#                                the content listing for the systems page,
+#                                in the classes ticked (one item)
+#
+# Reads, with one exception: a device on a superseded folder whose current
+# folder another device has already made is re-pointed here, with no
+# question (cloud_migrate_layout --follow; D-CLOUD-160's "your other
+# devices will follow"). Nothing in the cloud changes, so no lock is taken
+# and a sync may run beside it.
 #
 # Results, under /storage/.cache/cloud_sync/scan/:
 #   state             cloud_migrate_layout --state, one fact per line
 #   archives          every settings archive in the Backups folder, one per line
 #   settings          LABEL= (this device's), MINE= (its newest), NEWEST= (overall), COUNT=
 #   content-location  cloud_setup --content-location, key=value
-#   scan              cloud_content_restore --scan's rows
-#   systems           the systems this device syncs (--systems)
-#   done              the epoch the scan completed; absent while it runs or failed
+#   root-dirs         the folders at the cloud's root, one per line (the chooser's)
+#   done              the epoch the opening scan completed; absent while it runs or failed
+#   scan              cloud_content_restore --scan's rows        (--content)
+#   systems           the systems this device syncs (--systems)  (--content)
+#   content-done      the epoch the content scan completed       (--content)
 #
 # Exit: 0 all read; 69 no network (the page says SKIPPED - YOU'RE NOT
 # ONLINE); 1 no cloud storage set up; otherwise the failing read's code,
@@ -71,55 +83,106 @@ os_name() {
     printf '%s\n' "${name}" | tr -cd 'A-Za-z0-9_-'
 }
 
-# What an rclone exit means to a player (es-player-text.md § Outcome vocabulary).
+# What an rclone exit means to a player: the sentences the card and the
+# rows already carry for these codes (ThreadedCloudSync::whyForCode), so
+# one code is never called two things and the French reaches them.
 why_for_rc() {
     case "$1" in
-        3|4) why "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        3|4) why "COULDN'T FIND YOUR CLOUD FOLDER" ;;
         5)   why "YOUR CLOUD STOPPED ANSWERING" ;;
-        7|8) why "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        7|8) why "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         *)   why "SOMETHING WENT WRONG" ;;
     esac
 }
 
-mkdir -p "${OUT}" || { why "COULDN'T WRITE TO THIS DEVICE"; exit 1; }
-rm -f "${OUT}"/state "${OUT}"/archives "${OUT}"/settings "${OUT}"/content-location "${OUT}"/scan "${OUT}"/scan.err "${OUT}"/systems "${OUT}"/done
+# Before any read: a place to write, a route, a remote.
+prepare() {
+    mkdir -p "${OUT}" || { log "scan: cannot make ${OUT}"; why "SOMETHING WENT WRONG"; exit 1; }
+    # No route, nothing tried: the page says SKIPPED - YOU'RE NOT ONLINE from
+    # the code alone (D-CLOUD-072, D-CLOUD-112).
+    if ! ip route show default 2>/dev/null | grep -q .; then
+        log "scan: no default route; skipped"
+        exit "${EXIT_NO_NETWORK}"
+    fi
+    REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+    if [ -z "${REMOTE}" ]; then
+        why "YOUR CLOUD STORAGE ISN'T SET UP YET"
+        exit 1
+    fi
+}
+
+# A read that failed ends the run with its why; 69 is the page's own sentinel.
+stop_on() { # <rc> <what>
+    [ "$1" -eq 0 ] && return 0
+    log "scan: $2 exited $1"
+    [ "$1" -eq "${EXIT_NO_NETWORK}" ] && exit "$1"
+    why_for_rc "$1"
+    exit "$1"
+}
+
+# --content: the listing the systems page is built from, in the classes
+# the player ticked (cloud_content_restore --scan's own flags), and the
+# systems this device syncs. One item; the page's row 3 says it is
+# comparing.
+scan_content() {
+    local label="ROMS AND BIOS" rc
+    case " $* " in
+        *" --with-media "*) label="ROMS, BIOS, AND GAME CONTENT" ;;
+        *" --media-only "*) label="GAME CONTENT" ;;
+    esac
+    rm -f "${OUT}"/scan "${OUT}"/scan.err "${OUT}"/systems "${OUT}"/content-done
+    prepare
+    echo ">>> unit ${label}||"
+    echo ">>> doing compare"
+    "$(sibling cloud_content_restore)" --scan "$@" > "${OUT}/scan" 2> "${OUT}/scan.err"; rc=$?
+    [ "${rc}" -eq 0 ] || log "scan: --scan $* exited ${rc}: $(head -1 "${OUT}/scan.err" 2>/dev/null)"
+    stop_on "${rc}" "--scan"
+    "$(sibling cloud_content_restore)" --systems > "${OUT}/systems" 2>/dev/null || : > "${OUT}/systems"
+    date +%s > "${OUT}/content-done"
+    log "scan: content done ($(grep -c . "${OUT}/scan") rows, ${label})"
+    exit 0
+}
+
+case "$1" in
+    --content) shift; scan_content "$@" ;;
+    "") ;;
+    *) echo "usage: cloud_scan [--content [--with-media|--media-only]]" >&2; exit 2 ;;
+esac
+
+rm -f "${OUT}"/state "${OUT}"/archives "${OUT}"/settings "${OUT}"/content-location "${OUT}"/root-dirs "${OUT}"/done
+prepare
 date +%s > "${OUT}/started"
-
-# No route, nothing tried: the page says SKIPPED - YOU'RE NOT ONLINE from the
-# code alone (D-CLOUD-072, D-CLOUD-112).
-if ! ip route show default 2>/dev/null | grep -q .; then
-    log "scan: no default route; skipped"
-    exit "${EXIT_NO_NETWORK}"
-fi
-
-REMOTE=$(rclone listremotes 2>/dev/null | head -1)
-if [ -z "${REMOTE}" ]; then
-    why "YOUR CLOUD STORAGE ISN'T SET UP YET"
-    exit 1
-fi
 
 # 1. The folder: current, kept, superseded or the player's own; the current
 #    folder's presence; the marker (cloud_migrate_layout --state, fork #353).
-echo ">>> unit FOLDER||"
-"$(sibling cloud_migrate_layout)" --state > "${OUT}/state" 2>/dev/null; rc=$?
-if [ "${rc}" -ne 0 ]; then
-    log "scan: --state exited ${rc}"
-    [ "${rc}" -eq "${EXIT_NO_NETWORK}" ] && exit "${rc}"
-    why_for_rc "${rc}"
-    exit "${rc}"
+echo ">>> unit CLOUD FOLDER||"
+echo ">>> doing scan"
+layout=$(sibling cloud_migrate_layout)
+"${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
+# A device left on a superseded folder with nothing in it, whose current
+# folder another device has already made, follows the fleet here (the
+# scripts do the same before a sync): the options page then never has to
+# ask about a folder the player has already answered for elsewhere.
+if [ "$(sed -n 's/^STATE=//p' "${OUT}/state")" = superseded-empty ] \
+   && [ "$(sed -n 's/^CURRENT_EXISTS=//p' "${OUT}/state")" = 1 ]; then
+    if timeout 20 "${layout}" --follow >/dev/null 2>&1; then
+        log "scan: followed the fleet to the current layout"
+        "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
+    fi
 fi
 
 # 2. The settings archives, by the device that wrote each (the label in the
 #    name, cloud_restore's rule): this device's newest first, else the newest
 #    overall, else none -- the row is offered or dimmed from this (D-CLOUD-162).
-echo ">>> unit SETTINGS||"
+echo ">>> unit SETTINGS BACKUPS||"
+echo ">>> doing scan"
 settings_remote=$(conf_get SETTINGS_REMOTE) || { why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"; exit 1; }
 settings_remote="${settings_remote%/}"
 listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${REMOTE}${settings_remote:+${settings_remote#/}}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); rc=$?
 case "${rc}" in
     0) ;;
     3|4) listing="" ;;   # no Backups folder yet: nothing to restore, not a failure
-    *) log "scan: archives listing exited ${rc}"; why_for_rc "${rc}"; exit "${rc}" ;;
+    *) stop_on "${rc}" "archives listing" ;;
 esac
 printf '%s\n' "${listing}" | sed '/^$/d' > "${OUT}/archives"
 label=$(device_label); osn=$(os_name); mine=""; newest=""
@@ -134,22 +197,18 @@ newest=$(grep -E '^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-' "${OUT}/archives" | sor
     echo "COUNT=$(grep -c . "${OUT}/archives")"
 } > "${OUT}/settings"
 
-# 3. The content: where it is (the configured root, the cloud root's
-#    /Rasteratops/Content, the remote's root), then the listing the page
-#    rows come from. 69 is the page's own sentinel; anything else is a
-#    cloud that could not be read, said in its words.
-echo ">>> unit CONTENT||"
+# 3. Where the content is: the configured root, the cloud root's
+#    /Rasteratops/Content, or nowhere yet (cloud_setup --content-location,
+#    fork #352) -- and the folders at the cloud's root, for the chooser the
+#    page offers when nothing of ours is found. The listing itself waits for
+#    --content, once the player has said which classes to compare.
+echo ">>> unit GAME CONTENT||"
+echo ">>> doing scan"
 "$(sibling cloud_setup)" --content-location > "${OUT}/content-location" 2>/dev/null; rc=$?
 [ "${rc}" -eq 0 ] || log "scan: --content-location exited ${rc} (reported, not fatal)"
-"$(sibling cloud_content_restore)" --scan > "${OUT}/scan" 2> "${OUT}/scan.err"; rc=$?
-if [ "${rc}" -ne 0 ]; then
-    log "scan: --scan exited ${rc}: $(head -1 "${OUT}/scan.err" 2>/dev/null)"
-    [ "${rc}" -eq "${EXIT_NO_NETWORK}" ] && exit "${rc}"
-    why_for_rc "${rc}"
-    exit "${rc}"
-fi
-"$(sibling cloud_content_restore)" --systems > "${OUT}/systems" 2>/dev/null || : > "${OUT}/systems"
+rclone lsf --dirs-only "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::; /^$/d' > "${OUT}/root-dirs"; rc=${PIPESTATUS[0]}
+stop_on "${rc}" "root listing"
 
 date +%s > "${OUT}/done"
-log "scan: done ($(grep -c . "${OUT}/scan") content rows, $(grep -c . "${OUT}/archives") archives, $(sed -n 's/^STATE=//p' "${OUT}/state"))"
+log "scan: done ($(grep -c . "${OUT}/archives") archives, $(sed -n 's/^STATE=//p' "${OUT}/state"), content $(sed -n 's/^STATE=//p' "${OUT}/content-location"))"
 exit 0
