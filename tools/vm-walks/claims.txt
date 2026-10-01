@@ -18,10 +18,12 @@ d72084ccad run-transfer-frames/07-t02.png 670 320 710 345 #308  # ITEM 1 OF 5: t
 d72084ccad confirm-cloud-folder/04-folder-result.png 240 545 1040 575 #308  # the same row's line on the hub reopened after the folder change (ES 39d5a9d6d); the reopened hub sits on CHANGE CLOUD FOLDER again (ES 4313a8f53, G-E2-O1) so nothing else on the frame differs
 
 # The cloud epic (#354; 1acdaf2cce, vm-qa run 96), against the d72084ccad baseline:
+# (The t05 rectangles were first written as frame-diff printed the box, 565..714 inclusive, which a
+# half-open claim of 565 714 does not contain; widened after run 99 caught the same sample, 2026-10-01.)
 d72084ccad confirm-cloud-folder/03-folder-editor.png 200 222 434 272 #353  # the CLOUD FOLDER editor holds /Rasteratops/Saves, the fork's default (D-CLOUD-156); the caret after it is masked
 d72084ccad confirm-cloud-folder/05-after-dismiss.png 200 222 434 272 #353  # the same editor, reopened after the dismiss
 d72084ccad to-change-cloud-folder/03-folder-editor.png 200 222 434 272 #353  # the same editor on the other walk
-d72084ccad run-transfer-frames/08-t05.png 565 288 714 338 #308  # the run carries PICO-8's files too (26 files, 1.1 MB against 23, 640 KB) and still ends at ELAPSED 0:03 (t08: COMPLETED); the t05 sample can catch ITEM 5 OF 5 a moment before the end
-d72084ccad run-transfer-frames/08-t05.png 499 560 782 573 #308  # the same sample: the footer still THIS CAN TAKE A WHILE.
-d72084ccad run-transfer-frames/08-t05.png 588 743 691 765 #308  # the same sample: the help bar still CANCEL
+d72084ccad run-transfer-frames/08-t05.png 560 284 720 342 #308  # the run carries PICO-8's files too (26 files, 1.1 MB against 23, 640 KB) and still ends at ELAPSED 0:03 (t08: COMPLETED); the t05 sample can catch ITEM 5 OF 5 a moment before the end
+d72084ccad run-transfer-frames/08-t05.png 495 556 788 578 #308  # the same sample: the footer still THIS CAN TAKE A WHILE.
+d72084ccad run-transfer-frames/08-t05.png 584 740 696 768 #308  # the same sample: the help bar still CANCEL
 d72084ccad restore-page/02-restore-page.png 240 460 1040 520 #349  # SETTINGS dimmed, its line NO SETTINGS BACKUP FROM THIS DEVICE YET and no switch: the QA cloud holds no settings backup from this device's label, so the scan offers none (D-CLOUD-162, D-CLOUD-164 string 3); since ES 551c5a762 the row keeps the rows' inset, where 1acdaf2cce..d9493fe339 drew it flush with the panel's edge
