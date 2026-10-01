@@ -641,6 +641,17 @@ button{margin-top:10px;padding:12px 20px;font-size:16px;border-radius:8px;
        border:0;background:#4af;color:#000;font-weight:600;width:100%}
 button.minor{background:#333;color:#ddd;font-weight:500}
 .note{color:#aaa;font-size:.9rem}
+/* The connection line sits between the heading and the field; without
+   margins of its own it read as part of both (fork #351). */
+#state{margin:.75rem 0}
+/* The way off the handheld's page lives at the very bottom, under the note,
+   with room above it, so a drag on the pad that runs off its edge lands
+   on text and not on Close (fork #351, D-CLOUD-163). Its two-step
+   confirmation replaces the row in place. */
+.leave{margin-top:2rem}
+.leave .ask{display:flex;gap:8px;align-items:center}
+.leave .ask span{flex:1 1 auto;color:#aaa;font-size:.9rem}
+.leave .ask button{flex:0 0 auto;width:auto;padding:12px 18px;margin-top:0}
 .err{background:#722;padding:12px;border-radius:8px;margin:1rem 0}
 .ok{background:#272;padding:12px;border-radius:8px;margin:1rem 0}
 .box{border:1px solid #444;border-radius:10px;padding:14px;margin:1rem 0}
@@ -986,13 +997,6 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 <button type=button class=minor data-key=f2>Page up</button>
 <button type=button class=minor data-key=f3>Page down</button>
 </div>
-<!-- A way off the handheld's page that does not depend on its gamepad: a
-     pad the bridge cannot read (#308 gpt F-RS-16) leaves this, and the
-     window quits on Escape. -->
-<div class=keys>
-<button type=button class=minor data-key=escape>Close page</button>
-</div>
-
 <h2>Pointer</h2>
 <div class=pad id=pad>drag to move &middot; tap to click</div>
 
@@ -1000,6 +1004,17 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 This types for it, so you can more easily retrieve and type your login
 info. What you type crosses your network unencrypted, so use this on a
 network you trust.</p>
+
+<!-- A way off the handheld's page that does not depend on its gamepad: a
+     pad the bridge cannot read (#308 gpt F-RS-16) leaves this, and the
+     window quits on Escape. At the bottom, under the note, because it sat
+     right above the drag pad and a thumb found it by accident (fork #351);
+     and asked once, in place, before Escape is sent (D-CLOUD-163). -->
+<div class="keys leave" id=leave>
+<button type=button class=minor id=leave-ask>Close page</button>
+<div class=ask id=leave-confirm hidden><span>Close the sign-in page on your handheld?</span>
+<button type=button class=minor id=leave-keep>Keep</button><button type=button id=leave-close>Close</button></div>
+</div>
 </div>
 
 <script>
@@ -1154,6 +1169,17 @@ window.onerror = function (message) {
     box.value = ""; sent = ""; dropped = []; warnSay(); box.focus();
   });
 
+  // Close page asks once, in place, in the words approved for it (D-CLOUD-164
+  // string 12): the button gives way to the question with Keep and Close;
+  // Keep puts the button back, Close sends Escape as the old button did.
+  // Static markup toggled by hidden, nothing built at run time: the page's
+  // load test under node has no createElement, and a browser's confirm()
+  // cannot carry these words.
+  var leaveAsk = document.getElementById("leave-ask"), leaveConfirm = document.getElementById("leave-confirm");
+  function leaveShow(asking) { leaveAsk.hidden = asking; leaveConfirm.hidden = !asking; }
+  leaveAsk.addEventListener("click", function () { leaveShow(true); });
+  document.getElementById("leave-keep").addEventListener("click", function () { leaveShow(false); });
+  document.getElementById("leave-close").addEventListener("click", function () { act("escape"); leaveShow(false); });
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
     b.addEventListener("click", function () { act(b.dataset.key); });
   });

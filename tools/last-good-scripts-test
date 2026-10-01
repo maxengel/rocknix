@@ -5984,11 +5984,17 @@ cat >> "${C4}/page_test.js" <<'EOJS'
 group(async function aWayToCloseFromThePhone() {
   const p = page("open a1");
   await p.poll();
-  let ok = true, why = "";
-  try { await p.key("escape"); } catch (e) { ok = false; why = e.message; }
-  result(ok && p.device().closed,
-    "the phone can close the page on the handheld (Escape, which the window quits on)",
-    "no way to close the handheld's page from the phone: " + (why || "Escape was not sent") + " (#308 gpt F-RS-16)");
+  // Two steps since fork #351 (D-CLOUD-163): Close page shows the question,
+  // Keep puts the button back and sends nothing, Close sends Escape.
+  const ask = p.byId["leave-ask"], confirm = p.byId["leave-confirm"], keep = p.byId["leave-keep"], close = p.byId["leave-close"];
+  let ok = !!(ask && confirm && keep && close), why = ok ? "" : "the Close row's four parts are not all on the page";
+  if (ok && !confirm.hidden) { ok = false; why = "the question is shown before Close page is pressed"; }
+  if (ok) { ask.fire("click"); if (confirm.hidden || !ask.hidden) { ok = false; why = "Close page did not show the question in place"; } }
+  if (ok) { keep.fire("click"); await p.settle(); if (p.device().closed || !confirm.hidden) { ok = false; why = "Keep sent Escape or left the question up"; } }
+  if (ok) { ask.fire("click"); close.fire("click"); await p.settle(); }
+  result(ok && p.device().closed && confirm.hidden,
+    "the phone can close the page on the handheld after one question: Close page, then Close sends Escape; Keep sends nothing (#351)",
+    "no way to close the handheld's page from the phone: " + (why || "Escape was not sent") + " (#308 gpt F-RS-16, fork #351)");
 });
 EOJS
 cat >> "${C4}/page_test.js" <<'EOJS'

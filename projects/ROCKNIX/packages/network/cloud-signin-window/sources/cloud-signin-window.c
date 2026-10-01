@@ -419,12 +419,24 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
  * Rebuilding takes a few seconds -- it reloads every resource it had
  * released -- and closing first left the player looking at a black screen
  * immediately after a sign-in that had just succeeded, which reads as a
- * crash rather than as progress. */
+ * crash rather than as progress.
+ *
+ * In the phone page's own style (cloud_oauth's STYLE: the dark card, the
+ * heading, the note), reading as a success and saying what happens next
+ * (fork #351 section 4; the approved words, D-CLOUD-164 string 13). It was
+ * one unstyled line, which the maintainer read as "a 404 page or something
+ * incredibly basic" (2026-09-30). A data: URL, so # is %23 and the page
+ * needs no file the window would have to find. */
 static const char *FINISHING_PAGE =
     "data:text/html,<meta name=viewport content='width=device-width'>"
-    "<body style='margin:0;height:100vh;display:flex;align-items:center;"
-    "justify-content:center;background:%2314171c;color:%23e8ecf2;"
-    "font:20px system-ui,sans-serif'>Finishing up&hellip;</body>";
+    "<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:20px;"
+    "background:%23111;color:%23eee;min-height:100vh;box-sizing:border-box;"
+    "display:flex;align-items:center;justify-content:center}"
+    ".card{max-width:34rem;text-align:center}"
+    "h1{font-size:1.6rem;margin:0 0 .5rem;color:%232d7}"
+    ".note{color:%23aaa;font-size:1rem}</style>"
+    "<body><div class=card><h1>Connected</h1>"
+    "<p class=note>Finishing up on your handheld&hellip;</p></div></body>";
 
 static gboolean probe_tick(gpointer data)
 {
