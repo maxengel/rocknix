@@ -2,6 +2,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="libsoup"
+# freshness: pinned -- 3.8.0 is a new series (GNOME's 3.8, 2026-09) under the WebKitGTK the sign-in window is built on; the 3.6 series stays for 0.0.1 and moves with the next WebKitGTK bump (fork #362)
 PKG_VERSION="3.6.6"
 PKG_SHA256="51ed0ae06f9d5a40f401ff459e2e5f652f9a510b7730e1359ee66d14d4872740"
 PKG_LICENSE="LGPL-2.1-or-later"

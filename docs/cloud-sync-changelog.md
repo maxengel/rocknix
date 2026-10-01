@@ -2737,6 +2737,69 @@ lock's refused save landing after the join. proof-298 on the same guest: 35 PASS
 stand-ins (a provider bound over rclone authorize, a uinput pad, a delayed capture, a black-holed media host); each is
 named in the run's row, and a stand-in keeps its checkbox open until the real input has been seen once (audit #258, P-05).
 
+### The cloud scans first, the folder is /Rasteratops, and the dialogs come where you are (2026-10-01, `1acdaf2cce`, #354)
+
+The cloud epic for 0.0.1 (#349, #350, #351, #352, #353), proven on guest d
+at 640x480 and on the guest pair before any device. What a player notices:
+
+- **BACK UP TO THE CLOUD and RESTORE FROM THE CLOUD open on a page that
+  checks the cloud first** -- CHECKING YOUR CLOUD, three items, a few
+  seconds -- and the options page after it offers only what the cloud
+  holds for this device (D-CLOUD-156/167). A check that could not finish
+  stays on its page with its why and TRY AGAIN beside CLOSE; CANCEL is the
+  way out while it runs. The comparison that used to run as a loader over
+  the options page is gone (the pop-up over a pop-up, #350).
+- **SETTINGS is offered only from this device's own backup.** With one in
+  the cloud the row says which device and when; with none, or only another
+  device's, it is dimmed with NO SETTINGS BACKUP FROM THIS DEVICE YET
+  (D-CLOUD-162, #349).
+- **The default cloud folder is /Rasteratops** (D-CLOUD-158): saves,
+  settings backups and game content under it. A device whose cloud holds
+  the earlier /ROCKNIX, or upstream's /GAMES, is asked once, at the check
+  -- YOUR CLOUD HAS A /ROCKNIX FOLDER FROM AN EARLIER VERSION. MOVE IT TO
+  /Rasteratops? YOUR OTHER DEVICES WILL FOLLOW. -- with MOVE first, KEEP
+  USING /ROCKNIX and NOT NOW (D-CLOUD-160). MOVE copies, checks the copy,
+  then removes the old folder, on a page of its own (MOVING YOUR CLOUD
+  FOLDER), and carries the set-aside of discarded saves with it
+  (D-CLOUD-165). A device with no current folder is offered one -- CREATE
+  IT, WITH FOLDERS FOR SAVES, SETTINGS BACKUPS, AND GAME CONTENT? -- or
+  CHOOSE A FOLDER (D-CLOUD-161); a carried /GAMES setting counts as no
+  folder at all.
+- **The other devices follow.** A device still on the old folder with
+  nothing in it is re-pointed at the fleet's new one without a question;
+  one that kept playing on an older build, and so has saves under the old
+  name, merges into the fleet's folder when it moves: the newer copy of
+  each save is kept, every version that differs is set aside first under
+  Saves-replaced, and the old folder goes only once every file is in the
+  new one (D-CLOUD-168; the mixed-installation test on `tools/vm-pair`).
+- **The startup and exit syncs ask nothing.** With no saves folder in the
+  cloud the card reads SKIPPED - YOUR CLOUD FOLDER ISN'T SET UP YET with
+  SET IT UP: GAME SETTINGS > MANAGE CLOUD STORAGE, and the row under SYNC
+  SAVES DURING STARTUP says the same; the question the Nova met at startup
+  is asked at the cloud setup and on the transfer pages instead
+  (D-CLOUD-166).
+- **CONTENT TO RESTORE lists only what is ours.** The listing shows ROM
+  systems, BIOS and known content folders, never the rest of a cloud's
+  root (#352); where the configured content root holds nothing of ours and
+  the cloud root's Content folder does, that folder is used; where nothing
+  is found, YOUR CLOUD HAS NO ROMS OR BIOS AT <folder>. CHOOSE THE FOLDER
+  WHERE YOUR GAMES ARE? opens CHOOSE A CLOUD FOLDER with the cloud's root
+  folders.
+- **The phone keyboard page's Close asks once**, from the bottom of the
+  page under the note: Close the sign-in page on your handheld? with Keep
+  and Close (D-CLOUD-163); the line between the heading and the field has
+  room; the handheld's finishing page reads Connected / Finishing up on
+  your handheld... in the page's own style; the sign-in window tells a
+  provider it is a handset, so Dropbox's pages arrive in their touch layout
+  (D-NET-016, #351).
+- **Fixed on the way**: the transfer verb read a freed pointer after
+  closing its page and crashed on the scan-opened page (read from a kept
+  core); the approved scan line and the move's note drop a clause at 640
+  px rather than clipping; the move's summary says MOVED.
+
+Every new string ships with its French (D-UI-051). `docs/es-menu-map.md`
+carries the five new screens; `tools/es-menu-map-check` reads 0 missing.
+
 ### The phone keyboard page works again, and says when it cannot reach the handheld (2026-09-29, `69e6039f8f`, #330)
 
 Found by the maintainer pairing Dropbox on the Retroid Pocket Nova with the phone keyboard page: `Checking…` under the title for as long as the page was open, taps on the pointer pad doing nothing, the Show button off the right edge of the screen. The page's script had declared the window's state as `up` over the pad's `up(e)` handler (the fix round's change), so it died at load on every browser before it polled or bound the tap and mouse handlers -- drags still moved the pointer, because that handler was bound before the throw. The state is renamed (D-NET-014); the page now puts a dead script on its state line with the browser's words, says `Your phone can't reach your handheld. Both need to be on the same Wi-Fi, and a VPN on your phone can get in the way.` after five failed probes in a row while it keeps trying, and its five-button row shares the width of a phone's screen. Reproduced and proven on the VM with the guest's own WebKit playing the phone and headless Firefox at 390 px (`docs/qa-frames/2026-09-29/330/`); the script harness now loads the page's script under node and refuses a var that shares a function's name, both of which fail against RC1's page. Not in RC1's images; RC2 carries it.

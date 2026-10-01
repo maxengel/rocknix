@@ -13302,6 +13302,27 @@ rm -f "${SC}"/rec/*; touch "${SC}/rec/scan-fail"; sc_run --content
 rm -f "${SC}"/rec/*; touch "${SC}/rec/superseded"; sc_run
 [ "${SCRC}" = 0 ] && grep -qx -- '--follow' "${SC}/rec/argv" && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(grep -cx -- '--state' "${SC}/rec/argv")" = 2 ]; check $? "a superseded, empty folder beside a current one that exists is followed in the scan, and the state re-read (rc ${SCRC})" "$(sc_out) $(tr '\n' ' ' < "${SC}/rec/argv")"
 
+echo "  ac. the Retroid Pocket Nova's ledcontrol (#332): LED BRIGHTNESS writes the LEDs, rgb with no colour set lights white, off zeroes"
+# The quirk script on the host, bash, against a fixture LED_PATH, with get_setting/set_setting shimmed and the
+# stick-colour helper recording its arguments. The old script had no brightness case (the row's call matched
+# nothing) and handed the helper nothing when analogsticks.led was unset.
+LD="${TMP}/led"; mkdir -p "${LD}/bin"; for s in l r; do for n in 1 2 3 4; do mkdir -p "${LD}/sys/multi-led${s}${n}/leds/rgb:${s}${n}"; done; done
+src_of "projects/ROCKNIX/packages/hardware/quirks/devices/Retroid Pocket Nova/bin/ledcontrol" "${LD}/bin/ledcontrol.src"
+sed -e 's|^\. /etc/profile$|:|' -e "s|/usr/bin/analog_sticks_ledcontrol|${LD}/bin/helper|" "${LD}/bin/ledcontrol.src" > "${LD}/bin/ledcontrol"
+printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> %s/helper-argv\n' "${LD}" > "${LD}/bin/helper"; chmod +x "${LD}/bin/helper"
+led_run() { ( SETTINGS="${LD}/settings"; export SETTINGS; touch "${SETTINGS}"
+  get_setting() { grep "^$1=" "${SETTINGS}" | tail -1 | cut -d= -f2-; }; set_setting() { echo "$1=$2" >> "${SETTINGS}"; }; export -f get_setting set_setting
+  LED_PATH="${LD}/sys" timeout 10 bash "${LD}/bin/ledcontrol" "$@" >/dev/null 2>&1 ); }
+led_vals() { cat "${LD}"/sys/*/leds/*/brightness 2>/dev/null | sort -u | tr '\n' ' '; }
+rm -f "${LD}/settings" "${LD}/helper-argv"
+led_run brightness max; [ "$(led_vals)" = "255 " ]; check $? "brightness max writes 255 to every LED's brightness file" "wrote: $(led_vals)"
+led_run brightness mid; [ "$(led_vals)" = "128 " ]; check $? "brightness mid writes 128" "wrote: $(led_vals)"
+led_run brightness min; [ "$(led_vals)" = "32 " ] && grep -q '^led.brightness=min$' "${LD}/settings"; check $? "brightness min writes 32 and is remembered as led.brightness" "wrote: $(led_vals); $(tr '\n' ' ' < "${LD}/settings")"
+led_run rgb; [ "$(tail -1 "${LD}/helper-argv")" = "32 255 255 255 255 255 255" ]; check $? "rgb with no colour set lights white at the remembered brightness (the helper got seven numbers)" "helper got: $(tail -1 "${LD}/helper-argv" 2>/dev/null)"
+echo "analogsticks.led=200 255 0 0 0 0 255" >> "${LD}/settings"
+led_run rgb; [ "$(tail -1 "${LD}/helper-argv")" = "200 255 0 0 0 0 255" ]; check $? "rgb with a colour set hands the helper that colour" "helper got: $(tail -1 "${LD}/helper-argv")"
+led_run off; [ "$(led_vals)" = "0 " ] && [ "$(cat "${LD}/sys/multi-ledr2/leds/rgb:r2/multi_intensity")" = "0 0 0" ]; check $? "off zeroes every LED's brightness and colour" "wrote: $(led_vals)"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

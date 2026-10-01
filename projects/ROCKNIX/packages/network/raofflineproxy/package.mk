@@ -16,6 +16,7 @@ PKG_NAME="raofflineproxy"
 # (rcheevos 1433173, libchdr 8e7b8bd; D-RA-029, D-RA-037). Every patch
 # applies as it did; 008's config.py hunk header is moved eight lines to
 # where #178 left load_config. APP_VERSION still reads 1.13.0-alpha1.
+# freshness: pinned -- upstream's next four commits (93f98382bc, 2026-09-30) rewrite the Linux caching model into a 100-per-30-minutes budget with a queue, and nine of the fork's sixteen patches no longer apply to them; pinned for 0.0.1 pending the maintainer's disposition on fork #361
 PKG_VERSION="248ce5acae75113d09500cd7c6661a12fee4b93c"
 PKG_SHA256="5a430a6bc75d4d101ef983ea1c67897613387148f991daafac5a035637ec7cf5"
 # GPLv3 text with no "or any later version" grant in the sources.
