@@ -648,6 +648,7 @@ button.minor{background:#333;color:#ddd;font-weight:500}
    with room above it, so a drag on the pad that runs off its edge lands
    on text and not on Close (fork #351, D-CLOUD-163). Its two-step
    confirmation replaces the row in place. */
+[hidden]{display:none!important}
 .leave{margin-top:2rem}
 .leave .ask{display:flex;gap:8px;align-items:center}
 .leave .ask span{flex:1 1 auto;color:#aaa;font-size:.9rem}
@@ -1010,7 +1011,7 @@ network you trust.</p>
      window quits on Escape. At the bottom, under the note, because it sat
      right above the drag pad and a thumb found it by accident (fork #351);
      and asked once, in place, before Escape is sent (D-CLOUD-163). -->
-<div class="keys leave" id=leave>
+<div class=leave id=leave>
 <button type=button class=minor id=leave-ask>Close page</button>
 <div class=ask id=leave-confirm hidden><span>Close the sign-in page on your handheld?</span>
 <button type=button class=minor id=leave-keep>Keep</button><button type=button id=leave-close>Close</button></div>

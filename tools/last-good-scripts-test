@@ -6012,6 +6012,27 @@ group(async function theWarningKeepsTheMask() {
     "masked, the warning reads " + JSON.stringify(masked) + " -- it shows what the masked box hides (G-C-05 gpt)");
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ fork #351, vm-qa run 97's 390 px render
+group(async function hiddenMeansHidden() {
+  // The two-step Close (D-CLOUD-163) shows and hides its button and its
+  // question with the hidden attribute, and a class rule that sets display
+  // wins over the browser's own [hidden]{display:none}: on the build that
+  // shipped it, a 390 px render showed the question beside the Close page
+  // button before anything was pressed, and the button, laid out in a row
+  // of keys, squeezed to a sliver. A DOM with no CSS cannot see either, so
+  // the page's own rules are read here.
+  const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "";
+  const rule = /\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*;?\s*\}/.test(css);
+  const leave = (html.match(/<div[^>]*\bid="?leave"?[^>]*>/) || [""])[0];
+  const inKeys = /class="?[^">]*\bkeys\b/.test(leave);
+  result(rule && leave !== "" && !inKeys,
+    "the page's CSS hides whatever carries hidden, whatever its class sets, and the Close control is not laid out as a row of keys (#351)",
+    "the Close control can show both of its steps at once or squeeze its button: " +
+    (rule ? "" : "no [hidden]{display:none!important} in the page's CSS; ") +
+    (leave === "" ? "no #leave element; " : "") + (inKeys ? "#leave carries the keys class (a flex row); " : "") + "(fork #351)");
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {

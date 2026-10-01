@@ -2808,6 +2808,14 @@ carries the five new screens; `tools/es-menu-map-check` reads 0 missing.
   `1d05f558f`, D-CLOUD-156). The MOVE THEM? preview now lists the content
   move it makes beside the saves and the backups.
 
+- **On the phone keyboard page, Close page shows its question only when
+  pressed** -- the first build of the two-step Close drew the question
+  beside a squeezed button from the start, because a class rule's
+  `display` won over the `hidden` attribute (run 97's 390 px render,
+  `docs/qa-frames/2026-10-01/351/`). And **RESTORE FROM THE CLOUD's dimmed
+  SETTINGS row lines up with the rows above it** (ES `551c5a762`); it sat
+  flush with the panel's left edge.
+
 ### The phone keyboard page works again, and says when it cannot reach the handheld (2026-09-29, `69e6039f8f`, #330)
 
 Found by the maintainer pairing Dropbox on the Retroid Pocket Nova with the phone keyboard page: `Checking…` under the title for as long as the page was open, taps on the pointer pad doing nothing, the Show button off the right edge of the screen. The page's script had declared the window's state as `up` over the pad's `up(e)` handler (the fix round's change), so it died at load on every browser before it polled or bound the tap and mouse handlers -- drags still moved the pointer, because that handler was bound before the throw. The state is renamed (D-NET-014); the page now puts a dead script on its state line with the browser's words, says `Your phone can't reach your handheld. Both need to be on the same Wi-Fi, and a VPN on your phone can get in the way.` after five failed probes in a row while it keeps trying, and its five-button row shares the width of a phone's screen. Reproduced and proven on the VM with the guest's own WebKit playing the phone and headless Firefox at 390 px (`docs/qa-frames/2026-09-29/330/`); the script harness now loads the page's script under node and refuses a var that shares a function's name, both of which fail against RC1's page. Not in RC1's images; RC2 carries it.
