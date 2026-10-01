@@ -29,6 +29,9 @@
 #   cloud_migrate_layout --keep      record that this device keeps its superseded
 #                                    folder (LAYOUT_KEEP in the conf; asked once, D-CLOUD-160)
 #   cloud_migrate_layout --superseded  the superseded defaults, one per line (no network)
+#   cloud_migrate_layout --needs-step  0 when the cloud folder step has something to settle:
+#                                    an earlier default, not kept, a remote set up (no
+#                                    network; asked at every boot, D-CLOUD-170)
 #   cloud_migrate_layout --follow    re-point a device on a superseded default at the
 #                                    current layout when another device has already
 #                                    made it (no question; D-CLOUD-160's "the other
@@ -799,7 +802,11 @@ layout_follow() { # <remote> <saves> <backups> <content>
     superseded_default "${saves}" || return 3
     keep=$(conf_value LAYOUT_KEEP) || return 2
     [ -n "${keep}" ] && same_folder "${saves}" "${keep}" && return 3
-    exists "${remote}${NEW_SAVES}" || return 3
+    # One listing for the usual answer, "no device has moved yet": the
+    # current folder's parent, which names Saves/ once it exists (exists()
+    # would list the folder and then its parent, two rclone starts).
+    list_or_stop "${remote}${NEW_SAVES%/*}/" --dirs-only
+    printf '%s\n' "${LISTING}" | grep -qxF -- "${NEW_SAVES##*/}/" || return 3
     # A device whose old folder still holds files is not followed: they
     # would be stranded in a folder nothing reads once the pointer moves
     # (the futro's pre-mortem, 2026-10-01). The move is offered instead,
@@ -922,9 +929,16 @@ main() {
     # The cloud answers before anything is asked of it (PL-027): a remote
     # that does not list at its root is unreadable, and nothing below --
     # a presence test, a pointer -- is reached.
+    # Not for --follow, which an exit sync on a device still on an earlier
+    # folder runs before every write: its own first listing stops the run on
+    # a cloud that cannot be read, and the probe and the features query were
+    # two of the four rclone starts it cost each time (time to play,
+    # 2026-10-01). Nothing it writes depends on either.
     local probe_rc
-    rclone lsd "${remote}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
-    [ "${probe_rc}" -eq 0 ] || unreadable "${remote}" "${probe_rc}"
+    if [ "${mode}" != "--follow" ]; then
+        rclone lsd "${remote}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
+        [ "${probe_rc}" -eq 0 ] || unreadable "${remote}" "${probe_rc}"
+    fi
 
     local net_opts
     net_opts=$(conf_value RCLONE_NET_OPTS | tr -s ' ' | sed 's/^ //; s/ $//')
@@ -934,8 +948,8 @@ main() {
     # carries the listing bound like every other call here (audit of the
     # fixes, G-A-11/G-A-10); one that fails or times out reads as "no
     # hashes", the safe side.
-    local features
-    features=$(rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n')
+    local features=""
+    [ "${mode}" != "--follow" ] && features=$(rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n')
     case "${features}" in *'"Hashes":["'*) ;; *) CHECK_OPTS=(--download) ;; esac
     # And whether it keeps case apart (PL-001): only a cloud that says so
     # holds /rocknix/saves and /ROCKNIX/Saves as two folders. One that folds
@@ -1251,5 +1265,23 @@ main() {
 # --superseded: the list, one per line, for the sync scripts' string test
 # before they pay for a network call (no conf, no network, no lock).
 if [ "${1:-}" = "--superseded" ]; then printf '%s\n' "${SUPERSEDED_DEFAULT_SAVES[@]}"; exit 0; fi
+# --needs-step: whether the cloud folder step has something to settle
+# (D-CLOUD-170), asked at every boot, so no network and no rclone start: the
+# saves folder is a default this project once shipped, the player has not
+# kept it, and a remote is set up. 0 when it has, 1 when not, 2 when the
+# conf cannot be read -- which settles nothing, so the step stays away.
+# Names compared as written, case included: with no network there is no
+# asking the cloud whether it folds case, and a hand-typed /games that a
+# case-sensitive cloud calls the player's own would put the scan up at
+# every boot for nothing. The scripts write the defaults in their own case.
+if [ "${1:-}" = "--needs-step" ]; then
+    CASE_INSENSITIVE=0
+    _saves=$(conf_value SAVES_REMOTE) || exit 2
+    _keep=$(conf_value LAYOUT_KEEP) || exit 2
+    superseded_default "${_saves}" || exit 1
+    [ -n "${_keep}" ] && same_folder "${_saves}" "${_keep}" && exit 1
+    grep -q '^\[' /storage/.config/rclone/rclone.conf 2>/dev/null || exit 1
+    exit 0
+fi
 [ "${1:-}" = "--apply" ] && take_cloud_lock
 main "$@" 9>&-

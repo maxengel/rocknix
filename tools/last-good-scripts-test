@@ -8934,7 +8934,7 @@ grep -qx '>>> plan none /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $?
 # shipped defaults (cloud-test-backend shipped-default), never from a literal
 # that goes stale when the default moves (blindspot 71): a superseded default
 # name may appear in these tools only in a comment or a quoted history.
-stale=$(grep -nE '(ROCKNIX|GAMES)/(Saves|Backups|Content)' tools/vm-qa tools/cloud-test-backend tools/cloud-round-trip tools/vm-upgrade-rehearsal 2>/dev/null | grep -vE '^[^:]+:[0-9]+:\s*#' | grep -vE "^[^:]+:[0-9]+:\s*(\"\"\"|'|#|.*# )" || true)
+stale=$(grep -nE '(ROCKNIX|GAMES)/(Saves|Backups|Content)' tools/vm-qa tools/cloud-test-backend tools/cloud-round-trip tools/vm-upgrade-rehearsal tools/time-to-play tools/cloud-pair-migration 2>/dev/null | grep -vE '^[^:]+:[0-9]+:\s*#' | grep -vE "^[^:]+:[0-9]+:\s*(\"\"\"|'|#|.*# )" || true)
 [ -z "${stale}" ]; check $? "no QA tool seeds a superseded default by its literal name (ROCKNIX/..., GAMES/...)" "literals: $(echo "${stale}" | head -3 | tr '\n' '|' | cut -c1-240)"
 [ "$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>/dev/null)" = "/Rasteratops/Saves" ] && [ "$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>/dev/null)" = "/Rasteratops/Content" ] && ! tools/cloud-test-backend shipped-default NO_SUCH_KEY >/dev/null 2>&1; check $? "cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default" "SAVES '$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>&1)', CONTENT '$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>&1)'"
 
@@ -13366,6 +13366,29 @@ ly_run "${LYCUR}" --join; [ "${LYRC}" != 0 ] && [ "${LYRC}" != 3 ] && [ "$(ly_pt
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; [ "${LYRC}" -ne 0 ] && ! grep -q 'Would move\|Already on' "${LY}/out"; check $? "and --check for that /GAMES device stops rather than planning from a guess (rc ${LYRC})" "rc ${LYRC}; $(ly_out)"
 rm -f "${LY}"/rec/*
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
+# D-CLOUD-170 (#363): the cloud folder step is asked for at every boot, so the question costs no
+# network: a default this project once shipped, not kept, with a remote set up. rclone never starts.
+LYRCONF="${LY}/storage/.config/rclone/rclone.conf"; mkdir -p "${LY}/storage/.config/rclone"
+rm -f "${LY}"/rec/*; printf '[qa]\ntype = webdav\n' > "${LYRCONF}"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --needs-step; [ "${LYRC}" = 0 ] && [ ! -s "${LY}/rec/argv" ]; check $? "--needs-step: an earlier /ROCKNIX with a remote set up needs the step, and rclone never starts (rc ${LYRC})" "rc ${LYRC}; rclone ran: $(head -2 "${LY}/rec/argv" 2>/dev/null | tr '\n' '|')"
+ly_run "${LYGAMES}" --needs-step; [ "${LYRC}" = 0 ]; check $? "--needs-step: and so does a carried /GAMES (rc ${LYRC})" "$(ly_out)"
+ly_run "${LYCUR}" --needs-step; [ "${LYRC}" = 1 ]; check $? "--needs-step: the current folder does not (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /Custom/Saves /Custom/Backups /Custom/Content)" --needs-step; [ "${LYRC}" = 1 ]; check $? "--needs-step: nor a folder the player chose (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)
+LAYOUT_KEEP=\"/ROCKNIX/Saves\"" --needs-step; [ "${LYRC}" = 1 ]; check $? "--needs-step: nor an earlier folder the player kept (rc ${LYRC})" "$(ly_out)"
+: > "${LYRCONF}"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --needs-step; [ "${LYRC}" = 1 ]; check $? "--needs-step: nor a device with no remote set up, whose way in is the setup wizard (rc ${LYRC})" "$(ly_out)"
+printf '[qa]\ntype = webdav\n' > "${LYRCONF}"
+ly_run 'SAVES_REMOTE="/ROCKNIX/Saves' --needs-step; [ "${LYRC}" = 2 ]; check $? "--needs-step: a conf it cannot read answers 2, which the interface takes as no step (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /rocknix/saves /rocknix/backups /rocknix/content)" --needs-step; [ "${LYRC}" = 1 ]; check $? "--needs-step: names compared as written: a hand-typed /rocknix/saves is not asked about at every boot, whatever the cloud folds (rc ${LYRC})" "$(ly_out)"
+rm -f "${LYRCONF}" "${LY}"/rec/*
+# And no sync pays for the folder question any more: the check before every backup and restore
+# (D-CLOUD-160's follow, 147 ms on the current folder and 419 ms in transition) is the step's.
+for lyf in cloud_backup cloud_restore; do
+    src_of "projects/ROCKNIX/packages/network/rclone/sources/${lyf}" "${LY}/${lyf}"
+    lyhit=$(grep -nE '^[^#]*(cloud_migrate_layout|follow_layout)' "${LY}/${lyf}" || true)
+    [ -z "${lyhit}" ]; check $? "${lyf} runs no folder check before its sync (D-CLOUD-170)" "${lyf}: $(echo "${lyhit}" | head -3 | tr '\n' '|' | cut -c1-200)"
+done
 
 
 echo "  ab. cloud_scan (#350, D-CLOUD-156): the opening scan's three items, the content scan's one, the quiet follow, the facts written, the failures said"
@@ -13447,6 +13470,22 @@ rm -f "${SC}"/rec/*; touch "${SC}/rec/join-fail"; sc_run
 [ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && ! grep -qx -- '--state' "${SC}/rec/argv" && [ ! -f "${SCO}/done" ]; check $? "a join the cloud refused ends the scan with its why, before any state is written (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/join-timeout"; sc_run
 [ "${SCRC}" = 124 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/done" ]; check $? "and one that ran out its time says the cloud stopped answering (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*
+# --folder, the cloud folder step's scan (D-CLOUD-170, #363): the folder item alone -- the join, the state, the
+# quiet follow -- with nothing listed for the options page and the opening scan's files left as they were.
+rm -f "${SC}"/rec/*; sc_run
+# a done stamp no run of this second could write, so a rewrite cannot pass for the old one
+SCDONE=1700000000; echo "${SCDONE}" > "${SCO}/done"; rm -f "${SC}"/rec/*; touch "${SC}/rec/join"; sc_run --folder
+[ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit CLOUD FOLDER|| " ] && [ -e "${SC}/rec/joined" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ]; check $? "--folder announces the CLOUD FOLDER item alone, joins, and writes the state (rc ${SCRC})" "$(sc_out); argv: $(tr '\n' ' ' < "${SC}/rec/argv" | cut -c1-160)"
+! grep -q '^lsf' "${SC}/rec/argv" && ! grep -q -- '--content-location' "${SC}/rec/argv" && [ "$(cat "${SCO}/done" 2>/dev/null)" = "${SCDONE}" ] && [ -s "${SCO}/settings" ]; check $? "--folder lists no archives and no root, and leaves the opening scan's files and done stamp as they were" "argv: $(tr '\n' ' ' < "${SC}/rec/argv" | cut -c1-200); done $(cat "${SCO}/done" 2>/dev/null) was ${SCDONE}"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/superseded"; sc_run --folder
+[ "${SCRC}" = 0 ] && grep -qx -- '--follow' "${SC}/rec/argv" && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ]; check $? "--folder follows a superseded, empty folder beside a current one -- the one place it does, since no sync asks (rc ${SCRC})" "$(sc_out) $(tr '\n' ' ' < "${SC}/rec/argv")"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/join-fail"; sc_run --folder
+[ "${SCRC}" = 5 ] && grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING' "${SC}/out" && [ ! -f "${SCO}/state" ]; check $? "--folder with a join the cloud refused ends with its why and no state, so the step offers nothing from a guess (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; touch "${SC}/rec/noroute"; sc_run --folder
+[ "${SCRC}" = 69 ] && [ ! -f "${SCO}/state" ]; check $? "--folder with no route exits 69, the page's SKIPPED - YOU'RE NOT ONLINE (rc ${SCRC})" "$(sc_out)"
+rm -f "${SC}"/rec/*; sc_run --bogus
+[ "${SCRC}" = 2 ] && grep -q -- '--folder' "${SC}/out"; check $? "an unknown mode is refused with the usage, which names --folder (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*
 
 echo "  ac. the Retroid Pocket Nova's ledcontrol (#332): LED BRIGHTNESS writes the LEDs, rgb with no colour set lights white, off zeroes"

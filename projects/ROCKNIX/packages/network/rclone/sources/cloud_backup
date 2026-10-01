@@ -2354,35 +2354,16 @@ MANIFEST
 }
 
 # Main script execution
-# D-CLOUD-160's "your other devices will follow" (fork #353). A device still
-# on a cloud folder this project once shipped as its default -- /GAMES,
-# /ROCKNIX/Saves -- that has not chosen to keep it (LAYOUT_KEEP) is
-# re-pointed at the current layout when another device has already made
-# it, before anything is written to the old folder, so no save strands
-# there. The cost is paid only by such a device, in transition: a string
-# test, a default-route test (no route, nothing tried: D-CLOUD-112), then
-# cloud_migrate_layout --follow under a cap of twenty seconds. Nothing is
-# copied or removed; the folders are already where they belong.
-follow_layout() {
-    local tool=/usr/bin/cloud_migrate_layout saves
-    [ -x "${tool}" ] || return 0
-    saves="${SAVES_REMOTE%/}"
-    "${tool}" --superseded 2>/dev/null | grep -qFx -- "${saves}" || return 0
-    [ -n "${LAYOUT_KEEP:-}" ] && [ "${LAYOUT_KEEP%/}" = "${saves}" ] && return 0
-    ip route show default 2>/dev/null | grep -q . || return 0
-    if timeout 20 "${tool}" --follow >/dev/null 2>&1; then
-        if source /storage/.config/cloud_sync.conf 2>/dev/null; then
-            log_message "Your cloud folder is now ${SAVES_REMOTE}: another device moved it to the current layout, and this one followed." "true"
-        fi
-    fi
-    return 0
-}
+# The follow check that ran here before every sync (D-CLOUD-160's "your
+# other devices will follow") is the cloud folder step's now, which runs
+# where the player first meets the cloud -- the end of cloud setup, and the
+# first boot of this build on a device linked to an earlier folder -- and on
+# the transfer pages' scan (D-CLOUD-170, #363). Every sync paid for it before.
 
 main() {
     check_network_link
     check_rclone_config
     load_config
-    follow_layout
     # backup_game_saves proves the remote reachable with the mkdir it needs
     # anyway; only the system-only path has no such step of its own. After
     # load_config, which sets an automatic run's deadline: the probe ran

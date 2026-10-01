@@ -17,12 +17,16 @@
 #   cloud_scan --content [--with-media|--media-only]
 #                                the content listing for the systems page,
 #                                in the classes ticked (one item)
+#   cloud_scan --folder          the folder alone, for the cloud folder step
+#                                at the end of cloud setup and at boot
+#                                (D-CLOUD-170, fork #363; one item)
 #
-# Reads, with one exception: a device on a superseded folder whose current
-# folder another device has already made is re-pointed here, with no
-# question (cloud_migrate_layout --follow; D-CLOUD-160's "your other
-# devices will follow"). Nothing in the cloud changes, so no lock is taken
-# and a sync may run beside it.
+# Reads, with two exceptions, both settings: a fresh install beside a fleet
+# still on an earlier folder joins it (cloud_migrate_layout --join), and a
+# device on a superseded folder whose current folder another device has
+# already made is re-pointed to it (cloud_migrate_layout --follow;
+# D-CLOUD-160's "your other devices will follow"). Nothing in the cloud
+# changes, so no lock is taken and a sync may run beside it.
 #
 # Results, under /storage/.cache/cloud_sync/scan/:
 #   state             cloud_migrate_layout --state, one fact per line
@@ -143,44 +147,58 @@ scan_content() {
     exit 0
 }
 
+# 1. The folder: current, kept, superseded or the player's own; the current
+#    folder's presence; the marker (cloud_migrate_layout --state, fork #353).
+#    The opening scan's first item, and the whole of --folder.
+read_folder() {
+    local layout rc
+    echo ">>> unit CLOUD FOLDER||"
+    echo ">>> doing scan"
+    layout=$(sibling cloud_migrate_layout)
+    # A fresh install beside a fleet still on the earlier folder joins it first
+    # (cloud_migrate_layout --join, a setting): the state below then reads the
+    # folder the player's saves are in, and the move is offered from there
+    # rather than CREATE IT beside them. 3 is "nothing to join"; anything else
+    # that is not 0 is the cloud not answering, and stops the scan with its why.
+    timeout 20 "${layout}" --join >/dev/null 2>&1; rc=$?
+    case "${rc}" in
+        0) log "scan: joined the fleet's earlier folder" ;;
+        3) ;;
+        *) stop_on "${rc}" "--join" ;;
+    esac
+    "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
+    # A device left on a superseded folder with nothing in it, whose current
+    # folder another device has already made, follows the fleet here -- the
+    # one place it does since no sync asks any more (D-CLOUD-170): the dialogs
+    # then never ask about a folder the player has already answered for
+    # elsewhere.
+    if [ "$(sed -n 's/^STATE=//p' "${OUT}/state")" = superseded-empty ] \
+       && [ "$(sed -n 's/^CURRENT_EXISTS=//p' "${OUT}/state")" = 1 ]; then
+        if timeout 20 "${layout}" --follow >/dev/null 2>&1; then
+            log "scan: followed the fleet to the current layout"
+            "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
+        fi
+    fi
+}
+
 case "$1" in
     --content) shift; scan_content "$@" ;;
+    --folder)
+        # The step reads state alone; the opening scan's other files are
+        # left as they were, and are rewritten by the next opening scan.
+        rm -f "${OUT}"/state
+        prepare
+        read_folder
+        log "scan: folder done ($(sed -n 's/^STATE=//p' "${OUT}/state"))"
+        exit 0 ;;
     "") ;;
-    *) echo "usage: cloud_scan [--content [--with-media|--media-only]]" >&2; exit 2 ;;
+    *) echo "usage: cloud_scan [--content [--with-media|--media-only] | --folder]" >&2; exit 2 ;;
 esac
 
 rm -f "${OUT}"/state "${OUT}"/archives "${OUT}"/settings "${OUT}"/content-location "${OUT}"/root-dirs "${OUT}"/done
 prepare
 date +%s > "${OUT}/started"
-
-# 1. The folder: current, kept, superseded or the player's own; the current
-#    folder's presence; the marker (cloud_migrate_layout --state, fork #353).
-echo ">>> unit CLOUD FOLDER||"
-echo ">>> doing scan"
-layout=$(sibling cloud_migrate_layout)
-# A fresh install beside a fleet still on the earlier folder joins it first
-# (cloud_migrate_layout --join, a setting): the state below then reads the
-# folder the player's saves are in, and the move is offered from there
-# rather than CREATE IT beside them. 3 is "nothing to join"; anything else
-# that is not 0 is the cloud not answering, and stops the scan with its why.
-timeout 20 "${layout}" --join >/dev/null 2>&1; rc=$?
-case "${rc}" in
-    0) log "scan: joined the fleet's earlier folder" ;;
-    3) ;;
-    *) stop_on "${rc}" "--join" ;;
-esac
-"${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
-# A device left on a superseded folder with nothing in it, whose current
-# folder another device has already made, follows the fleet here (the
-# scripts do the same before a sync): the options page then never has to
-# ask about a folder the player has already answered for elsewhere.
-if [ "$(sed -n 's/^STATE=//p' "${OUT}/state")" = superseded-empty ] \
-   && [ "$(sed -n 's/^CURRENT_EXISTS=//p' "${OUT}/state")" = 1 ]; then
-    if timeout 20 "${layout}" --follow >/dev/null 2>&1; then
-        log "scan: followed the fleet to the current layout"
-        "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
-    fi
-fi
+read_folder
 
 # 2. The settings archives, by the device that wrote each (the label in the
 #    name, cloud_restore's rule): this device's newest first, else the newest
