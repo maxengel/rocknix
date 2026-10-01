@@ -690,8 +690,8 @@ case "$1" in
             log_message "Seeding: a folder in ${SYNC_CONF} is not in a form the sync reads; nothing was made"
             exit 1
         fi
-        SAVES="${SAVES_REMOTE:-/ROCKNIX/Saves}"
-        BACKUPS="${SETTINGS_REMOTE:-/ROCKNIX/Backups}"
+        SAVES="${SAVES_REMOTE:-/Rasteratops/Saves}"
+        BACKUPS="${SETTINGS_REMOTE:-/Rasteratops/Backups}"
         # An empty CONTENT_REMOTE is not a missing one: it is
         # --use-content-root's "the cloud's root", which is where the
         # content scripts put ROMs/ and BIOS/ (ROOT="<remote>:"). Only a
@@ -699,7 +699,7 @@ case "$1" in
         if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; then
             CONTENT="${CONTENT_REMOTE%/}"
         else
-            CONTENT="/ROCKNIX/Content"
+            CONTENT="/Rasteratops/Content"
         fi
 
         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
@@ -713,6 +713,14 @@ case "$1" in
             # up to two dozen calls under one 90 s box in the interface.
             rclone mkdir --s3-directory-markers "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
         done
+        # The layout marker (fork #356): one line at the parent of the saves
+        # folder saying which shape of folders this cloud carries, read by
+        # every device before it offers a move or a creation
+        # (cloud_migrate_layout --state). Written here because seeding is
+        # where a cloud first takes the current shape.
+        if ! printf 'layout=2\n' | rclone rcat "${REMOTE}${SAVES%/*}/.layout" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null; then
+            log_message "Seeding: the layout marker could not be written at ${SAVES%/*}/.layout"
+        fi
 
         seed_note() {
             local dir="$1" listing tmp; shift

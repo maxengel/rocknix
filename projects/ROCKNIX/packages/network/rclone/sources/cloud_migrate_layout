@@ -23,6 +23,17 @@
 #
 #   cloud_migrate_layout --check     what would move, and whether it is safe
 #   cloud_migrate_layout --apply     do it
+#   cloud_migrate_layout --state     one line per fact, for the interface to decide
+#                                    what to offer (STATE=current|kept|superseded-with-files|
+#                                    superseded-empty|own|no-remote; fork #353)
+#   cloud_migrate_layout --keep      record that this device keeps its superseded
+#                                    folder (LAYOUT_KEEP in the conf; asked once, D-CLOUD-160)
+#   cloud_migrate_layout --superseded  the superseded defaults, one per line (no network)
+#   cloud_migrate_layout --follow    re-point a device on a superseded default at the
+#                                    current layout when another device has already
+#                                    made it (no question; D-CLOUD-160's "the other
+#                                    devices follow"); 0 when it did, 3 when there was
+#                                    nothing to follow
 #
 # Only the two folders we wrote are moved. Anything else under the old folder
 # is left exactly where it is, because it is not ours.
@@ -30,9 +41,26 @@
 . /etc/profile 2>/dev/null
 
 SYNC_CONF="/storage/.config/cloud_sync.conf"
-NEW_SAVES="/ROCKNIX/Saves"
-NEW_BACKUPS="/ROCKNIX/Backups"
-NEW_CONTENT="/ROCKNIX/Content"
+NEW_SAVES="/Rasteratops/Saves"
+NEW_BACKUPS="/Rasteratops/Backups"
+NEW_CONTENT="/Rasteratops/Content"
+# Every saves folder this project ever shipped as its default. A device whose
+# saves folder is one of these is on a layout it never chose, so the move is
+# offered (D-CLOUD-160); any other folder is the player's own and stays
+# (the sibling-layout branch below). Oldest first; the current default is
+# NEW_SAVES and is not listed.
+SUPERSEDED_DEFAULT_SAVES=("/GAMES" "/ROCKNIX/Saves")
+# The marker a cloud carries once it is on the current layout (#356): one
+# line, layout=<n>, at the parent of the saves folder. Read before anything
+# is offered; written after a move or a seeding.
+LAYOUT_VERSION=2
+LAYOUT_MARKER=".layout"
+
+superseded_default() { # <saves folder>: 0 when it is a default this project once shipped
+    local s
+    for s in "${SUPERSEDED_DEFAULT_SAVES[@]}"; do same_folder "$1" "${s}" && return 0; done
+    return 1
+}
 
 say() { echo "$@"; }
 
@@ -531,6 +559,87 @@ migrate_content() {
     return 0
 }
 
+# --- the layout as facts (#353, #356) -----------------------------------
+#
+# One line per fact and nothing the interface has to parse out of prose:
+#
+#   STATE=current               the saves folder is the current default
+#   STATE=kept                  a superseded default this device chose to keep (--keep)
+#   STATE=superseded-with-files a default this project once shipped, holding saves:
+#                               the move is offered (D-CLOUD-160)
+#   STATE=superseded-empty      such a default with nothing in it, or absent:
+#                               the creation of the current layout is offered (D-CLOUD-161)
+#   STATE=own                   a folder the player chose; nothing is offered
+#   CURRENT_EXISTS=0|1          whether the current default's saves folder lists
+#   MARKER=layout=<n> | -       the cloud's marker, when one is there
+layout_state() { # <remote> <saves> <backups> <content>
+    local remote="$1" saves="$2" backups="$3" content="$4" state keep cur=0 marker
+    keep=$(conf_value LAYOUT_KEEP) || return 2
+    echo "SAVES=${saves}"
+    echo "BACKUPS=${backups}"
+    echo "CONTENT=${content}"
+    echo "CURRENT=${NEW_SAVES}"
+    if same_folder "${saves}" "${NEW_SAVES}"; then
+        state=current
+    elif [ -n "${keep}" ] && same_folder "${saves}" "${keep}"; then
+        state=kept
+    elif superseded_default "${saves}"; then
+        if has_files "${remote}${saves}/"; then state=superseded-with-files; else state=superseded-empty; fi
+    else
+        state=own
+    fi
+    exists "${remote}${NEW_SAVES}" && cur=1
+    echo "CURRENT_EXISTS=${cur}"
+    marker=$(rclone cat "${remote}${NEW_SAVES%/*}/${LAYOUT_MARKER}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1 | tr -cd 'a-z0-9=')
+    echo "MARKER=${marker:--}"
+    echo "STATE=${state}"
+    return 0
+}
+
+# KEEP USING <folder>: asked once (D-CLOUD-160). The conf remembers the
+# folder kept, so --state reads "kept" until the folder changes.
+layout_keep() { # <saves>
+    set_pointer LAYOUT_KEEP "$1" || return 1
+    say "Keeping ${1}; the move will not be offered again for this folder."
+    logger -t cloud_migrate_layout "layout kept at $1 by request" 2>/dev/null
+    return 0
+}
+
+# "Your other devices will follow": a device on a superseded default whose
+# current-default folder already exists in the cloud -- another device made
+# the move -- is re-pointed with no question and one line in the journal.
+# Nothing is copied or removed here; the folders are already where they
+# belong. 0 when the device now points at the current layout, 3 when there
+# was nothing to follow, 1 when the conf could not be written.
+layout_follow() { # <remote> <saves> <backups> <content>
+    local remote="$1" saves="$2" backups="$3" content="$4" keep
+    same_folder "${saves}" "${NEW_SAVES}" && return 3
+    superseded_default "${saves}" || return 3
+    keep=$(conf_value LAYOUT_KEEP) || return 2
+    [ -n "${keep}" ] && same_folder "${saves}" "${keep}" && return 3
+    exists "${remote}${NEW_SAVES}" || return 3
+    set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 1
+    set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 1
+    # Content follows only where it was derived from the old folder or
+    # never set; a folder the player chose for ROMs stays theirs.
+    if [ -z "${content}" ] || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+       || same_folder "${content}" "${saves%/}/Content"; then
+        set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 1
+    fi
+    say "Followed: this device now uses ${remote}${NEW_SAVES}, which another device already made."
+    logger -t cloud_migrate_layout "followed the fleet from ${saves} to ${NEW_SAVES}" 2>/dev/null
+    return 0
+}
+
+write_marker() { # <remote>
+    if printf 'layout=%s\n' "${LAYOUT_VERSION}" | rclone rcat "${1}${NEW_SAVES%/*}/${LAYOUT_MARKER}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null; then
+        return 0
+    fi
+    say "The layout marker could not be written; the folders moved all the same."
+    logger -t cloud_migrate_layout "could not write ${LAYOUT_MARKER} at ${1}${NEW_SAVES%/*}" 2>/dev/null
+    return 0
+}
+
 MODE="--check"
 main() {
     # Every pointer this tool reads must be readable by the shared grammar
@@ -605,10 +714,20 @@ main() {
     # as current, so this check offered to move a deliberately chosen layout
     # back to the default one (#74). The nested first layout, backups INSIDE
     # the saves folder, is the only shape this tool exists to move.
+    case "${mode}" in
+        --state)  layout_state "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
+        --keep)   layout_keep "${saves}"; return $? ;;
+        --follow) layout_follow "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
+    esac
+
     local sabs sib_parent
     sabs=$(folder_abs "${saves}")
     sib_parent="${sabs%/*}"; [ -n "${sib_parent}" ] || sib_parent="${sabs}"
-    if ! same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${sib_parent}/Backups"; then
+    # A superseded default is not a layout of the player's own, however
+    # sibling-shaped: /ROCKNIX/Saves beside /ROCKNIX/Backups is the fork's
+    # earlier default and is offered the move (D-CLOUD-160).
+    if ! superseded_default "${saves}" \
+       && ! same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${sib_parent}/Backups"; then
         if [ -z "${content}" ] || same_folder "${content}" "${sib_parent}/Content"; then
             say "Already on a sibling layout of your own (${saves}, ${backups}); nothing to move."
             return 3
@@ -766,10 +885,14 @@ main() {
         say "Saves are at ${remote}${NEW_SAVES} and backups at ${remote}${NEW_BACKUPS}, but your ROMs and BIOS files didn't move. Try again."
         return "${content_rc}"
     fi
+    write_marker "${remote}"
     say "Done. Saves are at ${remote}${NEW_SAVES}, backups at ${remote}${NEW_BACKUPS}."
     [ "${moved_saves}" = "1" ] && say "Old folders were left in place if anything else was in them."
     return 0
 }
 
+# --superseded: the list, one per line, for the sync scripts' string test
+# before they pay for a network call (no conf, no network, no lock).
+if [ "${1:-}" = "--superseded" ]; then printf '%s\n' "${SUPERSEDED_DEFAULT_SAVES[@]}"; exit 0; fi
 [ "${1:-}" = "--apply" ] && take_cloud_lock
 main "$@" 9>&-

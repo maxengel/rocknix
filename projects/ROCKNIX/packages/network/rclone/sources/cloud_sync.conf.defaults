@@ -27,11 +27,11 @@ DEFAULT_SAVESPATH="/storage/roms"
 DEFAULT_SETTINGS_BACKUPS="/storage/roms/backup"
 
 # Saves on the cloud remote
-DEFAULT_SAVES_REMOTE="/ROCKNIX/Saves"
+DEFAULT_SAVES_REMOTE="/Rasteratops/Saves"
 
 # Settings backups on the cloud remote. Must be a sibling of SAVES_REMOTE,
 # never inside it -- a mirror of the saves folder would delete the archives.
-DEFAULT_SETTINGS_REMOTE="/ROCKNIX/Backups"
+DEFAULT_SETTINGS_REMOTE="/Rasteratops/Backups"
 
 # ROMs and BIOS files on the cloud remote, one folder per system plus "bios".
 # Previously unset, which put them at the remote root and scattered system
@@ -43,7 +43,12 @@ DEFAULT_SETTINGS_REMOTE="/ROCKNIX/Backups"
 # has no parent to put them beside: that config gets "" (the remote root,
 # where its ROMs already were) for its owner to set. Clear it back to "" to
 # use the remote root.
-DEFAULT_CONTENT_REMOTE="/ROCKNIX/Content"
+DEFAULT_CONTENT_REMOTE="/Rasteratops/Content"
+
+# A superseded cloud folder this device chose to keep when the move to the
+# current layout was offered (KEEP USING, D-CLOUD-160): the folder kept, so the
+# offer is not repeated. Empty until then.
+DEFAULT_LAYOUT_KEEP=""
 
 # Logging Options
 # --------------
