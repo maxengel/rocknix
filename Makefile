@@ -119,7 +119,16 @@ package-clean:
 # For example: make docker-SM8250 will use docker to call: make SM8250
 # All variables are scoped to docker-* commands to prevent weird collisions/behavior with non-docker commands
 
-docker-%: DOCKER_IMAGE := "ghcr.io/rocknix/rocknix-build:latest"
+# The build container, pinned by digest to the fork's own mirror (#344 P1,
+# D-WORKFLOW-119/120): what `docker pull` and `docker run` consume. The digest
+# is also handed to the build as BUILDER_VERSION, so every image's
+# /etc/os-release says which container it was built in (scripts/image). The
+# fork-mirror-build-container workflow refreshes the mirror and prints the
+# digest; this line moves with it, by hand. A locally built container is
+# tagged (DOCKER_IMAGE_LOCAL), never pinned.
+docker-%: DOCKER_IMAGE_DIGEST := sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
+docker-%: DOCKER_IMAGE := ghcr.io/rasteratops/build@$(DOCKER_IMAGE_DIGEST)
+docker-%: DOCKER_IMAGE_LOCAL := ghcr.io/rasteratops/build:local
 
 # DOCKER_WORK_DIR is the directory in the Docker image - it is set to /work by default
 #   Anytime this directory changes, you must run `make clean` similarly to moving the distribution directory
@@ -163,9 +172,9 @@ docker-shell: COMMAND=bash
 # The build user must also be a member of the "docker" group.
 docker-image-build:
 	$(DOCKER_CMD) buildx create --use
-	$(DOCKER_CMD) buildx build --tag $(DOCKER_IMAGE) --platform $(shell if [ "$$(uname -m)" = "aarch64" ]; then echo "linux/arm64"; else echo "linux/amd64"; fi) --load .
+	$(DOCKER_CMD) buildx build --tag $(DOCKER_IMAGE_LOCAL) --platform $(shell if [ "$$(uname -m)" = "aarch64" ]; then echo "linux/arm64"; else echo "linux/amd64"; fi) --load .
 
-# Command: pulls latest docker image from dockerhub.  This will *replace* locally built version.
+# Command: pulls the pinned build container from the fork's mirror, by digest.
 docker-image-pull:
 	$(DOCKER_CMD) pull $(DOCKER_IMAGE)
 
@@ -183,4 +192,4 @@ docker-%:
 	rm -f .env && [ ! -e .env ] || { echo "an older .env cannot be removed: no container started" >&2; exit 1; }; \
 	trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
 	( umask 077 && set -C && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
-	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)
+	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e BUILDER_NAME=rasteratops-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)
