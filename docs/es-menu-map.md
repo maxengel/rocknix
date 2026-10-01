@@ -129,9 +129,20 @@ flowchart TD
 
     ALL --> HUB{{CLOUD}}
     HUB --> BR[BACKUP AND RESTORE]
-    BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>CONTINUE]
-    BR --> RE[RESTORE FROM THE CLOUD] --> TICK
-    TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system<br/>BIOS alone: SYSTEMS reads NONE · a BIOS FILES group · no SELECT ALL · the verb still waits, D-UI-116]
+    BR --> BU[BACK UP TO THE CLOUD] --> SCAN[CHECKING YOUR CLOUD<br/>GuiCloudTransfer running cloud_scan: CLOUD FOLDER · SETTINGS BACKUPS · GAME CONTENT<br/>goes on by itself when complete; TRY AGAIN · CLOSE when not, D-CLOUD-167]
+    BR --> RE[RESTORE FROM THE CLOUD] --> SCAN
+    SCAN -->|an earlier /ROCKNIX or /GAMES holds saves| MOVEQ[dialog: MOVE · KEEP USING … · NOT NOW, D-CLOUD-160]
+    MOVEQ -->|MOVE| MOVE[MOVING YOUR CLOUD FOLDER<br/>SAVES · SETTINGS BACKUPS · DISCARDED SAVES · content; COPYING… / CHECKING THE COPY…<br/>dismissed by the player, then the scan again]
+    SCAN -->|no current folder| CREATEQ[dialog: CREATE IT · CHOOSE A FOLDER · NOT NOW, D-CLOUD-161]
+    CREATEQ -->|CREATE IT| CREATE[CREATING YOUR CLOUD FOLDER<br/>then the scan again]
+    CREATEQ -->|CHOOSE A FOLDER| KB
+    SCAN --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>restore: SETTINGS offered as DEVICE, DATE, or dimmed NO SETTINGS BACKUP FROM THIS DEVICE YET, D-CLOUD-162<br/>CONTINUE]
+    TICK -->|ROMS AND BIOS or GAME CONTENT ticked, restore| CFQ{{the content folder: the one the scan found is used; none found asks CHOOSE THE FOLDER WHERE YOUR GAMES ARE?}}
+    CFQ -->|CHOOSE A FOLDER| CHOOSER[CHOOSE A CLOUD FOLDER<br/>the folders at the cloud's root, the one found first]
+    CFQ --> CSCAN[CHECKING YOUR CLOUD<br/>cloud_scan --content in the classes ticked; goes on by itself]
+    CHOOSER --> CSCAN
+    TICK -->|ROMS AND BIOS or GAME CONTENT ticked, backup| CSCAN
+    CSCAN --> PICK[systems page, from the scan's files<br/>select all · badge per system<br/>BIOS alone: SYSTEMS reads NONE · a BIOS FILES group · no SELECT ALL · the verb still waits, D-UI-116]
     TICK --> XFER[GuiCloudTransfer<br/>full-screen; live line, elapsed, outcome; stays until dismissed]
     PICK --> XFER
     XFER -.->|saves folder absent| OFFER[create-folder offer<br/><i>on dismissal</i>]
@@ -169,6 +180,18 @@ card did, and the fresh handheld's route saw nothing. BACK UP / RESTORE
 on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
 FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
+
+**Since the cloud epic (#354; D-CLOUD-166/167, 2026-10-01).** The startup and
+exit syncs raise no folder question: with no saves folder in the cloud the card
+reads SKIPPED - YOUR CLOUD FOLDER ISN'T SET UP YET with SET IT UP: GAME
+SETTINGS > MANAGE CLOUD STORAGE, and the row under SYNC SAVES DURING STARTUP
+says the same. The question is asked where the player is: on the scan page
+that opens BACK UP TO THE CLOUD and RESTORE FROM THE CLOUD (the move of an
+earlier /ROCKNIX or /GAMES folder, or the offer to create the current one,
+above), at the end of the cloud setup, and on SYNC SAVES WITH THE CLOUD's own
+card, which keeps the offer. The transfer page keeps it too, on dismissal, for
+a restore run after NOT NOW. SET IT UP NOW? is asked before the scan page, not
+at the verb.
 
 **Since RC-11, and since D-UI-078 (#187, #192, #241).** A transfer started from BACK UP TO THE CLOUD, RESTORE FROM THE CLOUD or MATCH runs on a page that owns the screen until it ends; the one way out while it runs is CANCEL, which asks first and names what cancelling means (`WHAT'S ALREADY IN PLACE STAYS. THE NEXT BACKUP OR RESTORE FINISHES WHAT THIS ONE DIDN'T.`), then stops the run and ends the page on `SKIPPED - YOU CANCELLED IT`. (For a week in RC-11 the page could be left with B and the row that launched it followed the run; D-UI-078 reversed that on 2026-09-21 -- "we should only allow things to run in the background when they're fast" -- and this paragraph described the reversed design until audit #258 PL-006.) After the run ends and its page is dismissed, the row that launched it reads `LAST <date> - COMPLETED` (or `COULDN'T FINISH` / `SKIPPED - ...`) until the outcome page has been seen once, then goes back to its one-line description (D-UI-070); the other two rows dim while one is current. Launching a game while a sync runs asks -- the sentence naming it, then STOP IT AND PLAY or KEEP WAITING (D-CLOUD-129 for the sync the player started, since RC-12 build 4; D-CLOUD-130 for the automatic startup and after-a-game syncs, since build 7; until then the first were refused and the second cancelled without asking); the same question guards a transfer that is current, which with the page sat in is not a state a press can reach. The startup card's first step reads `CHECKING THE CONNECTION...` when the interface sees a link and `WAITING FOR A NETWORK, UP TO 60 SECONDS...` when it does not; `SKIPPED - YOU'RE NOT ONLINE` follows the wait as before.
 
