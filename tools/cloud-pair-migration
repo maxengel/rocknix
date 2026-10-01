@@ -164,6 +164,7 @@ say "5. b's next backup follows the fleet; its new save goes up; a restores it"
 on b 'head -c 3000 /dev/urandom > /storage/roms/nes/FromB.srm; /usr/bin/cloud_backup --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "backup rc=$?"' 2>&1 | tee -a "$LOG"
 SUM_B=$(on b 'sha256sum /storage/roms/nes/FromB.srm | cut -c1-64')
 [ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "5: b followed: its conf points at the current folders" "$(ptrs b)"
+on b 'journalctl -b -t cloud_migrate_layout 2>/dev/null | grep -q "followed the fleet"'; check $? "5: and its journal says so, with no question asked (D-CLOUD-160)"
 cloud_files "${CUR_SAVES#/}" | grep -q 'nes/FromB.srm'; check $? "5: b's new save is at ${CUR_SAVES}" "$(cloud_files "${CUR_SAVES#/}")"
 [ -z "$(cloud_files "${EARLY_SAVES#/}")" ]; check $? "5: and nothing was written back under ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
 on a '/usr/bin/cloud_restore --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "restore rc=$?"' 2>&1 | tee -a "$LOG"
