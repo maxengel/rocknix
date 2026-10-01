@@ -422,7 +422,7 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     fi
     list_or_stop "${src}" -R --files-only "${filt[@]}"
     if [ -z "${LISTING}" ]; then
-        set_pointer "${key}" "${dst#*:}" || return 2
+        [ -z "${key}" ] || set_pointer "${key}" "${dst#*:}" || return 2
         return 0
     fi
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
@@ -448,7 +448,9 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     # that could not be written leaves the device on the old folder, so the
     # old folder must still hold everything -- the next run finds the copy
     # already there and resumes.
-    if ! set_pointer "${key}" "${dst#*:}"; then
+    # A folder with no pointer of its own (the set-aside beside the saves,
+    # named from SAVES_REMOTE by the scripts) has nothing to record here.
+    if [ -n "${key}" ] && ! set_pointer "${key}" "${dst#*:}"; then
         rm -f "${list}"
         return 2
     fi
@@ -883,6 +885,13 @@ main() {
         && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
     ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" \
         && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
+    # The set-aside of conflict losers beside the saves folder
+    # (<saves>-replaced, cloud_backup's) is ours and travels with the saves
+    # (D-CLOUD-165): to a player the change is a renamed shelf, not a new
+    # one, and nothing of ours stays under the old name.
+    local old_replaced="${saves%/}-replaced"
+    ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/" \
+        && say "  ${remote}${old_replaced}  ->  ${remote}${NEW_SAVES}-replaced"
 
     if [ "${mode}" != "--apply" ]; then
         say ""
@@ -916,6 +925,12 @@ main() {
             moved_saves=1
         else
             set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 5
+        fi
+    fi
+    if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
+        if ! relocate "${remote}${old_replaced}" "${remote}${NEW_SAVES}-replaced" "discarded saves" ""; then
+            say "Your discarded saves didn't finish moving; they are still at ${remote}${old_replaced}. Try again."
+            return 5
         fi
     fi
 

@@ -12414,6 +12414,17 @@ echo archive > "${TL}/cloud/Rasteratops/backup/QA-deadbeef01/2026_09_01-000000-Q
 sa2_run "${TL}" cloud_migrate_layout --apply
 [ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/Rasteratops/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/Rasteratops/Saves/Saves" ] \
     && [ -f "${TL}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /Rasteratops/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# D-CLOUD-165: the set-aside of conflict losers beside the saves travels with
+# them, by the same copy, verify, delete, and nothing of ours stays under the
+# old name. The fork's earlier layout as the source, on the local backend.
+tl_seed "/ROCKNIX/Saves" "/ROCKNIX/Backups" "/ROCKNIX/Content"
+rm -rf "${TL}/cloud/Rasteratops"; mkdir -p "${TL}/cloud/ROCKNIX/Saves/gb" "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${TL}/cloud/ROCKNIX/Content/ROMs/gb" "${TL}/cloud/ROCKNIX/Saves-replaced/2026_09_01-000000/gb"
+echo "a save" > "${TL}/cloud/ROCKNIX/Saves/gb/A.srm"; echo archive > "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+echo rom > "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo "a loser" > "${TL}/cloud/ROCKNIX/Saves-replaced/2026_09_01-000000/gb/L.srm"
+sa2_run "${TL}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/Rasteratops/Saves-replaced/2026_09_01-000000/gb/L.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves-replaced" ] \
+    && [ -f "${TL}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ "$(sed -n 's/^SAVES_REMOTE="\(.*\)"$/\1/p' "${TLC}")" = "/Rasteratops/Saves" ] \
+    && [ "$(cat "${TL}/cloud/Rasteratops/.layout" 2>/dev/null)" = "layout=2" ]; check $? "D-CLOUD-165: the move from /ROCKNIX carries the set-aside to /Rasteratops/Saves-replaced, leaves nothing of ours under /ROCKNIX, and writes the marker (rc ${RC})" "rc ${RC}; tree: $(tl_tree); out: $(tr '\n' '|' < "${TL}/out" | cut -c1-200)"
 
 # A56. Lead G2-A-04 (seats/A-gpt.md, Medium): --match --apply read the
 #      preview's plan and removed it without looking whether it went. A
@@ -13114,6 +13125,7 @@ case "$cmd" in
     case "$path" in
       qa:/GAMES/*|qa:/GAMES) [ -e /rec/games-files ] && echo "snes/a.srm" ;;
       qa:/ROCKNIX/Saves/*|qa:/ROCKNIX/Saves) [ -e /rec/rocknix-files ] && echo "snes/a.srm" ;;
+      qa:/ROCKNIX/Saves-replaced/*|qa:/ROCKNIX/Saves-replaced) [ -e /rec/replaced-files ] && echo "2026_09_01-000000/gb/L.srm" ;;
       qa:/Rasteratops/Saves/*|qa:/Rasteratops/Saves) [ -e /rec/cur-exists ] && echo "snes/" ;;
       qa:/Rasteratops|qa:/Rasteratops/) [ -e /rec/cur-exists ] && echo "Saves/" ;;
       qa:|qa:/) echo "Other/" ;;
@@ -13164,6 +13176,8 @@ touch "${LY}/rec/cur-exists"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--follow refuses a device whose old folder still holds files, even with the current folder there (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}/rec/rocknix-files"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ]; check $? "and follows once the old folder is empty (rc ${LYRC})" "$(ly_out)"
+rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files" "${LY}/rec/replaced-files"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced' "${LY}/out"; check $? "--check lists the set-aside of conflict losers among what moves (D-CLOUD-165)" "$(ly_out)"
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
