@@ -20,10 +20,8 @@ before treating an archive-size estimate as a roster or methodology blocker.
    [`member-roster.md`](member-roster.md). Surface the chosen roster
    (all five members) to the user before proceeding. A failed seat blocks
    Setup for diagnosis; do not reduce or change an anchored roster in place.
-For an authorized shadow campaign, apply [shadow experiments](shadow-experiments.md)
-and select its explicit five-seat profile before Setup. Every arm gets a separate
-manifest, genesis, ledger and seals. The default profile is definitive, with Muse in the fifth seat;
-the fifth-seat evaluation runs the `grok-shadow` and `deepseek-shadow` arms beside every definitive run (scaffold#915).
+   Use the installed `definitive` profile, with Muse in the fifth seat
+   (D-WORKFLOW-135).
 
 3. **Create the directory layout** (initial analyses at the top level;
    subdirectories for `peer_reviews/`, `revised_approaches/`,

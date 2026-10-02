@@ -320,7 +320,7 @@ Rules:
 | Final deliverable provenance           | `phase-5-deliverable/deliverable.provenance.json`                                       | 5                         |
 | Top-level run README                   | `README.md` (at run-dir root)                                                           | written at end of Phase 5 |
 
-Member short names: `claude`, `gemini`, `gpt`, `kimi`, `muse` (shadow arms: `grok`, `deepseek`; runs sealed before scaffold#915: `mistral`).
+Member short names: `claude`, `gemini`, `gpt`, `kimi`, `muse` (runs sealed before scaffold#915: `mistral`).
 Lowercase; no version suffixes (`claude-4`, `kimi-26`, `mistral-3`) in filenames — version
 provenance lives in the `.provenance.json` `model` field.
 
