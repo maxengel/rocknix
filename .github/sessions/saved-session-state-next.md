@@ -1,8 +1,10 @@
 # Saved Session State
 
 > **Saved**: 2026-10-02T02:15:03Z. The session that wrote this stopped right after: nothing it started is still running. Anything that changed after this time was done by someone else.
-> **Branch**: `next`. This file is the canonical stash (D-WORKFLOW-133). A working branch's own `saved-session-state-<branch>.md` points here. The work is on `feature/cloud-epic` (worktree `/workspace/repos/rocknix.worktrees/cloud-epic`, level with `next`; one file deliberately uncommitted, see In Progress) and on the EmulationStation fork's `feature/cloud-epic` (`~/Development/emulationstation-next.worktrees/cloud-epic` at `e108699ea`, merged into `test/qa-integration`, which the distribution pins).
+> **Branch**: `next`. This file is the canonical stash (D-WORKFLOW-133). A working branch's own `saved-session-state-<branch>.md` points here. The work is on `feature/cloud-epic` (worktree `/workspace/repos/rocknix.worktrees/cloud-epic`, at `150551138d`; one file deliberately uncommitted, see In Progress) and on the EmulationStation fork's `feature/cloud-epic` (`~/Development/emulationstation-next.worktrees/cloud-epic` at `e108699ea`, merged into `test/qa-integration`, which the distribution pins).
 > **Repo**: `rasteratops/distribution` (remote `origin`; `upstream` is `ROCKNIX/distribution`). The interface is `rasteratops/emulationstation`.
+
+> **Update, 2026-10-02 05:19 UTC**: the Blitterbot migration (#374, D-WORKFLOW-136) is complete for local Git, SSH, mail and MCP integration. The maintainer confirmed the new GitHub email; old commits remain attributed and verified. Local `next` now includes the selected session records and council-instruction update (#372, D-WORKFLOW-135), so the cloud worktree above is behind those instruction/documentation changes. Its held changelog, image/QA artifacts and #365 next step are unchanged; merge the current instructions before resuming there. The branding-name correction remains on `feature/identity` at `c4a4cd188c` with #337. Nothing was pushed.
 
 ## Start here (if this project is new to you)
 
