@@ -37,7 +37,7 @@ both sides. #365/T23 still needs the image retry/fleet recovery receipt.
 ## Unfinished version contract
 
 There is no dispatcher that walks numbered migrations yet.
-`marked_current()` currently accepts a line beginning `layout=` rather than
+`fleet_made()` currently accepts a line beginning `layout=` rather than
 checking an exact supported version. The marker reader exposes the value but
 does not establish general forward compatibility. RC2 has no knowledge of
 this future protocol; documentation cannot make an already shipped reader
