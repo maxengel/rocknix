@@ -1,0 +1,14 @@
+F
+======================================================================
+FAIL: test_concurrent_downloads_cannot_publish_another_writers_partial_file (test_linux_image_cache_publication.ConcurrentImagePublicationTests.test_concurrent_downloads_cannot_publish_another_writers_partial_file)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-upstream-refresh-20261002/contribution-image-race/linux/tests/test_linux_image_cache_publication.py", line 58, in test_concurrent_downloads_cannot_publish_another_writers_partial_file
+    self.assertIn(target.read_bytes(), (body_a, body_b))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'bbbbbbbbAAAAAAAA' not found in (b'aaaaaaaaAAAAAAAA', b'bbbbbbbbBBBBBBBB')
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)

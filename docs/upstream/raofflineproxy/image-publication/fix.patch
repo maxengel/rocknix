@@ -1,0 +1,86 @@
+--- a/linux/raofflineproxy/image_cache.py
++++ b/linux/raofflineproxy/image_cache.py
+@@ -206,10 +206,15 @@
+         target = resolve_cached_static_asset(clean_path) or sharded_static_path(clean_path)
+         if not target.exists():
+             target.parent.mkdir(parents=True, exist_ok=True)
+-            tmp = target.with_suffix(target.suffix + ".tmp")
++            # The service and a bulk-cache process may publish the same image.
++            # Each writer needs its own temporary file: renaming a shared file
++            # could publish bytes while the other writer is still changing them.
++            tmp = target.with_name(
++                f"{target.name}.{os.getpid()}.{threading.get_ident()}.tmp"
++            )
+             try:
+                 tmp.write_bytes(_fetch_image(url, user_agent))
+-                tmp.rename(target)
++                os.replace(tmp, target)
+                 tmp = None
+             finally:
+                 if tmp is not None:
+--- /dev/null
++++ b/linux/tests/test_linux_image_cache_publication.py
+@@ -0,0 +1,63 @@
++import tempfile
++import threading
++import unittest
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++from unittest import mock
++
++from linux.raofflineproxy import image_cache
++
++
++class ConcurrentImagePublicationTests(unittest.TestCase):
++    def test_concurrent_downloads_cannot_publish_another_writers_partial_file(self):
++        # A service and a bulk-cache process can download the same image.
++        # Pause writer A with half its file written, let B publish, then finish
++        # A. Sharing a temp path publishes a mixture of the two bodies.
++        first_half = threading.Event()
++        second_finished = threading.Event()
++        body_a = b"aaaaaaaaAAAAAAAA"
++        body_b = b"bbbbbbbbBBBBBBBB"
++        write_bytes = Path.write_bytes
++
++        def interleaved_write(path, payload):
++            if payload != body_a:
++                return write_bytes(path, payload)
++            with path.open("wb") as stream:
++                stream.write(payload[:8])
++                stream.flush()
++                first_half.set()
++                if not second_finished.wait(5):
++                    raise TimeoutError("second writer did not finish")
++                stream.write(payload[8:])
++            return len(payload)
++
++        def fetch(url, _agent):
++            return body_a if url.endswith("/a") else body_b
++
++        def second_download():
++            try:
++                image_cache.download_static_image("https://example.invalid/b", "/Badge/1.png", "test")
++            finally:
++                second_finished.set()
++
++        with tempfile.TemporaryDirectory() as directory, \
++                mock.patch.object(image_cache, "STATIC_DIR", Path(directory)), \
++                mock.patch.object(image_cache, "_fetch_image", side_effect=fetch), \
++                mock.patch.object(Path, "write_bytes", interleaved_write):
++            with ThreadPoolExecutor(max_workers=2) as workers:
++                first = workers.submit(image_cache.download_static_image, "https://example.invalid/a", "/Badge/1.png", "test")
++                try:
++                    self.assertTrue(first_half.wait(5), "first writer never started")
++                    second = workers.submit(second_download)
++                    second.result(timeout=10)
++                    first.result(timeout=10)
++                finally:
++                    second_finished.set()
++            target = image_cache.resolve_cached_static_asset("/Badge/1.png")
++            self.assertIsNotNone(target)
++            self.assertIn(target.read_bytes(), (body_a, body_b))
++            self.assertEqual([], list(Path(directory).rglob("*.tmp")))
++
++
++if __name__ == "__main__":
++    unittest.main()
