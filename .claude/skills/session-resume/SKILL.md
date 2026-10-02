@@ -23,6 +23,8 @@ Load a previously saved session state file, validate it against the current envi
 
 Default path: `.github/sessions/saved-session-state-{branch}.md` where `{branch}` is the current git branch (with `/` → `-`).
 
+**In this repository (D-WORKFLOW-133):** the canonical stash is `.github/sessions/saved-session-state-next.md` on `next`, and a working branch's own file is a pointer to it. Read the canonical one; from a worktree that has not merged `next` since, `git show next:.github/sessions/saved-session-state-next.md`.
+
 If not found, try in this order:
 
 1. Any `.github/sessions/saved-session-state-*.md` — if multiple, list them and let the user pick. **When the current branch is not `main`, ignore `saved-session-state-main.md`**: on a feature branch it is almost always inherited at branch creation, not a handoff for this branch (session-stash removes it on first stash there).
@@ -39,6 +41,7 @@ Before trusting the saved state, check:
 | Files listed in "Key Files Modified" still exist                   | Flag any missing. Assume git history has the explanation.   |
 | Age of the state file (`stat` the file, compare with current time) | If >24 h, prefer live tracker data over stale summary.      |
 | Working tree is clean (no unrelated in-flight changes)             | Surface anything unexpected before resuming.                |
+| The worktree's rules are `next`'s (`git diff --quiet next -- .claude CLAUDE.md AGENTS.md`), in this repository | Merge `next` into a feature worktree before reading any rule, or read the rules from `next`: a session loads the rules of the worktree it starts in (#367). |
 | Issue tracker state (if referenced) has not diverged               | Re-query the tracker and note what changed since the stash. |
 
 For the tracker check: use whatever API the repo uses. For GitHub repos, prefer the GitHub MCP tools (`mcp_github_search_issues`, `mcp_github_issue_read`). Avoid `gh` CLI list/search for bulk queries — it has destabilised agent runners.

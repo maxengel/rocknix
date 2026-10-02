@@ -5,6 +5,13 @@ built on the LibreELEC/CoreELEC cross-compilation system). There is no app to ru
 repo is a *build system* that cross-compiles a complete OS image (kernel, bootloader,
 emulators, userland) per device.
 
+**Resuming work, or new to the project?** Read `.github/sessions/saved-session-state-next.md`
+on `next` first: the work in flight, what is running, the next commands, and a walk-through
+for an agent who has never seen the project (D-WORKFLOW-133). A session loads the rules of the
+worktree it starts in, so check that yours carries `next`'s before trusting any of them:
+`git diff --quiet next -- .claude CLAUDE.md AGENTS.md || echo STALE` -- then merge `next` into
+a feature worktree, or read the rules from `next` (#367).
+
 **How this file is read.** Codex reads `AGENTS.md` (this file, at the root; a nested
 `AGENTS.md` adds to its own subtree) and nothing else on its own, so this file stands
 alone: the commands, the rules that bind every session, and the list of every rule file
@@ -17,7 +24,7 @@ file is right and this file has a bug.
 **Canonical deep-dive docs (this file summarizes; they are authoritative):**
 
 - `packages/README.md` — the authoritative `package.mk` format reference.
-- `.claude/rules/*.md` — the canonical guides, all 27, listed below with their one-line
+- `.claude/rules/*.md` — the canonical guides, all 29, listed below with their one-line
   descriptions and when each loads. `instruction-files.md` is their index and carries the
   front-matter standard (D-WORKFLOW-009). Open the every-session ones before starting;
   open a scoped one before touching its paths.

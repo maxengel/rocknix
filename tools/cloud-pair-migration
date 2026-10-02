@@ -33,11 +33,15 @@
 #   5. b's step at its next boot follows (its old folder is empty now): the
 #      scan re-points it with no question, --needs-step then says no step;
 #      its new save lands at /Rasteratops and a's restore brings it.
-#   5m. A device that missed its step (b's pointers set back by hand, the one
-#      staged input): its backup asks nothing and writes to the earlier
-#      folder -- no sync checks the folder (D-CLOUD-170) -- and its step's
-#      MOVE merges that into /Rasteratops (D-CLOUD-168): every save there,
-#      a's untouched, nothing left behind.
+#   5m. A device that missed its step (b's pointers set back by hand, a
+#      staged input): its backup does not re-make the earlier folder the
+#      move removed -- it sends nothing and offers the folder (D-CLOUD-172)
+#      -- and its next step follows the fleet with no question, after which
+#      its save goes up to /Rasteratops.
+#   5n. A device on an older build that kept writing to the earlier folder
+#      after the move (stood in by a save put there directly, named): its
+#      step asks MOVE and the move merges into /Rasteratops (D-CLOUD-168):
+#      every save there, a's untouched, nothing left behind.
 #   6. Both confs read the shipped /Rasteratops folders.
 #   7. A provider error is not an absence: b pointed at a dead endpoint --
 #      its scan ends non-zero with no state written, and nothing in its conf
@@ -55,7 +59,7 @@ KEEP=0
 [ "${1:-}" = "--keep" ] && { KEEP=1; shift; }
 OLD=${1:-}; NEW=${2:-}; TAR=${3:-}
 for f in "$OLD" "$NEW" "$TAR"; do
-  [ -n "$f" ] && [ -f "$f" ] || { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; echo "cloud-pair-migration: no such file: '$f'" >&2; exit 2; }
+  [ -n "$f" ] && [ -f "$f" ] || { sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'; echo "cloud-pair-migration: no such file: '$f'" >&2; exit 2; }
 done
 VP="$HERE/vm-pair"; BE="$HERE/cloud-test-backend"
 
@@ -185,26 +189,35 @@ cloud_files "${CUR_SAVES#/}" | grep -q 'nes/FromB.srm'; check $? "5: b's new sav
 on a '/usr/bin/cloud_restore --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "restore rc=$?"' 2>&1 | tee -a "$LOG"
 [ -n "$SUM_B" ] && [ "$(on a 'sha256sum /storage/roms/nes/FromB.srm 2>/dev/null | cut -c1-64')" = "$SUM_B" ]; check $? "5: a's restore brought b's save, byte for byte"
 
-say "5m. a device that missed its step: b's pointers set back by hand (staged), a backup, then the step's MOVE merges"
+say "5m. a device that missed its step: b's pointers set back by hand (staged); its backup re-makes nothing; its step follows"
 read -r E_SAVES E_BACKUPS E_CONTENT <<< "$A_PTRS0"
-on b "sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"$E_SAVES\"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE=\"$E_BACKUPS\"|' -e 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=\"$E_CONTENT\"|' /storage/.config/cloud_sync.conf" >>"$LOG" 2>&1
+set_early() { on b "sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"$E_SAVES\"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE=\"$E_BACKUPS\"|' -e 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=\"$E_CONTENT\"|' /storage/.config/cloud_sync.conf" >>"$LOG" 2>&1; }
+set_early
 [ "$(ptrs b)" = "$A_PTRS0" ]; check $? "5m: (staged) b's pointers are back on ${EARLY_ROOT}, as on a device that never ran its step" "$(ptrs b)"
-FOLLOWS0=$(on b 'journalctl -b -t cloud_migrate_layout 2>/dev/null | grep -c "followed the fleet"')
-on b 'head -c 2000 /dev/urandom > /storage/roms/nes/FromB2.srm; /usr/bin/cloud_backup --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "backup rc=$?"' 2>&1 | tee -a "$LOG"
+on b 'head -c 2000 /dev/urandom > /storage/roms/nes/FromB2.srm; /usr/bin/cloud_backup --yes --method=copy --update --saves-only > /tmp/pair-5m.out 2>&1; echo "backup rc=$?"' 2>&1 | tee -a "$LOG" > "$OUT/5m-rc.txt"
 SUM_B2=$(on b 'sha256sum /storage/roms/nes/FromB2.srm | cut -c1-64')
-cloud_files "${EARLY_SAVES#/}" | grep -q 'nes/FromB2.srm' && [ "$(ptrs b)" = "$A_PTRS0" ] \
-  && [ "$(on b 'journalctl -b -t cloud_migrate_layout 2>/dev/null | grep -c "followed the fleet"')" = "$FOLLOWS0" ]; check $? "5m: its backup asked nothing and wrote to ${EARLY_SAVES}, where its conf points: no sync checks the folder (D-CLOUD-170)" "$(cloud_files "${EARLY_SAVES#/}"); b: $(ptrs b)"
+grep -qx 'backup rc=0' "$OUT/5m-rc.txt" && [ -z "$(cloud_files "${EARLY_SAVES#/}")" ] && on b "grep -qx '>>> offer create-saves-folder|${EARLY_SAVES}' /tmp/pair-5m.out"; check $? "5m: its backup made no ${EARLY_SAVES} again, sent nothing and offered the folder (D-CLOUD-172)" "$(cat "$OUT/5m-rc.txt"); ${EARLY_SAVES}: $(cloud_files "${EARLY_SAVES#/}")"
+on b '/usr/bin/cloud_scan --folder >/dev/null 2>&1; echo "folder scan rc=$?"' 2>&1 | tee -a "$LOG"
+[ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ] && on b 'grep -qx "STATE=current" /storage/.cache/cloud_sync/scan/state'; check $? "5m: its step's scan followed the fleet with no question" "$(ptrs b)"
+on b '/usr/bin/cloud_backup --yes --method=copy --update --saves-only >/dev/null 2>&1; echo "backup rc=$?"' 2>&1 | tee -a "$LOG"
+[ "$("$BE" cat "${CUR_SAVES#/}/nes/FromB2.srm" 2>/dev/null | sha256sum | cut -c1-64)" = "$SUM_B2" ]; check $? "5m: and its next backup sent the save to ${CUR_SAVES}, byte for byte" "$(cloud_files "${CUR_SAVES#/}")"
+
+say "5n. a device on an older build that kept writing to ${EARLY_ROOT} after the move (stood in: a save put there directly); its step's MOVE merges"
+STAND=$(mktemp -d); mkdir -p "$STAND/nes"; head -c 1500 /dev/urandom > "$STAND/nes/FromOld.srm"; SUM_OLD=$(sha256sum "$STAND/nes/FromOld.srm" | cut -c1-64)
+"$BE" put "$STAND" "${EARLY_SAVES#/}" >>"$LOG" 2>&1; rm -rf "$STAND"
+cloud_files "${EARLY_SAVES#/}" | grep -q 'nes/FromOld.srm'; check $? "5n: (stood in) ${EARLY_SAVES} holds a save an older build wrote after the move" "$(cloud_files "${EARLY_SAVES#/}")"
+set_early
 on b '/usr/bin/cloud_scan --folder >/dev/null 2>&1; echo "folder scan rc=$?"' 2>&1 | tee -a "$LOG"
 B_STATE=$(on b 'cat /storage/.cache/cloud_sync/scan/state 2>/dev/null' | mask | tr '\n' ' ')
-echo "$B_STATE" | grep -q 'STATE=superseded-with-files' && echo "$B_STATE" | grep -q 'CURRENT_EXISTS=1'; check $? "5m: its step's scan reads the move with the fleet's folder already there, so the step asks MOVE" "$B_STATE"
+echo "$B_STATE" | grep -q 'STATE=superseded-with-files' && echo "$B_STATE" | grep -q 'CURRENT_EXISTS=1'; check $? "5n: its step's scan reads the move with the fleet's folder already there, so the step asks MOVE" "$B_STATE"
 on b '/usr/bin/cloud_migrate_layout --apply > /tmp/pair-merge.out 2>&1; echo "merge rc=$?"' 2>&1 | tee -a "$LOG" > "$OUT/merge-rc.txt"
 on b 'cat /tmp/pair-merge.out' | mask | grep -E '^>>> |differ|shelv' >> "$LOG"
-grep -qx 'merge rc=0' "$OUT/merge-rc.txt"; check $? "5m: MOVE onto the fleet's folder ends 0" "$(cat "$OUT/merge-rc.txt")"
+grep -qx 'merge rc=0' "$OUT/merge-rc.txt"; check $? "5n: MOVE onto the fleet's folder ends 0" "$(cat "$OUT/merge-rc.txt")"
 CUR_LIST=$(cloud_files "${CUR_SAVES#/}")
-echo "$CUR_LIST" | grep -q 'nes/FromB2.srm' && echo "$CUR_LIST" | grep -q 'nes/FromB.srm' && echo "$CUR_LIST" | grep -q 'nes/FromA.srm'; check $? "5m: every save is at ${CUR_SAVES}: a's, b's, and the one written to the earlier folder" "$CUR_LIST"
-[ "$("$BE" cat "${CUR_SAVES#/}/nes/FromA.srm" 2>/dev/null | sha256sum | cut -c1-64)" = "$SUM_A" ] && [ "$("$BE" cat "${CUR_SAVES#/}/nes/FromB2.srm" 2>/dev/null | sha256sum | cut -c1-64)" = "$SUM_B2" ]; check $? "5m: a's save untouched by the merge, and the merged one byte for byte"
-[ -z "$(cloud_files "${EARLY_SAVES#/}")" ]; check $? "5m: nothing is left under ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
-[ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "5m: and b's conf points at the current folders" "$(ptrs b)"
+echo "$CUR_LIST" | grep -q 'nes/FromOld.srm' && echo "$CUR_LIST" | grep -q 'nes/FromB2.srm' && echo "$CUR_LIST" | grep -q 'nes/FromA.srm'; check $? "5n: every save is at ${CUR_SAVES}: a's, b's, and the one the older build wrote" "$CUR_LIST"
+[ "$("$BE" cat "${CUR_SAVES#/}/nes/FromA.srm" 2>/dev/null | sha256sum | cut -c1-64)" = "$SUM_A" ] && [ "$("$BE" cat "${CUR_SAVES#/}/nes/FromOld.srm" 2>/dev/null | sha256sum | cut -c1-64)" = "$SUM_OLD" ]; check $? "5n: a's save untouched by the merge, and the merged one byte for byte"
+[ -z "$(cloud_files "${EARLY_SAVES#/}")" ]; check $? "5n: nothing is left under ${EARLY_SAVES}" "$(cloud_files "${EARLY_SAVES#/}")"
+[ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "5n: and b's conf points at the current folders" "$(ptrs b)"
 
 say "6. both devices on the shipped folders"
 [ "$(ptrs a)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ] && [ "$(ptrs b)" = "$CUR_SAVES $CUR_BACKUPS $CUR_CONTENT" ]; check $? "6: both confs read ${CUR_SAVES}, ${CUR_BACKUPS} and ${CUR_CONTENT}" "a: $(ptrs a); b: $(ptrs b)"

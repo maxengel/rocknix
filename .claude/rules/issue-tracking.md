@@ -67,6 +67,42 @@ register row or a comment, file the issue and point both ways.
 The paper trail is the point. A register row says what was decided; the
 issue says what was asked, by whom, in what words, and whether it was done.
 
+## No work without an issue (D-WORKFLOW-132)
+
+Maintainer, 2026-10-02: *"We should make sure everything we need to do is
+logged as issues. We shouldn't be doing work if there's not a corresponding
+issue. We should be logging our friction and experience in our friction log.
+We should be using our instruction files to dictate how we run a work log. We
+should be following our process and protocols as outlined in those
+instruction files. We should be stopping to modify them when necessary. I feel
+like we're drifting away from process."*
+
+D-QA-012 puts every out-of-band request into an issue. This widens it to every
+piece of work: a fix, a proof, a test or tool change, a rule change, a build
+cut for a purpose. The issue exists **before** the work starts; the commits
+and the work-log heading name it; the outcome is reported on it. Work found in
+the middle of other work -- a fixture gone stale, a check that missed a
+shape -- gets its own issue the moment it is found, before the fix, however
+small the fix (#366 was filed before its fix for exactly that reason). A
+session about to start something with no issue stops and files one; a session
+that finds it has been working without one files it and says so in the issue.
+
+The rest of the maintainer's list already has a home, and the drift was in
+practice, not in the text: friction is a line the moment the work slows
+(`ceremonies.md`), a learning is a work-log entry headed by its issue
+(`learning-capture.md`), a procedure becomes a tool (`learning-capture.md`
+§ 3), and a rule broken twice moves up a stage (`working-principles.md`).
+On 2026-10-02 the friction log had no line for five slowdowns of the night
+before, the proofs that gate a candidate lived as session scripts outside the
+tree, and the session had loaded 17 of the 29 rules stale from a worktree 813
+commits behind `next` (#367).
+
+**What no tool checks yet.** `tools/ceremony-check` reads the ceremonies'
+artifacts on their cadence. It does not read whether the work in flight has an
+owner, and it read nothing overdue on the night the drift above was real. A
+check for the part a tool can see (a commit on `next` that cites no issue) is
+proposed on #367; until it lands, this paragraph is the whole enforcement.
+
 ## A criterion is agent-first (D-QA-044)
 
 Maintainer, 2026-09-25: *"our instruction files and processes should be driven
