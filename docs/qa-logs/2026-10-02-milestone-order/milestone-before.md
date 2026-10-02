@@ -1,0 +1,5 @@
+# Snapshot: rasteratops 0.0.1
+
+Historical adoption evidence for #388; the live GitHub milestone is authoritative.
+
+First Rasteratops release, working version 0.0.1. Release contract #344; delivery #383; reconciled readiness #385 and docs/rasteratops/release-readiness.md. RC requires fixed/verified software issues, safe versioned/retryable cloud migration preserving independent tier choices and existing state, current compatible dependencies with offline-achievement functionality retained, one frozen branded cold build, clean-install/RC2-upgrade/pair/provider/visual/timing/memory evidence bound to its manifest, and the approved independent fixes audit. RC2 bug waivers do not carry automatically. Publication additionally requires corresponding source, manual-adoption/recovery notes, mandatory RG35XX SP migration, qualified smoke evidence before each supported device asset is attached, and the named publication action. Later infrastructure topology, replacement runner/progressive review, own telemetry and full site are outside this release. See #344 for recorded decisions and #385 for the evidence map.

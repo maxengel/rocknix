@@ -28,7 +28,14 @@ gh issue create --repo rasteratops/distribution --title "..." --body-file notes.
 - **Milestones** carry a program's acceptance test in their description (e.g.
   *Cloud Saves: Fresh Handheld Journey*, *Cloud Saves: Visual Conflict Resolution*).
   Every issue that must land for that test to pass gets the milestone; QOL/backlog
-  items stay milestone-less.
+  items stay milestone-less. The body also holds the **current ordered execution
+  plan**: current/next work, phase dependencies, status and exit evidence. Update
+  it in the same session when priorities or phase state change (D-WORKFLOW-139).
+- **Names carry placement, not chronology.** Follow
+  [`milestone-phase-naming.md`](milestone-phase-naming.md): `M7.P1: ...`, with
+  optional Epic/sub-id scope. M comes from the milestone's name; P comes from
+  its body. Reconcile affected open titles when work moves; closed titles stay
+  historical. Issue numbers remain references, not the work queue.
 - **Epics** are ordinary issues labeled `epic` that own a scope (e.g. #18 backuptool,
   #26 journey, #15 native ES, #11 conflict resolution). Children are attached as real
   **GitHub sub-issues** (`gh api -X POST repos/.../issues/<epic>/sub_issues -F
