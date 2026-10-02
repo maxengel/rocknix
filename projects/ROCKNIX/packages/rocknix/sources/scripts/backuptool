@@ -95,7 +95,7 @@ stamp_at() {
 }
 STAMP_EPOCH="$(date +%s)"
 BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
-# The device's name sits between the stamp and -${OS_NAME}_SETTINGS.
+# The device's name sits between the stamp and -${ARCHIVE_OS_NAME}_SETTINGS.
 #
 # Every device used to write <stamp>-ROCKNIX_SETTINGS.tar.gz, so two
 # handhelds' archives were told apart by nothing. Maintainer, 2026-09-08: a
@@ -140,8 +140,10 @@ DEVICE_LABEL="$(device_label)"
 # extracts cleanly over an existing one. Verified on-device, because Info-ZIP
 # on a desktop and busybox on a handheld disagree, which is how the original
 # bug stayed invisible.
-BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
-LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${OS_NAME}_BACKUP.zip"
+# Archive names are a persisted compatibility contract, not OS display text.
+ARCHIVE_OS_NAME=ROCKNIX
+BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${ARCHIVE_OS_NAME}_SETTINGS.tar.gz"
+LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${ARCHIVE_OS_NAME}_BACKUP.zip"
 
 # The newest archive present, whatever it is called and whichever device wrote
 # it. Names lead with the date, so sorting them orders them by age.
@@ -156,13 +158,15 @@ LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${OS_NAME}_BACKUP.zip"
 # from before the label finds a new archive with the very same code.
 newest_backup() {
     local found
-    found=$(ls -1 "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_SETTINGS.tar.gz \
-                  "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_BACKUP.tar.gz \
-                  "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
+    found=$(ls -1 "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_SETTINGS.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_BACKUP.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_BACKUP.zip 2>/dev/null | sort | tail -1)
     if [ -n "${found}" ]; then
         echo "${found}"
     elif [ -f "${LEGACY_BACKUPFILE}" ]; then
         echo "${LEGACY_BACKUPFILE}"
+    elif [ -f "${SETTINGS_BACKUPS}/RASTERATOPS_BACKUP.zip" ]; then
+        echo "${SETTINGS_BACKUPS}/RASTERATOPS_BACKUP.zip"
     fi
 }
 ARCHIVE_KEEP=3
@@ -1456,11 +1460,11 @@ case "${VERB}" in
         # player made; it is trimmed with the rest of archive/ so the folder
         # stays bounded.
         mkdir -p "${ARCHIVEFOLDER}"
-        SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${ARCHIVE_OS_NAME}_SETTINGS.tar.gz"
         while [ -e "${SNAPSHOT}" ]
         do
             STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
-            SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+            SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${ARCHIVE_OS_NAME}_SETTINGS.tar.gz"
         done
         # The restore's own lists, each checked (#307, the audit of the fix
         # round, PL-006): with none, the copy cannot be built, so nothing is
@@ -1824,7 +1828,7 @@ case "${VERB}" in
         while [ -e "${BACKUPFILE}" ]
         do
             STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
-            BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+            BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${ARCHIVE_OS_NAME}_SETTINGS.tar.gz"
         done
 
         # The archive at the root right now, named before the new one exists

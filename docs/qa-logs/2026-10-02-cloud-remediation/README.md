@@ -32,3 +32,20 @@ constructed FAIL and exits1; `tools/vm-cloud-epic --inject-failure --output
 The initial host-rclone1.60 trial is diagnostic only: it lacks the seeding
 flag and could falsely pass a no-write assertion. It was replaced with the
 image's rclone, and the failed-listing fixtures prove their fault fired.
+
+## Fixed implementation receipts
+
+The full suite (`full-suite-fixed.log`) exited0 with1366PASS/0FAIL/0SKIPPED,
+including69 focused cases. Two later fixes address README-only old roots and
+propagate failed follow operations; the final `focused-fixed.log` passes72/72.
+The old follow-call control fails for the expected swallowed-error assertion.
+The discovered-source apply controls fail on old production bytes and pass on
+the fixed bytes. The first provider-error attempt allowed a successful parent
+listing to prove the target absent; it was corrected to use a populated backup
+tier. That diagnostic failure is not the old-code negative control.
+
+Current runner names are `tools/rasteratops-cloud-layout-test` and
+`tools/rasteratops-vm-cloud-epic` (D-WORKFLOW-115). The baseline files retain the
+commands as originally run. The archive selector is
+`rasteratops-settings-archive`. ES fixes are fc465b126 and4ea18b9b6; syntax checks
+passed. Candidate VM, timing and visual evidence are still required.

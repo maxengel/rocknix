@@ -1,0 +1,43 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present rasteratops (https://github.com/rasteratops)
+# Shared archive discovery for cloud_scan and cloud_restore. Sourced, no I/O
+# until select_settings_archives is called. Directory priority is part of the
+# persisted device identity: current, pre-label, healed IDs, then flat legacy.
+# Never search other devices recursively. A failed read is not an empty folder.
+select_settings_archives() { # <remote Backups path> <device-id helper>
+    local root="${1%/}" tool="$2" own="" prior="" previous="" name path rc
+    local -a names=()
+    SETTINGS_ARCHIVE_SOURCE=""; SETTINGS_ARCHIVE_LISTING=""; SETTINGS_ARCHIVE_KIND=""
+    if [ -x "${tool}" ]; then
+        own=$("${tool}" 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+        prior=$("${tool}" --legacy 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+        previous=$("${tool}" --previous 2>/dev/null | tr -cd 'A-Za-z0-9_.\n-')
+    fi
+    [ -n "${own}" ] && names+=("${own}")
+    [ -n "${prior}" ] && [ "${prior}" != "${own}" ] && names+=("${prior}")
+    while IFS= read -r name; do
+        [ -n "${name}" ] && [ "${name}" != "${own}" ] && [ "${name}" != "${prior}" ] && names+=("${name}")
+    done <<< "${previous}"
+    names+=("")
+    for name in "${names[@]}"; do
+        case "${name}" in .|..) continue ;; esac
+        path="${root}${name:+/${name}}"
+        SETTINGS_ARCHIVE_LISTING=$(rclone lsf --files-only --include '/*.{zip,tar.gz}' "${path}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); rc=$?
+        case "${rc}" in
+            0) ;;
+            3|4) SETTINGS_ARCHIVE_LISTING=""; continue ;;
+            *) SETTINGS_ARCHIVE_LISTING=""; return "${rc}" ;;
+        esac
+        [ -n "${SETTINGS_ARCHIVE_LISTING}" ] || continue
+        SETTINGS_ARCHIVE_SOURCE="${path}"
+        case "${name}" in
+            "") SETTINGS_ARCHIVE_KIND=flat ;;
+            "${own}") SETTINGS_ARCHIVE_KIND=current ;;
+            "${prior}") SETTINGS_ARCHIVE_KIND=legacy ;;
+            *) SETTINGS_ARCHIVE_KIND=previous ;;
+        esac
+        return 0
+    done
+    return 0
+}

@@ -83,6 +83,11 @@ if [ -e /ctl/bucket ]; then
 fi
 exec /rclone.real "$@"
 ''', True)
+        bt_rel = Path('projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool')
+        bt = subprocess.run(['git', '-C', str(ROOT), 'show', f'{args.ref}:{bt_rel}'], capture_output=True, check=True).stdout if args.ref else (ROOT/bt_rel).read_bytes()
+        (path/'repo/backuptool').write_bytes(bt)
+        (path/'repo/backuptool').chmod(0o755)
+        put(path/'shim/systemctl', '#!/bin/sh\nexit 0\n', True)
         self.conf()
         put(path / 'storage/.config/cloud_sync-rules.txt', '+ /**/*.srm\n- /**\n')
 
@@ -216,6 +221,20 @@ def backup_tier(f, mode, root='/ROCKNIX', custom=False):
     require(found.exists() and found.read_bytes() == archive.read_bytes(), f'archive abandoned by {mode}: {pointer}')
 
 
+def apply_other_source(f, custom=False):
+    backups = '/Mine/Backups' if custom else '/GAMES/backup'
+    f.conf('/GAMES', backups, '')
+    archive = f.archive(f'{backups}/{DEVICE}/{ARCHIVE}')
+    original = archive.read_bytes()
+    f.file(OLD+'/Saves/gb/A.srm')
+    r=f.run('cloud_migrate_layout','--apply')
+    require(r.returncode==0, f'apply discovered source failed: {r.stdout[-600:]}')
+    found=f.path/'cloud'/f.pointers()['SETTINGS_REMOTE'].lstrip('/')/DEVICE/ARCHIVE
+    require(found.exists() and found.read_bytes()==original, 'discovered saves source abandoned the separate backup tier')
+    require((f.path/'cloud/Rasteratops/Saves/gb/A.srm').read_text()=='sentinel\n', 'save bytes lost')
+    require(f.pointers()['CONTENT_REMOTE']=='', 'explicit root changed')
+
+
 def content_choice(f, mode, content):
     saves = NEW+'/Saves' if mode == '--join' else OLD+'/Saves'
     f.conf(saves, OLD+'/Backups', content)
@@ -231,12 +250,12 @@ def content_choice(f, mode, content):
     if content == '': require((f.path/'cloud/ROMs/gb/Root.gb').read_text() == 'sentinel\n', 'root content changed')
 
 
-def provider_failure(f, script):
+def provider_failure(f, script, fault_rc=5, features=False):
     f.conf(OLD+'/Saves', OLD+'/Backups', OLD+'/Content')
     f.directory(OLD+'/Saves'); f.file(OLD+'/Saves/gb/A.srm')
     put(f.path/'storage/roms/gb/A.srm','sentinel\n')
     put(f.path/'ctl/bucket','1')
-    f.fault(r'^lsf --dirs-only qa:/ROCKNIX/?( |$)')
+    f.fault(r'^backend features ' if features else r'^lsf --dirs-only qa:/ROCKNIX/?( |$)', fault_rc)
     before = (f.path/'cloud/ROCKNIX/Saves/gb/A.srm').read_bytes()
     r = f.run(script, '--yes')
     require((f.path/'ctl/fault-fired').exists(), 'fault did not reach production call')
@@ -251,6 +270,40 @@ def unreadable(f):
     before=f.pointers()
     r=f.run('cloud_migrate_layout','--settle')
     require(r.returncode not in (0,3) and f.pointers()==before, 'unreadable cloud became empty/changed pointers')
+
+
+def follow_read_failure(f):
+    f.conf(OLD+'/Saves',OLD+'/Backups',OLD+'/Content')
+    f.file(NEW+'/Saves/gb/A.srm')
+    f.archive(f'{OLD}/Backups/{DEVICE}/{ARCHIVE}')
+    f.fault(r'^lsf .*qa:/ROCKNIX/Backups/')
+    before=f.pointers()
+    r=f.run('cloud_scan','--folder')
+    require((f.path/'ctl/fault-fired').exists(), 'follow read fault was not exercised')
+    require(r.returncode != 0 and f.pointers()==before, 'failed follow was reported as a successful scan')
+
+
+def follow_call_failure(f):
+    f.conf(OLD+'/Saves',OLD+'/Backups',OLD+'/Content')
+    f.file(NEW+'/Saves/gb/A.srm')
+    tool=f.path/'repo/cloud_migrate_layout'
+    tool.rename(tool.with_name('cloud_migrate_layout.real'))
+    put(tool, '#!/bin/sh\nif [ "$1" = --follow ]; then echo follow > /ctl/fault-fired; exit 5; fi\nexec /repo/cloud_migrate_layout.real "$@"\n',True)
+    before=f.pointers()
+    r=f.run('cloud_scan','--folder')
+    require((f.path/'ctl/fault-fired').exists(), 'follow call fault was not exercised')
+    require(r.returncode != 0 and f.pointers()==before, 'failed follow call was reported as a successful scan')
+
+
+def note_only(f):
+    f.conf('/GAMES','/GAMES/backup',None)
+    f.file('/GAMES/README.txt','setup note\n')
+    f.file(OLD+'/Saves/gb/A.srm')
+    r=f.run('cloud_scan','--folder')
+    require(r.returncode==0, f'scan failed: {r.stdout}')
+    require(f.pointers()['SAVES_REMOTE']==OLD+'/Saves', 'setup note outranked the real saves')
+    require((f.path/'cloud/GAMES/README.txt').read_text()=='setup note\n', 'old note deleted')
+    require((f.path/'cloud/ROCKNIX/Saves/gb/A.srm').read_text()=='sentinel\n', 'real saves changed')
 
 
 def no_remote(f):
@@ -276,6 +329,26 @@ def restricted(f):
     require(r.returncode == 0, f'folder-only scan required root-list permission: {r.stdout}')
 
 
+def local_archive(f, suffix):
+    put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=RASTERATOPS\n')
+    put(f.path/'storage/.config/backuptool.conf', 'LOCATIONS=( /storage/.config/proof-sentinel )\n')
+    put(f.path/'storage/.config/proof-sentinel', 'before restore\n')
+    archive = f.archive(ARCHIVE.replace('ROCKNIX_SETTINGS', suffix+'_SETTINGS'), local=True)
+    original = archive.read_bytes()
+    r=f.run('backuptool','restore')
+    require(r.returncode==0, f'local {suffix} restore rc={r.returncode}: {r.stdout[-500:]}')
+    require((f.path/'storage/.config/proof-sentinel').read_text()=='settings sentinel\n', 'local restore sentinel mismatch')
+    snapshots=list((f.path/'storage/roms/backup/archive').glob('*PRE_RESTORE*'))
+    require(snapshots, 'pre-restore recovery snapshot absent')
+    with tarfile.open(snapshots[0]) as tar:
+        require(tar.extractfile('storage/.config/proof-sentinel').read()==b'before restore\n', 'snapshot lost previous bytes')
+    require(archive.read_bytes()==original, 'restore altered inherited archive')
+    r=f.run('backuptool','backup')
+    require(r.returncode==0, f'new local backup failed: {r.stdout[-400:]}')
+    names=list((f.path/'storage/roms/backup').glob('*_SETTINGS.tar.gz'))
+    require(any(n.name.endswith('-ROCKNIX_SETTINGS.tar.gz') for n in names), 'display rename changed persisted writer identity')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--ref'); p.add_argument('--output',type=Path)
@@ -291,7 +364,9 @@ def main():
     owned = args.output is None
     output = args.output or Path(tempfile.mkdtemp(prefix='cloud-layout-'))
     output.mkdir(parents=True,exist_ok=True)
-    cases=[('T24-production-backup-scan-restore',archive_roundtrip)]
+    cases=[('T24-production-backup-scan-restore',archive_roundtrip),
+           ('T24-local-legacy-recovery',lambda f:local_archive(f,'ROCKNIX')),
+           ('T24-local-renamed-recovery',lambda f:local_archive(f,'RASTERATOPS'))]
     for kind in ['current','legacy','healed','flat','foreign']:
         for branded in [False,True]:
             cases.append((f'T24-{kind}-'+('renamed' if branded else 'legacy-os'),lambda f,k=kind,b=branded: archive_selection(f,k,b)))
@@ -316,15 +391,21 @@ def main():
     ]
     for cell,saves,state,files,dirs,keep in rows:
         cases.append((cell+'-classification',lambda f,s=saves,t=state,fs=files,ds=dirs,k=keep: state_case(f,s,t,fs,ds,k)))
-    cases += [('T17-unreadable',unreadable),('T17-seed-timeout',lambda f:settle_failure(f,124)),
+    cases += [('T11-note-only',note_only),('T17-follow-call-failure',follow_call_failure),('T17-follow-read-failure',follow_read_failure),('T17-unreadable',unreadable),('T17-seed-timeout',lambda f:settle_failure(f,124)),
               ('T17-seed-failed',lambda f:settle_failure(f,1)),
               ('T18-bucket-backup-unknown',lambda f:provider_failure(f,'cloud_backup')),
               ('T18-bucket-restore-unknown',lambda f:provider_failure(f,'cloud_restore')),
               ('T19-no-remote',no_remote),('T23-content-collision',collision),('T25-restricted-prefix',restricted)]
+    for script in ['cloud_backup','cloud_restore']:
+        for rc in [3,4,7]:
+            cases.append((f'T18-{script}-parent-error-{rc}',lambda f,s=script,r=rc:provider_failure(f,s,r)))
+    cases.append(('T18-restore-features-error',lambda f:provider_failure(f,'cloud_restore',5,True)))
     for mode in ['--follow','--settle']:
         for root in [OLD,'/GAMES']:
             cases.append((f'T20-{mode[2:]}-{root[1:]}',lambda f,m=mode,r=root:backup_tier(f,m,r)))
         cases.append((f'T20-{mode[2:]}-custom',lambda f,m=mode:backup_tier(f,m,custom=True)))
+    cases += [('T20-apply-other-source-default',apply_other_source),
+              ('T20-apply-other-source-custom',lambda f:apply_other_source(f,True))]
     for mode in ['--join','--follow','--settle','--apply']:
         for choice,value in [('missing',None),('root',''),('derived',OLD+'/Content'),('custom','/Mine/ROMs')]:
             cases.append((f'T21-{mode[2:]}-{choice}',lambda f,m=mode,c=value:content_choice(f,m,c)))

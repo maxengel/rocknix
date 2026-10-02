@@ -733,11 +733,22 @@ case "$1" in
         # /GAMES put a README there that every later check read as saves. A
         # carried default with nothing anywhere is pointed at the current
         # folders, which the seeding makes, as for any new cloud. A settle
-        # that could not answer changes nothing and the seeding goes on.
+        # that could not answer makes nothing. The wizard may still finish;
+        # its boot step retries, without a misleading README at the old root.
         layout_tool="$(dirname "$(readlink -f "$0")")/cloud_migrate_layout"
         [ -x "${layout_tool}" ] || layout_tool=/usr/bin/cloud_migrate_layout
-        [ -x "${layout_tool}" ] && timeout 30 "${layout_tool}" --settle >/dev/null 2>&1 \
-            && log_message "Seeding: this device's cloud folder was settled first (cloud_migrate_layout --settle)"
+        if [ ! -x "${layout_tool}" ]; then
+            log_message "Seeding: cloud folder settlement is unavailable; nothing was made"
+            exit 1
+        fi
+        timeout 30 "${layout_tool}" --settle >/dev/null 2>&1; settle_rc=$?
+        case "${settle_rc}" in
+            0) log_message "Seeding: this device's cloud folder was settled first (cloud_migrate_layout --settle)" ;;
+            3) ;; # A current, populated, custom or kept folder needs no transition.
+            *) log_message "Seeding: cloud folder settlement exited ${settle_rc}; nothing was made"
+               echo "Your cloud folder couldn't be checked, so no folders were made. Try again."
+               exit "${settle_rc}" ;;
+        esac
         # Read as text, never eval'd: the config is shell, and a value an
         # earlier build wrote could carry a command (PL-051). A folder in a
         # form the scripts cannot read makes nothing: read as empty, it

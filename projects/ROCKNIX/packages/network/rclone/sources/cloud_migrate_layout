@@ -106,12 +106,32 @@ earlier_source() { # <remote> [except]
 # the first layout. Content goes with it only where this device's own was
 # unset or the current default; a folder the player chose for ROMs stays
 # theirs.
+# An explicit empty CONTENT_REMOTE is the cloud root, not an unset option.
+content_unset() { ! grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; }
+
+# A pointer-only transition may follow an empty default backup tier, never
+# abandon its archives or replace a custom folder. Called directly: failed
+# listings terminate the caller through list_or_stop, not a subshell.
+backup_pointer_for() { # <remote> <configured backups> <destination default>
+    local remote="$1" backups="$2" target="$3" known=0
+    NEXT_BACKUPS="${backups}"
+    case "${backups%/}" in
+        ""|/GAMES/backup|/ROCKNIX/Backups|/Rasteratops/Backups) known=1 ;;
+    esac
+    [ "${known}" -eq 1 ] || return 0
+    if [ -n "${backups}" ]; then
+        list_or_stop "${remote}${backups%/}/" --files-only -R --include '*.{zip,tar.gz}'
+        [ -n "${LISTING}" ] && return 0
+    fi
+    NEXT_BACKUPS="${target}"
+}
+
 earlier_layout() { # <saves folder> <this device's content pointer>
     local src="$1" content="$2" parent
     parent="${src%/*}"; [ -n "${parent}" ] || parent="${src}"
     E_SAVES="${src}"
     if [ "${src}" = "/GAMES" ]; then E_BACKUPS="/GAMES/backup"; else E_BACKUPS="${parent}/Backups"; fi
-    if [ -z "${content}" ] || same_folder "${content}" "${NEW_CONTENT}"; then
+    if content_unset || same_folder "${content}" "${NEW_CONTENT}"; then
         E_CONTENT="${parent}/Content"
     else
         E_CONTENT="${content}"
@@ -372,7 +392,8 @@ SAVES_EXCLUDES=(--exclude '/backup/**' --exclude '/Backups/**')
 has_files() { # <path> [more lsf arguments...]
     local path="$1"
     shift
-    list_or_stop "${path}" --files-only -R "${SAVES_EXCLUDES[@]}" "$@"
+    # The setup note is not a save and must not outrank another root's data.
+    list_or_stop "${path}" --files-only -R "${SAVES_EXCLUDES[@]}" --exclude '/README.txt' "$@"
     [ -n "${LISTING}" ]
 }
 
@@ -812,11 +833,12 @@ layout_follow() { # <remote> <saves> <backups> <content>
     # (the futro's pre-mortem, 2026-10-01). The move is offered instead,
     # which copies, verifies and only then removes.
     has_files "${remote}${saves}/" && return 3
+    backup_pointer_for "${remote}" "${backups}" "${NEW_BACKUPS}"
     set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 1
-    set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 1
+    set_pointer SETTINGS_REMOTE "${NEXT_BACKUPS}" || return 1
     # Content follows only where it was derived from the old folder or
     # never set; a folder the player chose for ROMs stays theirs.
-    if [ -z "${content}" ] || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+    if content_unset || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
        || same_folder "${content}" "${saves%/}/Content"; then
         set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 1
     fi
@@ -853,8 +875,11 @@ layout_join() { # <remote> <saves> <content>
     fi
     earlier_source "${remote}" "${saves}" || return 3
     earlier_layout "${SOURCE_FOUND}" "${content}"
+    local backups
+    backups=$(conf_value SETTINGS_REMOTE) || return 2
+    backup_pointer_for "${remote}" "${backups}" "${E_BACKUPS}"
     set_pointer SAVES_REMOTE "${E_SAVES}" || return 1
-    set_pointer SETTINGS_REMOTE "${E_BACKUPS}" || return 1
+    set_pointer SETTINGS_REMOTE "${NEXT_BACKUPS}" || return 1
     set_pointer CONTENT_REMOTE "${E_CONTENT}" || return 1
     say "Joined: this device now uses ${remote}${E_SAVES}, where your saves already are."
     logger -t cloud_migrate_layout "joined the fleet at ${E_SAVES}: no saves in ${NEW_SAVES}" 2>/dev/null
@@ -878,9 +903,10 @@ layout_settle() { # <remote> <saves> <backups> <content>
     keep=$(conf_value LAYOUT_KEEP) || return 2
     [ -n "${keep}" ] && same_folder "${saves}" "${keep}" && return 3
     has_files "${remote}${saves}/" && return 3
+    backup_pointer_for "${remote}" "${backups}" "${NEW_BACKUPS}"
     set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 1
-    set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 1
-    if [ -z "${content}" ] || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
+    set_pointer SETTINGS_REMOTE "${NEXT_BACKUPS}" || return 1
+    if content_unset || same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
        || same_folder "${content}" "${saves%/}/Content"; then
         set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 1
     fi
@@ -1003,7 +1029,7 @@ main() {
     # earlier default and is offered the move (D-CLOUD-160).
     if ! superseded_default "${saves}" \
        && ! same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${sib_parent}/Backups"; then
-        if [ -z "${content}" ] || same_folder "${content}" "${sib_parent}/Content"; then
+        if content_unset || same_folder "${content}" "${sib_parent}/Content"; then
             say "Already on a sibling layout of your own (${saves}, ${backups}); nothing to move."
             return 3
         fi
@@ -1044,15 +1070,17 @@ main() {
         if [ -n "${src}" ] && ! same_folder "${src}" "${saves}"; then
             say "Your saves are in ${remote}${src}, not in ${remote}${saves} as this device was set; moving from there."
             local src_parent="${src%/*}"; [ -n "${src_parent}" ] || src_parent="${src}"
+            local src_backups="${src_parent}/Backups"
+            [ "${src}" = "/GAMES" ] && src_backups="/GAMES/backup"
+            backup_pointer_for "${remote}" "${backups}" "${src_backups}"
             if [ "${mode}" = "--apply" ]; then
                 set_pointer SAVES_REMOTE "${src}" || return 5
-                if [ "${src}" = "/GAMES" ]; then set_pointer SETTINGS_REMOTE "/GAMES/backup" || return 5
-                else set_pointer SETTINGS_REMOTE "${src_parent}/Backups" || return 5; fi
-                [ -z "${content}" ] && { set_pointer CONTENT_REMOTE "${src_parent}/Content" || return 5; content="${src_parent}/Content"; }
+                set_pointer SETTINGS_REMOTE "${NEXT_BACKUPS}" || return 5
+                content_unset && { set_pointer CONTENT_REMOTE "${src_parent}/Content" || return 5; content="${src_parent}/Content"; }
             fi
             saves="${src}"
-            if [ "${src}" = "/GAMES" ]; then backups="/GAMES/backup"; else backups="${src_parent}/Backups"; fi
-            [ -z "${content}" ] && content="${src_parent}/Content"
+            backups="${NEXT_BACKUPS}"
+            content_unset && content="${src_parent}/Content"
             sabs=$(folder_abs "${saves}")
             sib_parent="${sabs%/*}"; [ -n "${sib_parent}" ] || sib_parent="${sabs}"
         fi
@@ -1216,12 +1244,9 @@ main() {
         else
             set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 5
         fi
-        # A content pointer at the cloud's root (empty, the shape a stock
-        # conf carries up: the Nova's, 2026-09-30) is a value nobody chose,
-        # and left alone it put the seeded ROMs and BIOS folders at the root
-        # of the cloud beside /Rasteratops (guest d, 2026-10-01, case B). It
-        # follows the saves to the current layout, as --follow's does.
-        if [ -z "${content}" ]; then
+        # Only a missing content choice follows automatically. An explicit
+        # empty value selects the cloud root and must survive the move (#380).
+        if content_unset; then
             set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 5
             content="${NEW_CONTENT}"
         fi

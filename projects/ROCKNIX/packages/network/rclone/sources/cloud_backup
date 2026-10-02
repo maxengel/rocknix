@@ -805,23 +805,16 @@ say_why() {
 # on a bucket whether a folder exists: its parent lists it. cloud_restore's
 # two helpers, the same rule here so the two scripts never disagree about
 # whether a saves folder is there (#141).
-BUCKET_BASED=""
-bucket_based() {
-    if [ -z "${BUCKET_BASED}" ]; then
-        if rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true'; then
-            BUCKET_BASED=1
-        else
-            BUCKET_BASED=0
-        fi
-    fi
-    [ "${BUCKET_BASED}" = "1" ]
-}
+# Return 0 present, 1 absent, 2 unknown. The caller must never turn 2
+# into a create-folder offer. Preserve the provider's error for reporting.
 bucket_dir_listed() {
-    local path="${1%/}" parent name
+    local path="${1%/}" parent name listing
     name="${path##*/}"
     [ -n "${name}" ] || return 0
     parent="${path%/*}"
-    rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qx "${name}/"
+    listing=$(rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); BUCKET_READ_RC=$?
+    [ "${BUCKET_READ_RC}" -eq 0 ] || return 2
+    printf '%s\n' "${listing}" | grep -qxF -- "${name}/"
 }
 
 # Whether the saves setting is a default this project once shipped
@@ -1673,10 +1666,24 @@ backup_game_saves() {
     # a guess would leave the saves only on the device.
     if superseded_saves_setting; then
         local saves_folder="${SAVES_REMOTE%/}" list_rc
-        rclone lsd "${REMOTENAME}${saves_folder}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; list_rc=$?
-        if [ ${list_rc} -eq 0 ] && bucket_based && ! bucket_dir_listed "${saves_folder}"; then
-            list_rc=3
-        fi
+        # The parent's directory listing proves presence on both path and
+        # bucket backends. One call replaces lsd + backend features (and on
+        # buckets a third call); exit sync keeps the absence guard without
+        # paying for backend classification on every game (#364, #377).
+        bucket_dir_listed "${saves_folder}"; list_rc=$?
+        case "${list_rc}" in
+            0) ;;
+            1) list_rc=3 ;; # A successful parent listing omitted this folder.
+            2)
+                list_rc=5  # Unknown: retain the existing backup fallback.
+                # A missing parent on a path backend means the child is
+                # absent too. Confirm with the child's own missing status;
+                # a bucket's successful empty lsd proves nothing here.
+                if [ "${BUCKET_READ_RC}" -eq 3 ]; then
+                    rclone lsd "${REMOTENAME}${saves_folder}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1
+                    [ "$?" -eq 3 ] && list_rc=3
+                fi ;;
+        esac
         if [ ${list_rc} -eq 3 ]; then
             log_message "saves folder ${SAVES_REMOTE} is a default an earlier version shipped, and the cloud has none; a backup does not make it (D-CLOUD-172)" "false"
             log_message "Nothing backed up: your cloud has no ${saves_folder} folder yet." "true"
@@ -2384,7 +2391,7 @@ MANIFEST
                 osn=$(os_name)
                 listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null)
                 mine=$(printf '%s\n' "${listing}" \
-                       | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" | sort -r)
+                       | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-(${osn}|ROCKNIX|RASTERATOPS)_SETTINGS\.tar\.gz$" | sort -r)
                 total_n=$(printf '%s\n' "${listing}" | grep -c .)
                 mine_n=$(printf '%s\n' "${mine}" | grep -c .)
                 if [ "${total_n}" -gt "${mine_n}" ]; then

@@ -174,10 +174,13 @@ read_folder() {
     # elsewhere.
     if [ "$(sed -n 's/^STATE=//p' "${OUT}/state")" = superseded-empty ] \
        && [ "$(sed -n 's/^CURRENT_EXISTS=//p' "${OUT}/state")" = 1 ]; then
-        if timeout 20 "${layout}" --follow >/dev/null 2>&1; then
-            log "scan: followed the fleet to the current layout"
-            "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
-        fi
+        timeout 20 "${layout}" --follow >/dev/null 2>&1; rc=$?
+        case "${rc}" in
+            0) log "scan: followed the fleet to the current layout" ;;
+            3) ;; # The remote may have changed since the state read; read it again.
+            *) stop_on "${rc}" "--follow" ;;
+        esac
+        "${layout}" --state > "${OUT}/state" 2>/dev/null; stop_on $? "--state"
     fi
 }
 
@@ -207,19 +210,21 @@ echo ">>> unit SETTINGS BACKUPS||"
 echo ">>> doing scan"
 settings_remote=$(conf_get SETTINGS_REMOTE) || { why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"; exit 1; }
 settings_remote="${settings_remote%/}"
-listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${REMOTE}${settings_remote:+${settings_remote#/}}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); rc=$?
-case "${rc}" in
-    0) ;;
-    3|4) listing="" ;;   # no Backups folder yet: nothing to restore, not a failure
-    *) stop_on "${rc}" "archives listing" ;;
-esac
+# Use the restore reader's directory priority, including inherited device IDs.
+archive_tool=$(sibling rasteratops-settings-archive)
+[ -r "${archive_tool}" ] || { why "SOMETHING WENT WRONG"; exit 1; }
+. "${archive_tool}"
+select_settings_archives "${REMOTE}${settings_remote}" "$(sibling cloud_device_id)"; rc=$?
+stop_on "${rc}" "archives listing"
+listing="${SETTINGS_ARCHIVE_LISTING}"
 printf '%s\n' "${listing}" | sed '/^$/d' > "${OUT}/archives"
 label=$(device_label); osn=$(os_name); mine=""; newest=""
 if [ -n "${label}" ]; then
-    mine=$(grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" "${OUT}/archives" | sort | tail -1)
+    mine=$(grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-(${osn}|ROCKNIX|RASTERATOPS)_SETTINGS\.tar\.gz$" "${OUT}/archives" | sort | tail -1)
 fi
 newest=$(grep -E '^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-' "${OUT}/archives" | sort | tail -1)
 {
+    echo "SOURCE=${SETTINGS_ARCHIVE_SOURCE}"
     echo "LABEL=${label}"
     echo "MINE=${mine}"
     echo "NEWEST=${newest}"

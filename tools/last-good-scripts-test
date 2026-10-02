@@ -249,7 +249,7 @@ set -u
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 BASE_REF="${BASE_REF:-1d1503180d}"
 # Focused production layout cases can run without the unrelated legacy groups.
-if [ "${1:-}" = --cloud-layout ]; then shift; exec "${ROOT}/tools/cloud-layout-test" "$@"; fi
+if [ "${1:-}" = --cloud-layout ]; then shift; exec "${ROOT}/tools/rasteratops-cloud-layout-test" "$@"; fi
 OLD=0
 [ "${1:-}" = "--old" ] && OLD=1
 
@@ -293,6 +293,16 @@ src_of() { # <repo-relative path> <destination>
     else
         cp "${ROOT}/${1}" "${2}" || { echo "cannot read ${1}" >&2; exit 2; }
     fi
+    case "${1}" in
+        */cloud_scan|*/cloud_restore)
+            local archive_rel="${RCLONE_REL}/rasteratops-settings-archive" archive_dst
+            archive_dst="$(dirname "$2")/rasteratops-settings-archive"
+            if [ "${OLD}" -eq 1 ]; then
+                git -C "${ROOT}" show "${BASE_REF}:${archive_rel}" > "${archive_dst}" 2>/dev/null || rm -f "${archive_dst}"
+            else
+                cp "${ROOT}/${archive_rel}" "${archive_dst}" || exit 2
+            fi ;;
+    esac
 }
 
 # The scripts under test: the working tree, or the base commit's.
@@ -4642,7 +4652,7 @@ c2 --seed-folders
 c2reset path fail
 c2 --seed-folders
 [ -z "$(readmes)" ]; check $? "and on a fresh cloud whose listings fail, nothing is written" "READMEs written with every listing failing: $(readmes)(PL-047)"
-grep -q '^MISSING ' "${C2}/out" && ! grep -q '^OK ' "${C2}/out"; check $? "and the report says MISSING rather than OK" "said: $(tr '\n' ' ' < "${C2}/out")"
+[ "${RC}" -ne 0 ] && grep -q "no folders were made" "${C2}/out" && ! grep -q '^OK ' "${C2}/out"; check $? "and failed settlement reports that no folders were made" "said: $(tr '\n' ' ' < "${C2}/out")"
 # claude F-RS-09: on a bucket the old probe (lsf of the README by name)
 # exits 0 with nothing for a key that is not there.
 c2reset bucket
@@ -4668,7 +4678,9 @@ c2 --seed-folders
 # A carried /GAMES at the seeding (D-CLOUD-161, D-CLOUD-169): seeding it put a README in /GAMES that every
 # later check read as saves. With the player's saves in /ROCKNIX it joins them; with nothing anywhere it is
 # no folder at all, and the seeding makes the current folders, as for any new cloud. Neither makes /GAMES.
-c2games() { sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/GAMES"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/GAMES/backup"|' -e 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${CONF2}"; }
+# An old config with no content choice omits the key; an explicit empty value
+# means the cloud root and has its own preservation test below (#380).
+c2games() { sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/GAMES"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/GAMES/backup"|' -e '/^CONTENT_REMOTE=/d' "${CONF2}"; }
 c2reset path; c2games
 mkdir -p "${C2}/cloud/ROCKNIX/Saves/snes"; echo save > "${C2}/cloud/ROCKNIX/Saves/snes/a.srm"
 c2 --seed-folders
@@ -8562,6 +8574,10 @@ cat > "${SA}/shim/rclone" <<'EOR'
 # writer landing between two steps; /ctl/nohash makes `backend features`
 # describe a remote with no hashes (WebDAV, SFTP, SMB, FTP).
 printf '%s\n' "$*" >> /ctl/argv
+# A successful provider-features fixture must contain a valid answer.
+if [ "$1" = backend ] && [ "$2" = features ] && [ -s /ctl/provider-features ]; then
+    cat /ctl/provider-features; exit 0
+fi
 if [ -s /ctl/fail ]; then
     while IFS=$'\t' read -r pat code; do
         [ -n "${pat}" ] || continue
@@ -8936,8 +8952,26 @@ grep -qx '>>> plan none /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $?
 # shipped defaults (cloud-test-backend shipped-default), never from a literal
 # that goes stale when the default moves (blindspot 71): a superseded default
 # name may appear in these tools only in a comment or a quoted history.
-stale=$(grep -nE '(ROCKNIX|GAMES)/(Saves|Backups|Content)' tools/vm-qa tools/cloud-test-backend tools/cloud-round-trip tools/vm-upgrade-rehearsal tools/time-to-play tools/cloud-pair-migration 2>/dev/null | grep -vE '^[^:]+:[0-9]+:\s*#' | grep -vE "^[^:]+:[0-9]+:\s*(\"\"\"|'|#|.*# )" || true)
-[ -z "${stale}" ]; check $? "no QA tool seeds a superseded default by its literal name (ROCKNIX/..., GAMES/...)" "literals: $(echo "${stale}" | head -3 | tr '\n' '|' | cut -c1-240)"
+stale=$(python3 - "${ROOT}" <<'PYQA'
+import pathlib, re, subprocess, sys
+root = pathlib.Path(sys.argv[1])
+script = root / 'projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout'
+r = subprocess.run(['bash', str(script), '--superseded'], capture_output=True, text=True, check=True)
+old = [x.lstrip('/') for x in r.stdout.splitlines() if x.startswith('/')]
+if not old:
+    raise SystemExit('no superseded defaults read')
+patterns = [re.compile(r'(?<![\w-])/?' + re.escape(x) + r'(?=/|[\s\"\']|$)') for x in old]
+for name in ['vm-qa','cloud-test-backend','cloud-round-trip','vm-upgrade-rehearsal','time-to-play','cloud-pair-migration']:
+    for line_no, line in enumerate((root/'tools'/name).read_text().splitlines(), 1):
+        if line.lstrip().startswith('#'):
+            continue
+        if any(p.search(line) for p in patterns):
+            print(f'{name}:{line_no}: superseded folder literal')
+# An inline comment must not hide the live path before it.
+assert any(p.search('path="/' + old[0] + '" # history') for p in patterns)
+PYQA
+) || stale="superseded-default guard could not run"
+[ -z "${stale}" ]; check $? "QA tools derive ordinary fixtures from shipped defaults; inline comments do not hide live old paths" "${stale}"
 [ "$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>/dev/null)" = "/Rasteratops/Saves" ] && [ "$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>/dev/null)" = "/Rasteratops/Content" ] && ! tools/cloud-test-backend shipped-default NO_SUCH_KEY >/dev/null 2>&1; check $? "cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default" "SAVES '$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>&1)', CONTENT '$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>&1)'"
 
 # PL-026 (F-CS-09 gpt): killed between the two moves, the next run finishes.
@@ -13107,6 +13141,7 @@ mkdir -p "${SZ}/storage/roms/gb" "${SZ}/cloud/Rasteratops/Saves/gb"
 echo save > "${SZ}/storage/roms/gb/A.srm"
 printf -- '+ /**/*.srm\n- /**\n' > "${SZ}/storage/.config/cloud_sync-rules.txt"
 printf '^(copy|sync|mkdir|lsd|lsf|lsjson|ls|size|backend|cat|check|md5sum|sha1sum|hashsum|deletefile|delete|purge|moveto|copyto|rcat) \t0\n' > "${SZ}/ctl/fail"
+printf '{"Features":{"BucketBased":false}}\n' > "${SZ}/ctl/provider-features"
 sz_copy() { grep -E '^(copy|sync) ' "${SZ}/ctl/argv" | grep -v -- '--files-from' | tail -1; }
 sz_conf() { printf '[qa]\ntype = %s\n%s' "$1" "${2:-}" > "${SZ}/storage/.config/rclone/rclone.conf"; : > "${SZ}/ctl/argv"; }
 sz_stamp() { printf '%s 0\n' "$(( $(date +%s) - 60 ))" > "${SZ}/storage/.cache/cloud_sync/last-backup"; }
@@ -13291,7 +13326,7 @@ LYK=$(cat "${LY}/storage/.config/cloud_sync.conf")
 ly_run "${LYK}" --state; grep -q '^STATE=kept$' "${LY}/out"; check $? "after --keep, --state reads kept" "$(ly_out)"
 touch "${LY}/rec/cur-exists"
 ly_run "${LYK}" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a kept folder is not followed even when the current one exists (rc ${LYRC})" "$(ly_out)"
-ly_run "$(ly_conf /GAMES /GAMES/backup "")" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a carried /GAMES with an empty content root follows to all three (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE=""$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a carried /GAMES follows while preserving the explicit cloud content root (rc ${LYRC})" "$(ly_out)"
 # The futro's two criteria (2026-10-01): the state verb looks across every superseded folder, and a follow
 # never strands files. The Nova's real case: /GAMES in the conf, its saves in /ROCKNIX/Saves.
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
@@ -13340,7 +13375,7 @@ ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Sa
 # recorded the empty /GAMES before. A /GAMES that holds saves, or one the player kept, is not joined away from.
 LYGAMES="$(ly_conf /GAMES /GAMES/backup "")"
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
-ly_run "${LYGAMES}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--join points a carried, empty /GAMES at the /ROCKNIX/Saves that holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+ly_run "${LYGAMES}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups " ]; check $? "--join points a carried, empty /GAMES at the /ROCKNIX/Saves that holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
 LYJG=$(cat "${LYCONF}")
 ly_run "${LYJG}" --keep; [ "${LYRC}" = 0 ] && grep -q '^LAYOUT_KEEP="/ROCKNIX/Saves"$' "${LYCONF}"; check $? "and KEEP USING after it keeps /ROCKNIX/Saves, the folder the dialog names (rc ${LYRC})" "$(grep -E '^LAYOUT_KEEP=' "${LYCONF}")"
 touch "${LY}/rec/games-files"
@@ -13350,11 +13385,11 @@ ly_run "$(ly_conf /GAMES /GAMES/backup "")
 LAYOUT_KEEP=\"/GAMES\"" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/GAMES /GAMES/backup " ]; check $? "nor a /GAMES the player chose to keep (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 # --settle, the seeding's step: the join, else a carried default with nothing anywhere goes to the current folders.
 rm -f "${LY}"/rec/*
-ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "--settle points a carried /GAMES with nothing anywhere at the current folders (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups " ]; check $? "--settle points a carried /GAMES with nothing anywhere at the current folders (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
 ly_run "${LYCUR}" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "and leaves a device already on them alone (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 ly_run "$(ly_conf /Custom/Saves /Custom/Backups /Custom/Content)" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Custom/Saves /Custom/Backups /Custom/Content" ]; check $? "and a folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 touch "${LY}/rec/rocknix-files"
-ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--settle joins rather than resets when an earlier folder holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups " ]; check $? "--settle joins rather than resets when an earlier folder holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 rm -f "${LY}"/rec/*
 # Blindspot 72: list_or_stop's stop is the script's only while no listing helper runs inside $(...).
 lysub=$(grep -nE '\$\((list_or_stop|has_files|has_entries|exists|superseded_source|earlier_source|layout_join|layout_settle)[ )]' "${LY}/repo/cloud_migrate_layout" || true)
@@ -13448,7 +13483,7 @@ rm -f "${SC}"/rec/*; sc_run
 [ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit CLOUD FOLDER|| >>> unit SETTINGS BACKUPS|| >>> unit GAME CONTENT|| " ] && [ "$(grep -c '^>>> doing scan' "${SC}/out")" = 3 ]; check $? "the opening scan announces CLOUD FOLDER, SETTINGS BACKUPS, GAME CONTENT in that order, each with its doing line, and exits 0 (rc ${SCRC})" "$(sc_out)"
 [ -f "${SCO}/done" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(tr '\n' ' ' < "${SCO}/root-dirs")" = "Rasteratops Photos " ] && [ ! -f "${SCO}/scan" ] && ! grep -q -- '--follow' "${SC}/rec/argv"; check $? "its files hold the state, the root folders and the done stamp; no content listing yet, no follow on a current folder" "$(ls "${SCO}" 2>/dev/null | tr '\n' ' ')"
 [ "$(sed -n 's/^MINE=//p' "${SCO}/settings")" = "2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^NEWEST=//p' "${SCO}/settings")" = "2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^COUNT=//p' "${SCO}/settings")" = 4 ] && [ "$(sed -n 's/^LABEL=//p' "${SCO}/settings")" = QA ]; check $? "the settings facts: this device's newest by label, the newest overall, the count, the label (D-CLOUD-162)" "$(cat "${SCO}/settings" 2>/dev/null | tr '\n' ' ')"
-grep -q 'lsf --files-only --include \*.{zip,tar.gz} qa:Rasteratops/Backups/ --contimeout 15s' "${SC}/rec/argv"; check $? "the archive listing is bounded and reads the Backups folder" "$(grep '^lsf' "${SC}/rec/argv" | head -1)"
+grep -q 'lsf --files-only --include /\*.{zip,tar.gz} qa:/Rasteratops/Backups/ --contimeout 15s' "${SC}/rec/argv"; check $? "the archive listing is bounded and reads the Backups folder" "$(grep '^lsf' "${SC}/rec/argv" | head -1)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noroute"; sc_run
 [ "${SCRC}" = 69 ] && ! grep -q '>>> unit' "${SC}/out" && [ ! -f "${SCO}/done" ]; check $? "no default route: exit 69, nothing announced, no done stamp (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noremote"; sc_run
@@ -13551,7 +13586,7 @@ echo "  ae. cloud folder state table and archive writer/reader contracts (#365, 
 layout_args=()
 [ "${OLD}" -eq 1 ] && layout_args+=(--ref "${BASE_REF}")
 [ -n "${SA_RCLONE_SRC:-}" ] && layout_args+=(--rclone "${SA_RCLONE_SRC}")
-"${ROOT}/tools/cloud-layout-test" "${layout_args[@]}"
+"${ROOT}/tools/rasteratops-cloud-layout-test" "${layout_args[@]}"
 check $? "cloud folder state-table regressions" "cloud folder state-table regressions failed"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
