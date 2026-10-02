@@ -52,6 +52,36 @@ such learnings into `generic-x64-vm --headless`, `tools/vm-serial`,
 ritual is `generic-x64-vm-testing.md` § "After every VM cycle", and the
 per-cycle ledger is `docs/vm-qa-log.md`.
 
+## 4. Leave a stash a new agent can resume from (D-WORKFLOW-133)
+
+Maintainer, 2026-10-02: *"I'd like us, after you've caught up with this, to
+stash our work and create the stash files so that an agent who has not seen
+this project before can get up to speed and resume work. I want us to go
+through the exercise of being detailed and walking a new agent through what
+they need in order to pick up where you currently are, and make sure we have
+all of the armatures in place to support that."*
+
+- **One canonical stash, on `next`:** `.github/sessions/saved-session-state-next.md`,
+  written with the `session-stash` skill, the previous copy archived under
+  `.github/sessions/archived/`. A working branch's own
+  `saved-session-state-<branch>.md` is a pointer to it, so a session started
+  anywhere reaches the same file, and `CLAUDE.md` and `AGENTS.md` name it near
+  their tops. Until 2026-10-02 the copy on `next` was from July.
+- **Written for a stranger.** It opens with *Start here*: what the project is,
+  what to read and in what order, the rules that bind, the machine's paths,
+  where the credentials live (never their values). Then the skill's sections:
+  each item in flight with its issue, branch and worktree; each running
+  process with its pid and status file; the next commands; what waits on the
+  maintainer.
+- **Proven, not assumed.** An agent with no context is given only the
+  repository and asked to resume. Its briefing is compared with the truth, and
+  each place it went wrong is fixed in the stash, a rule or a tool, then
+  tested again (#368).
+- **Check the rules you loaded.** A session loads the rules of the worktree it
+  starts in: `git diff --quiet next -- .claude CLAUDE.md AGENTS.md || echo STALE`,
+  and a stale feature worktree merges `next` before any rule is trusted. On
+  2026-10-02 the session's own worktree had 17 of 29 rules stale (#367).
+
 ## Notes
 
 - These work logs and the personal instruction files are **personal artifacts** — they live on

@@ -29,6 +29,8 @@ Default path: `.github/sessions/saved-session-state-{branch}.md`
 
 If the repo has a different convention (look for an existing `sessions/`, `handoff/`, or `.agent-state/` directory), prefer that.
 
+**In this repository (D-WORKFLOW-133, `.claude/rules/learning-capture.md` § 4):** write the full stash to `.github/sessions/saved-session-state-next.md` (committed on the working branch and fast-forwarded into `next`), opening with a **Start here** section for an agent new to the project; leave a pointer at each working branch's own path; then prove it by giving an agent with no context only the repository and asking it to resume.
+
 ### Shed inherited `main` state on feature branches
 
 Canonical state files are **tracked**, so every branch cut from `main` inherits `main`'s `saved-session-state-main.md` at creation — and `main` keeps editing its copy each session, so the inherited one is immediately stale and a guaranteed modify/delete merge snag. When stashing on a branch **other than `main`**, before writing the new file:

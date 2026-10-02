@@ -159,7 +159,7 @@ def main():
             fail('agents  %s is missing' % name)
             continue
         t = open(p, encoding='utf-8').read()
-        for n in re.findall(r'\bAll (\d+)(?: of them|,)', t):
+        for n in re.findall(r'\bAll (\d+)(?: of them|,)', t, re.I):
             if int(n) != len(files):
                 fail('count   %s says "All %s" of the rules; the directory holds %d' % (name, n, len(files)))
             else:

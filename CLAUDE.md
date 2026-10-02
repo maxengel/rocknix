@@ -7,6 +7,13 @@ built on the LibreELEC/CoreELEC cross-compilation system). There is no app to ru
 repo is a *build system* that cross-compiles a complete OS image (kernel, bootloader,
 emulators, userland) per device.
 
+**Resuming work, or new to the project?** Read `.github/sessions/saved-session-state-next.md`
+on `next` first: the work in flight, what is running, the next commands, and a walk-through
+for an agent who has never seen the project (D-WORKFLOW-133). A session loads the rules of the
+worktree it starts in, so check that yours carries `next`'s before trusting any of them:
+`git diff --quiet next -- .claude CLAUDE.md AGENTS.md || echo STALE` -- then merge `next` into
+a feature worktree, or read the rules from `next` (#367).
+
 **Canonical deep-dive docs (this file summarizes; they are authoritative):**
 - `AGENTS.md` — fork workflow and non-obvious gotchas, for agents that read it instead of this file.
 - `packages/README.md` — the authoritative `package.mk` format reference.
