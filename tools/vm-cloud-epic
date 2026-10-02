@@ -1,0 +1,386 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present rasteratops (https://github.com/rasteratops)
+# The cloud epic's guest-d proof, promoted from run101 (#365).
+# Requires an isolated GENERIC_X64 guest d and the synthetic WebDAV backend.
+# Usage: tools/vm-cloud-epic --output DIR [--case A|B|C|D|E|F|G|H|I|J|K|L]
+# --inject-failure exercises the exact assertion/exit path without a guest.
+set -uo pipefail
+R=$(cd "$(dirname "$0")/.." && pwd)
+P=""; requested="H A C D B E I J K L F G T08 T11 T12"; injected=0
+while [ $# -gt 0 ]; do
+ case "$1" in
+  --output) P="$2"; shift 2;; --case) requested="$2"; shift 2;;
+  --inject-failure) injected=1; shift;;
+  --help) sed -n '4,8p' "$0"; exit 0;;
+  *) echo "unknown argument: $1" >&2; exit 2;;
+ esac
+done
+[ -n "$P" ] || { echo '--output DIR is required' >&2; exit 2; }
+mkdir -p "$P/logs" "$P/frames"; P=$(cd "$P" && pwd)
+PASSES=0; FAILS=0; ITEM=cloud-epic; LOG="$P/logs/run.log"; FR="$P/frames"
+say() { printf '%s %s\n' "$(date -u +%T)" "$*" | tee -a "$LOG"; }
+check() { if [ "$1" = 0 ]; then say "PASS $2"; PASSES=$((PASSES+1)); else say "FAIL $2"; FAILS=$((FAILS+1)); fi; }
+done_line() { say "done: $PASSES PASS, $FAILS FAIL"; }
+if [ "$injected" = 1 ]; then check 1 'constructed assertion failure'; done_line; [ "$FAILS" -eq 0 ]; exit $?; fi
+# Every letter is a separate process and fresh fixture, so ordering cannot rescue a case.
+if [ -z "${PROOF_CASE:-}" ]; then
+ total_rc=0
+ for letter in $requested; do
+  case "$letter" in A|B|C|D|E|F|G|H|I|J|K|L|T08|T11|T12) ;; *) echo "unknown case $letter" >&2; exit 2;; esac
+  PROOF_CASE="$letter" "$0" --output "$P/$letter" --case "$letter" || total_rc=1
+ done
+ exit "$total_rc"
+fi
+CASES="$PROOF_CASE"
+PORT=10026; MON=/tmp/rocknix-qemu-monitor-d.sock; VNC=127.0.0.1:5912
+KEY="${VM_PAIR_DIR:-/tmp/rocknix-vm-pair}/qa-key"
+VQ="$R/tools/vm-visual-qa"
+DATA="${CLOUD_QA_STATE:-$HOME/.cache/rocknix-cloud-qa}/data"
+# The runner has no hostname flag: all writes are confined to guest d and the local QA backend.
+[ -S "$MON" ] && [ -s /tmp/rocknix-qemu-d.pid ] && [ -f "$KEY" ] || { say 'guest d prerequisites absent'; exit 2; }
+qa_pid=$(cat /tmp/rocknix-qemu-d.pid)
+[[ "$qa_pid" =~ ^[0-9]+$ ]] && [ -r "/proc/$qa_pid/cmdline" ] && tr '\0' '\n' < "/proc/$qa_pid/cmdline" | grep -q 'qemu-system-x86_64' || { say 'guest pidfile is not a QEMU process'; exit 2; }
+[ "${CLOUD_QA_BACKEND:-webdav}" = webdav ] && [ -d "$DATA" ] && [ ! -L "$DATA" ] || { say 'requires isolated WebDAV QA data'; exit 2; }
+GRABPID=""
+cleanup() { [ -z "$GRABPID" ] || { kill "$GRABPID" 2>/dev/null || :; wait "$GRABPID" 2>/dev/null || :; }; }
+trap cleanup EXIT INT TERM
+walk() {
+ local rc
+ "$VQ" --monitor "$MON" run "$1" --outdir "$2" >> "$LOG" 2>&1; rc=$?
+ check "$rc" "walk $(basename "$1")"
+ [ "$rc" -eq 0 ] || { done_line; exit 1; }
+}
+settle() { "$VQ" --monitor "$MON" settle >> "$LOG" 2>&1; }
+grab_start() {
+ mkdir -p "$FR/$1"; rm -f "$FR/$1.stop"
+ python3 "$R/tools/vm-walks/cloud-epic/vnc-grab.py" "$VNC" "$FR/$1" "$1" "$FR/$1.stop" "${2:-0.7}" > "$FR/$1.capture.log" 2>&1 &
+ GRABPID=$!; printf '%s\n' "$GRABPID" > "$FR/$1.capture.pid"
+}
+grab_stop() { touch "$FR/$1.stop"; [ -z "$GRABPID" ] || wait "$GRABPID"; GRABPID=""; }
+wait_card() {
+ local i n
+ for i in $(seq 1 60); do
+  n=$(G_ "pgrep -f 'cloud_backu[p]|cloud_restor[e]|rclon[e] ' | wc -l") || return 1
+  [ "$n" = 0 ] && break; sleep 1
+ done
+ sleep "${1:-6}"
+}
+
+mask() { grep -v -i -E 'key|pass|token|user|psk'; }                                   # config dumps
+maskl() { sed -E 's/((token|key|passw[a-z]*|psk|user|[?&]u|[?&]t|[?&]p)[=:])[^ &]*/\1***/Ig'; }   # the value masked, the key kept
+MONC() { printf '%s\n' "$1" | socat -t 1 - "UNIX-CONNECT:$MON" >/dev/null 2>&1; }
+G_() { ssh -n -i $KEY -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=8 root@127.0.0.1 "$@"; }
+require_no_game() { G_ "! pgrep -f 'retroarc[h] -L' >/dev/null"; }
+boot_id() { G_ 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null; }
+reboot_guest() { local b0; b0=$(boot_id); G_ 'sync; reboot' >/dev/null 2>&1; sleep 20
+  local i; for i in $(seq 1 60); do [ -n "$(boot_id)" ] && [ "$(boot_id)" != "$b0" ] && break; sleep 3; done
+  [ "$(boot_id)" != "$b0" ] || { say "  reboot: boot id did not change"; return 1; }
+  for i in $(seq 1 40); do G_ 'pgrep -x emulationstation >/dev/null && curl -s -o /dev/null -m 3 http://127.0.0.1:1234/caps' 2>/dev/null && break; sleep 3; done
+  sleep 15; require_no_game
+  # and the boot's own work done before a script walks: the hasher and the top-up (/isIdle), the startup sync's card
+  # (wait_card), a still screen (settle) -- run 5's E2-pl062 pressed START into a fading card, E2-pl068 walked a page
+  # that was still loading, E2-pl061 launched under the hasher (D-QA-057, blindspot 64)
+  local j idle=no; for j in $(seq 1 120); do [ "$(G_ "curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:1234/isIdle")" = 200 ] && { idle=yes; break; }; sleep 1; done
+  echo "$(date +%T)   reboot_guest: /isIdle $idle after ${j}s" >> "$LOG"; wait_card 3; settle; sleep 3; }
+debug_reboot() { G_ 'systemctl stop essway; f=/storage/.config/emulationstation/es_settings.cfg; if grep -q "name=\"Debug\"" $f; then sed -i "s|<bool name=\"Debug\" value=\"[a-z]*\" />|<bool name=\"Debug\" value=\"true\" />|" $f; else sed -i "s|</config>|  <bool name=\"Debug\" value=\"true\" />\n</config>|" $f; fi; grep -c "name=\"Debug\" value=\"true\"" $f; sync' >/dev/null 2>&1; reboot_guest; }
+CONF=/storage/.config/cloud_sync.conf; LABEL=GENERIC-X64
+say "=== $ITEM on guest d, $(G_ 'grep -h ^BUILD_ID /etc/os-release; grep -c . /usr/bin/cloud_scan 2>/dev/null')"
+conf() { G_ "sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"$1\"|' -e 's|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE=\"$2\"|' -e 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=\"$3\"|' -e 's|^LAYOUT_KEEP=.*|LAYOUT_KEEP=\"\"|' $CONF; rm -rf /storage/.cache/cloud_sync/scan; grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=|^LAYOUT_KEEP=' $CONF | tr '\n' ' '"; }
+# the walk to the hub: MAIN MENU opens on GAME SETTINGS, or on RETROACHIEVEMENTS when the guest is signed in (one down
+# first, guest-facts-that-break-proofs), then RESTORE or BACK UP, the scan page framed twice while it runs, then whatever
+# follows it
+RA_DOWN=$(G_ '. /etc/profile >/dev/null 2>&1; [ "$(get_setting global.retroachievements)" = 1 ] && printf "key down\nwait-for-change\n"')
+to_page() { # <restore|backup> <tag>
+  local f=$P/epic-$2.steps
+  { printf 'wake\ndismiss-dialogs\nkey ret\nwait-for-change\nsettle\n%skey x\nwait-for-change\nsettle\nkey up\nwait-for-change\nkey up\nwait-for-change\nkey up\nwait-for-change\nsettle\nkey x\nwait-for-change\nsettle\nshot %s-hub\n' "$RA_DOWN" "$2"
+    [ "$1" = restore ] && printf 'key down\nwait-for-change\n'
+    printf 'key x\nwait-for-change\nshot %s-scan-0\nwait 1.5\nshot %s-scan-1\nsettle 90 3\nshot %s-after-scan\n' "$2" "$2" "$2"; } > "$f"
+  walk "$f" "$FR"
+}
+steps() { local f=$P/epic-$1.steps; shift; printf '%s\n' "$@" | sed '/^$/d' > "$f"; walk "$f" "$FR"; }
+host_tree() { (cd "$DATA" && find . -type f | sort | sed 's|^\./||' | tr '\n' ' '); }
+
+# CASES is one independently reset case.
+# The systems page remembers the picks (cloudsync.pick.restore.*), so a walk that ticks ROMS AND BIOS leaves it on
+# for the next; written with the interface stopped (it writes its settings back as it stops), then started again
+reset_picks() {
+  G_ "systemctl stop essway; sleep 2; . /etc/profile >/dev/null 2>&1; for k in content media settings; do set_setting cloudsync.pick.restore.\$k 0; done; set_setting cloudsync.pick.restore.saves 1" >/dev/null 2>&1
+  G_ 'systemctl start essway' >/dev/null 2>&1; sleep 25; require_no_game >/dev/null 2>&1; say "  picks reset: $(G_ '. /etc/profile >/dev/null 2>&1; echo content=$(get_setting cloudsync.pick.restore.content) saves=$(get_setting cloudsync.pick.restore.saves)')"; }
+want() { case " $CASES " in *" $1 "*) return 0;; esac; return 1; }
+# the interface's Info lines need Debug=true at that boot (debug_reboot); read before the next reboot wipes them
+esl() { G_ "grep -a -E \"$1\" /var/log/es_log.txt 2>/dev/null" | maskl; }
+# a boot with the step's frames: Debug set, the reboot, frames over VNC through the boot and the waiter's wait
+boot_frames() { # <tag> <seconds after the guest is idle>
+  grab_start "$1" 0.7; debug_reboot; sleep "$2"; grab_stop "$1"; require_no_game >/dev/null 2>&1
+  say "  $1: $(ls "$FR/$1" 2>/dev/null | wc -l) frames under $FR/$1"; }
+G_ 'systemctl stop essway; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; rm -f /storage/.config/.restore-finish-pending; rm -rf /storage/.cache/cloud_sync/scan; find /storage/roms -type f -name "*.srm" -delete' >/dev/null || exit 2
+say "== setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it"
+"$R/tools/cloud-test-backend" rclone-conf > $P/epic-rclone.conf && scp -q -i $KEY -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $P/epic-rclone.conf root@127.0.0.1:/tmp/rclone.conf; rm -f $P/epic-rclone.conf
+G_ 'mkdir -p /storage/.config/rclone && mv /tmp/rclone.conf /storage/.config/rclone/rclone.conf && chmod 600 /storage/.config/rclone/rclone.conf && /usr/bin/cloud_sync_helper >/dev/null 2>&1; echo "remote: $(rclone listremotes | head -1)"' | tee -a "$LOG"
+"$R/tools/cloud-test-backend" reset >/dev/null || exit 2; mkdir -p "$DATA/ROCKNIX/Saves/nes" "$DATA/ROCKNIX/Backups" "$DATA/ROCKNIX/Content/ROMs/nes" "$DATA/ROCKNIX/Content/BIOS" "$DATA/ROCKNIX/Saves-replaced/nes"
+head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Probe.srm"; head -c 3000 /dev/urandom > "$DATA/ROCKNIX/Saves-replaced/nes/Probe.srm.1"
+head -c 9000 /dev/urandom > "$DATA/ROCKNIX/Content/ROMs/nes/Probe.nes"; head -c 500 /dev/urandom > "$DATA/ROCKNIX/Content/BIOS/disksys.rom"
+tar -czf "$DATA/ROCKNIX/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz" -C /tmp --files-from /dev/null 2>/dev/null || : > "$DATA/ROCKNIX/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz"
+: > "$DATA/ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz"
+say "  cloud: $(host_tree)"
+say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
+G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; /usr/bin/cloud_sync_helper >/dev/null 2>&1; echo "label=$(/usr/bin/cloud_device_id --label)"' | tee -a "$LOG"
+
+# The former chain assumed A had moved the cloud and B had left a held copy.
+# Each case now constructs exactly that initial state itself.
+case "$PROOF_CASE" in
+ A|H) ;;
+ *) mv "$DATA/ROCKNIX" "$DATA/Rasteratops"; conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content >/dev/null;;
+esac
+if [ "$PROOF_CASE" = E ]; then cp -a "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; fi
+reset_picks
+G_ 'systemctl stop essway; rm -f /storage/.config/.restore-finish-pending; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; systemctl start essway' >/dev/null || exit 2
+sleep 20
+
+case "$PROOF_CASE" in
+ T08|T11|T12)
+  "$R/tools/cloud-test-backend" reset >/dev/null || exit 2
+  if [ "$PROOF_CASE" = T11 ]; then
+   mkdir -p "$DATA/GAMES" "$DATA/ROCKNIX/Saves/nes"
+   printf 'earlier saves sentinel\n' > "$DATA/ROCKNIX/Saves/nes/Boot.srm"
+   conf /GAMES /GAMES/backup '' >/dev/null
+   expected=/ROCKNIX/Saves
+  else
+   conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content >/dev/null
+   expected=/ROCKNIX/Saves
+   if [ "$PROOF_CASE" = T12 ]; then
+    mkdir -p "$DATA/Rasteratops/Saves/nes"
+    printf 'fleet saves sentinel\n' > "$DATA/Rasteratops/Saves/nes/Boot.srm"
+    printf 'layout=2\n' > "$DATA/Rasteratops/.layout"
+    expected=/Rasteratops/Saves
+   fi
+  fi
+  G_ 'mkdir -p /storage/roms/nes; printf "local backup sentinel\n" > /storage/roms/nes/Local.srm; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 1' >/dev/null || exit 2
+  boot_frames "$PROOF_CASE-boot" 35
+  G_ "grep -qx 'SAVES_REMOTE=\"$expected\"' $CONF"; check $? "$PROOF_CASE: boot scan points at $expected"
+  if [ "$PROOF_CASE" = T11 ]; then
+   [ ! -e "$DATA/GAMES/nes/Local.srm" ]; check $? 'T11: startup did not populate the empty old root before joining'
+   [ "$(cat "$DATA/ROCKNIX/Saves/nes/Boot.srm")" = 'earlier saves sentinel' ]; check $? 'T11: earlier save bytes preserved'
+  elif [ "$PROOF_CASE" = T12 ]; then
+   [ "$(cat "$DATA/Rasteratops/Saves/nes/Boot.srm")" = 'fleet saves sentinel' ]; check $? 'T12: fleet save bytes preserved'
+   [ ! -e "$DATA/ROCKNIX/Saves/nes/Local.srm" ]; check $? 'T12: startup did not recreate the abandoned old root'
+  else
+   [ ! -e "$DATA/ROCKNIX" ]; check $? 'T08: startup did not recreate an absent old parent'
+   esl 'offering to create it' | grep -q .; check $? 'T08: the setup step offers recovery after startup'
+  fi
+  done_line; [ "$FAILS" -eq 0 ]; exit $?;;
+esac
+
+if want H; then
+say "== H: a fresh device (on the current default) whose cloud holds its saves only under /ROCKNIX: the scan joins that folder and the move dialog names it (D-CLOUD-169)"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+to_page restore H
+say "  guest conf after the scan: $(G_ "grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' $CONF | tr '\n' ' '")"
+G_ "grep -q '^SAVES_REMOTE=\"/ROCKNIX/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/ROCKNIX/Backups\"' $CONF && grep -q '^CONTENT_REMOTE=\"/ROCKNIX/Content\"' $CONF"; check $? "H: the scan joined the folder the saves are in"
+[ ! -e "$DATA/Rasteratops" ]; check $? "H: nothing was made at /Rasteratops beside them"
+G_ 'journalctl -b -o short-iso -t cloud_migrate_layout -t cloud_scan 2>/dev/null | grep -i join | tail -3' | maskl | tee -a "$LOG"
+G_ 'journalctl -b -o short-iso -t cloud_migrate_layout 2>/dev/null | grep -q "joined the fleet at /ROCKNIX/Saves"'; check $? "H: the journal names the join"
+# B on the dialog is its last button, NOT NOW; the options page follows it
+steps H2 'key z' 'wait-for-change' 'settle' 'shot H-after-not-now' 'dismiss-dialogs'
+say "  guest conf after NOT NOW: $(G_ "grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' $CONF | tr '\n' ' '")"
+fi
+
+if want A; then
+say "== A: RESTORE FROM THE CLOUD opens on the scan page; an earlier /ROCKNIX with saves gets the move dialog; MOVE runs the move page"
+to_page restore A
+steps A2 'key x' 'wait-for-change' 'wait 2' 'shot A-move-running' 'settle 180 3' 'shot A-move-done' 'key x' 'wait-for-change' 'shot A-rescan' 'settle 90 3' 'shot A-options-after-move' 'dismiss-dialogs'
+say "  cloud after the move: $(host_tree)"
+say "  marker: $(cat "$DATA/Rasteratops/.layout" 2>/dev/null || echo none)"
+say "  guest conf: $(G_ "grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=|^LAYOUT_KEEP=' $CONF | tr '\n' ' '")"
+[ -f "$DATA/Rasteratops/Saves/nes/Probe.srm" ] && [ -f "$DATA/Rasteratops/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "$DATA/Rasteratops/Content/ROMs/nes/Probe.nes" ] && [ -f "$DATA/Rasteratops/Saves-replaced/nes/Probe.srm.1" ]; check $? "A: the four folders of ours are under /Rasteratops after MOVE (saves, settings backup, content, the set-aside)"
+[ ! -f "$DATA/ROCKNIX/Saves/nes/Probe.srm" ] && [ ! -f "$DATA/ROCKNIX/Saves-replaced/nes/Probe.srm.1" ]; check $? "A: nothing of ours remains under /ROCKNIX"
+[ "$(cat "$DATA/Rasteratops/.layout" 2>/dev/null)" = "layout=2" ]; check $? "A: the layout marker is written"
+G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF"; check $? "A: the guest now points at /Rasteratops/Saves"
+G_ 'journalctl -b -o short-iso -t cloud_migrate_layout -t cloud_scan 2>/dev/null | tail -8' | maskl | tee -a "$LOG"
+fi
+
+if want C; then
+say "== C: the SETTINGS row by device label: offered with the device and date after the move (above); dimmed with only a foreign archive"
+rm -f "$DATA/Rasteratops/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz"
+to_page restore C
+G_ "grep -qx 'MINE=' /storage/.cache/cloud_sync/scan/settings && test -s /storage/.cache/cloud_sync/scan/done"; check $? 'C: foreign-only scan disables settings with a completed scan'
+steps C2 'dismiss-dialogs'
+fi
+
+if want D; then
+say "== D: the content folder: nothing of ours at the configured root and nothing found -> the question and the chooser; found elsewhere -> used, then the content scan"
+mkdir -p "$DATA/Photos" "$DATA/Documents"; head -c 100 /dev/urandom > "$DATA/Photos/holiday.jpg"; : > "$DATA/Documents/notes.txt"
+mv "$DATA/Rasteratops/Content" "$DATA/_content_hold"; mkdir -p "$DATA/Rasteratops/Content"
+reset_picks
+to_page restore D
+# tick ROMS AND BIOS (row 2), then CONTINUE: up to SAVES, up to BACK, right to CONTINUE
+steps D2 'key down' 'wait-for-change' 'key x' 'wait-for-change 12 0' 'settle' 'shot D-roms-ticked' 'key up' 'wait-for-change' 'key up' 'wait-for-change' 'key right' 'wait-for-change' 'settle' 'shot D-continue' 'key x' 'wait-for-change' 'settle 30 2' 'shot D-question' 'key x' 'wait-for-change' 'settle' 'shot D-chooser' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
+rm -rf "$DATA/Rasteratops/Content"; mv "$DATA/_content_hold" "$DATA/Rasteratops/Content"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Elsewhere)"
+reset_picks
+to_page restore D3
+steps D4 'key down' 'wait-for-change' 'key x' 'wait-for-change 12 0' 'settle' 'key up' 'wait-for-change' 'key up' 'wait-for-change' 'key right' 'wait-for-change' 'settle' 'key x' 'wait-for-change' 'shot D-content-scan-0' 'wait 1.5' 'shot D-content-scan-1' 'settle 90 3' 'shot D-systems' 'dismiss-dialogs'
+G_ "grep -E '^CONTENT_REMOTE=' $CONF"; G_ "grep -q '^CONTENT_REMOTE=\"/Rasteratops/Content\"' $CONF"; check $? "D: the content root found under the cloud root was used without a question"
+fi
+
+if want B; then
+say "== B0: a carried /GAMES that holds saves and no current folder -> the move dialog names /GAMES; NOT NOW"
+mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"
+mkdir -p "$DATA/GAMES/nes"; head -c 3000 /dev/urandom > "$DATA/GAMES/nes/Stock.srm"
+say "  guest conf: $(conf /GAMES /GAMES/backup '')"
+to_page restore B0
+steps B0b 'shot B0-move-question' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
+G_ "grep -q '^SAVES_REMOTE=\"/GAMES\"' $CONF"; check $? "B0: NOT NOW on the /GAMES move left the conf on /GAMES"
+rm -rf "$DATA/GAMES"
+say "== B: a carried /GAMES and no current folder -> the offer to create; CREATE IT re-points and seeds"
+say "  guest conf: $(conf /GAMES /GAMES/backup '')"
+to_page restore B
+steps B2 'key x' 'wait-for-change' 'wait 1' 'shot B-create-running' 'settle 120 3' 'shot B-rescan' 'settle 90 3' 'shot B-options-after-create' 'dismiss-dialogs'
+say "  cloud after CREATE IT: $(host_tree)"
+[ -d "$DATA/Rasteratops/Saves" ] && [ -d "$DATA/Rasteratops/Backups" ] && [ -d "$DATA/Rasteratops/Content" ]; check $? "B: /Rasteratops with its three folders exists after CREATE IT"
+G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/Rasteratops/Backups\"' $CONF"; check $? "B: the carried /GAMES setting is re-pointed at the current layout"
+fi
+
+if want E; then
+say "== E: the startup sync with no saves folder in the cloud: the card says SKIPPED with the row to set it up; then the cloud folder step offers CREATE IT (D-CLOUD-170)"
+rm -rf "$DATA/Rasteratops"
+# The boot with a stock-shaped conf, as a device updated from stock ROCKNIX carries it (/GAMES, a value nobody typed;
+# a substitute for that update, named: the conf is written here, not carried): the card's skip, then the step once
+# the card is done, nothing re-pointed until the player answers (D-CLOUD-166 for the card, D-CLOUD-170 for the step)
+say "  guest conf: $(conf /GAMES /GAMES/backup '')"
+G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 1; echo startup=$(get_setting cloudsaves.startup)' | tee -a "$LOG"
+boot_frames E-boot 45
+G_ 'cat /storage/.cache/cloud_sync/last-sync-startup 2>/dev/null' | maskl | tee -a "$LOG"
+G_ 'grep -q " 78 no-folder" /storage/.cache/cloud_sync/last-sync-startup'; check $? "E: the startup stamp carries the third sentinel (78 no-folder)"
+esl 'cloud folder step|cloud folder:' | tail -4 | tee -a "$LOG"
+esl 'cloud folder step: checking the folder \(boot\)' | grep -q .; check $? "E: the step came up at boot once the card was done"
+esl 'offering to create it' | grep -q .; check $? "E: and offered CREATE IT for the carried /GAMES with nothing anywhere"
+steps E2 'shot E-step-offer' 'key z' 'wait-for-change' 'settle' 'shot E-after-not-now' 'dismiss-dialogs'
+G_ "grep -q '^SAVES_REMOTE=\"/GAMES\"' $CONF"; check $? "E: NOT NOW re-pointed nothing: the stock-shaped conf still names /GAMES"
+[ ! -e "$DATA/GAMES" ]; check $? "E: and the boot's startup sync made no /GAMES in the cloud (D-CLOUD-172)" "the cloud holds: $(cd "$DATA" && find GAMES -type f 2>/dev/null | head -3 | tr '\n' ' ')"
+G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0' >/dev/null 2>&1
+mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+fi
+
+if want I; then
+say "== I: the boot step on a device still on /ROCKNIX with saves there: after the startup card, CHECKING YOUR CLOUD, then MOVE; NOT NOW asks again next boot; after MOVE nothing"
+mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Boot.srm"
+say "  cloud: $(host_tree)"
+say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
+G_ '/usr/bin/cloud_migrate_layout --needs-step >/dev/null 2>&1; echo "needs-step rc=$?"' | tee -a "$LOG"
+G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 1' >/dev/null 2>&1
+boot_frames I-boot1 40
+esl 'cloud folder step|cloud folder:|startup' | tail -6 | tee -a "$LOG"
+esl 'cloud folder step: checking the folder \(boot\)' | grep -q .; check $? "I: the step came up at boot"
+esl 'offering the move' | grep -q .; check $? "I: and asked the move for /ROCKNIX"
+steps I1 'shot I-move-question' 'key z' 'wait-for-change' 'settle' 'shot I-after-not-now' 'dismiss-dialogs'
+G_ "grep -q '^SAVES_REMOTE=\"/ROCKNIX/Saves\"' $CONF"; check $? "I: NOT NOW left the conf on /ROCKNIX"
+boot_frames I-boot2 40
+esl 'offering the move' | grep -q .; check $? "I: the next boot asked again"
+steps I2 'shot I-move-question-again' 'key x' 'wait-for-change' 'wait 2' 'shot I-move-running' 'settle 180 3' 'shot I-move-done' 'key x' 'wait-for-change' 'settle' 'shot I-after-move' 'dismiss-dialogs'
+say "  cloud after the move: $(host_tree)"
+[ -f "$DATA/Rasteratops/Saves/nes/Boot.srm" ] && [ ! -f "$DATA/ROCKNIX/Saves/nes/Boot.srm" ]; check $? "I: MOVE at boot moved the saves to /Rasteratops and left nothing under /ROCKNIX"
+G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF"; check $? "I: the conf points at /Rasteratops/Saves"
+esl 'cloud folder step: settled' | grep -q .; check $? "I: and the step's own check after the move reads it settled"
+boot_frames I-boot3 40
+esl 'nothing to settle' | grep -q . && ! esl 'cloud folder step: checking the folder' | grep -q .; check $? "I: the boot after the move raises nothing (--needs-step 1)"
+steps I3 'shot I-boot3-quiet' 'dismiss-dialogs'
+G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0' >/dev/null 2>&1
+rm -rf "$DATA/Rasteratops"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
+fi
+
+if want J; then
+say "== J: the boot step offline (the guest's link cut on the monitor): FINISH CLOUD SETUP / YOU'RE NOT ONLINE ... with CONNECT TO WI-FI and NOT NOW"
+say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
+G_ 'systemctl stop essway; f=/storage/.config/emulationstation/es_settings.cfg; if grep -q "name=\"Debug\"" $f; then sed -i "s|<bool name=\"Debug\" value=\"[a-z]*\" />|<bool name=\"Debug\" value=\"true\" />|" $f; else sed -i "s|</config>|  <bool name=\"Debug\" value=\"true\" />\n</config>|" $f; fi; sync' >/dev/null 2>&1
+grab_start J-boot 0.7
+G_ 'sync; reboot' >/dev/null 2>&1; MONC "set_link net0 off"; say "  link off at $(date -u +%H:%M:%S)"
+sleep 55; sleep 55; grab_stop J-boot
+steps J1 'shot J-offline' 'key z' 'wait-for-change' 'settle' 'shot J-after-not-now'
+MONC "set_link net0 on"; for i in $(seq 1 60); do G_ true 2>/dev/null && break; sleep 2; done; say "  link on; ssh back after ${i} tries"
+esl 'cloud folder step' | tail -4 | tee -a "$LOG"
+esl 'a folder to settle and no network; asking to connect' | grep -q .; check $? "J: offline, the step asked to connect"
+esl 'NOT NOW; asked again at the next boot' | grep -q .; check $? "J: and NOT NOW put it off to the next boot"
+require_no_game >/dev/null 2>&1; steps J2 'dismiss-dialogs'
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+fi
+
+if want K; then
+say "== K: a settings restore's marker and an earlier folder at the same boot (the marker written here, a named stand-in): FINISH RESTORE PROCESS first; LATER brings neither; FINISH brings the step"
+mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Restore.srm"
+say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
+G_ 'echo 1 > /storage/.config/.restore-finish-pending; ls -la /storage/.config/.restore-finish-pending' | tee -a "$LOG"
+boot_frames K-boot1 40
+steps K1 'shot K-restore-page' 'key up' 'wait-for-change' 'settle' 'shot K-later-focused' 'key x' 'wait-for-change' 'settle' 'wait 20' 'settle' 'shot K-after-later'
+esl 'cloud folder step' | tail -3 | tee -a "$LOG"
+! esl 'cloud folder step: checking the folder' | grep -q .; check $? "K: with the restore page up and then LATER, the step did not come at this boot"
+G_ 'test -e /storage/.config/.restore-finish-pending'; check $? "K: LATER kept the restore's marker"
+boot_frames K-boot2 40
+steps K2 'shot K-restore-page-again' 'key up' 'wait-for-change' 'key right' 'wait-for-change' 'settle' 'shot K-finish-focused' 'key x' 'wait-for-change' 'settle 60 3' 'shot K-after-finish'
+esl 'cloud folder step|restore relink' | tail -5 | tee -a "$LOG"
+esl 'cloud folder step: checking the folder \(boot\)' | grep -q .; check $? "K: FINISH brought the step"
+! G_ 'test -e /storage/.config/.restore-finish-pending'; check $? "K: and FINISH consumed the restore's marker"
+steps K3 'shot K-step-question' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
+rm -rf "$DATA/ROCKNIX"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+fi
+
+if want L; then
+say "== L: the end of cloud setup (the repair route: USE A COMPUTER INSTEAD, REPAIR A CONNECTION, the three steps, CONTINUE): the step asks MOVE before CLOUD SETUP COMPLETE"
+# a fresh install's shape: the conf on the current default, the cloud's saves only under /ROCKNIX -- the step's
+# scan joins them and asks the move, before the seeding and the last page (D-CLOUD-169, D-CLOUD-170)
+mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Setup.srm"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+debug_reboot; require_no_game >/dev/null 2>&1
+# the hub, then eight downs to CONNECT OR REPAIR CLOUD STORAGE (one past CHANGE CLOUD FOLDER's seven)
+f=$P/epic-L.steps
+{ printf 'wake\ndismiss-dialogs\nkey ret\nwait-for-change\nsettle\n%skey x\nwait-for-change\nsettle\nkey up\nwait-for-change\nkey up\nwait-for-change\nkey up\nwait-for-change\nsettle\nkey x\nwait-for-change\nsettle\nshot L-hub\n' "$RA_DOWN"
+  for n in 1 2 3 4 5 6 7 8; do printf 'key down\nwait-for-change\n'; done
+  printf 'settle\nshot L-connect-row\nkey x\nwait-for-change\nsettle\nshot L-provider-list\n'
+  # USE A COMPUTER INSTEAD is the list's last row: up from the first row is the button bar, up again the last row
+  printf 'key up\nwait-for-change\nkey up\nwait-for-change\nsettle\nshot L-use-computer-row\nkey x\nwait-for-change\nsettle\nshot L-setup-page\n'
+  # REPAIR A CONNECTION is the setup page's last row
+  printf 'key up\nwait-for-change\nkey up\nwait-for-change\nsettle\nshot L-repair-row\nkey x\nwait-for-change\nsettle\nshot L-step1\n'
+  # each step's CONTINUE: up to the button bar, right to CONTINUE
+  for st in 1 2 3; do printf 'key up\nwait-for-change\nkey right\nwait-for-change\nsettle\nshot L-step%s-continue\nkey x\nwait-for-change 30\nsettle 60 3\nshot L-after-step%s\n' "$st" "$st"; done
+} > "$f"
+# step 2's CONTINUE needs an SSH session open to the guest, as the player's terminal is (cloud_setup --connected)
+ssh -n -i $KEY -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes root@127.0.0.1 'sleep 900' >/dev/null 2>&1 &
+SSHPID=$!; sleep 2; say "  an SSH session held open for the walk (pid $SSHPID): $(G_ '/usr/bin/cloud_setup --connected')"
+grab_start L-setup 0.5
+walk "$f" "$FR"
+grab_stop L-setup; say "  L-setup: $(ls "$FR/L-setup" 2>/dev/null | wc -l) frames under $FR/L-setup (the step's scan page between step 3 and the question)"
+kill "$SSHPID" 2>/dev/null
+esl 'cloud_setup wizard|cloud folder step|cloud folder:' | tail -8 | tee -a "$LOG"
+esl 'cloud folder step: checking the folder \(end of cloud setup\)' | grep -q .; check $? "L: the step ran at the end of cloud setup"
+esl 'offering the move' | grep -q .; check $? "L: and asked the move for the earlier folder holding the saves"
+G_ "grep -q '^SAVES_REMOTE=\"/ROCKNIX/Saves\"' $CONF"; check $? "L: the step's scan joined the folder the saves are in"
+steps L2 'shot L-move-question' 'key z' 'wait-for-change' 'settle 120 3' 'shot L-after-not-now'
+esl 'cloud_setup wizard: complete' | grep -q .; check $? "L: NOT NOW went on to the seeding and CLOUD SETUP COMPLETE"
+steps L3 'shot L-setup-complete' 'dismiss-dialogs'
+rm -rf "$DATA/ROCKNIX"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
+say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+fi
+
+if want F; then
+say "== F: a scan the cloud refuses (the dead port): COULDN'T FINISH with TRY AGAIN beside CLOSE"
+G_ 'cp /storage/.config/rclone/rclone.conf /tmp/rclone.conf.good'
+"$R/tools/cloud-test-backend" dead-conf > $P/epic-dead.conf; scp -q -i $KEY -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $P/epic-dead.conf root@127.0.0.1:/storage/.config/rclone/rclone.conf; rm -f $P/epic-dead.conf
+to_page restore F
+G_ 'test ! -e /storage/.cache/cloud_sync/scan/done'; check $? 'F: failed opening scan leaves no success stamp'
+steps F2 'shot F-outcome' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
+G_ 'cp /tmp/rclone.conf.good /storage/.config/rclone/rclone.conf'
+fi
+
+if want G; then
+say "== G: BACK UP TO THE CLOUD opens on the scan page too, then its options"
+to_page backup G
+G_ 'test -s /storage/.cache/cloud_sync/scan/done && grep -qx STATE=current /storage/.cache/cloud_sync/scan/state'; check $? 'G: backup page completed its opening scan on the current folder'
+steps G2 'dismiss-dialogs'
+fi
+
+say "  frames: $(ls "$FR"/epic-*.png 2>/dev/null | wc -l) under $FR (epic-*.png), plus $FR/E-boot/"
+done_line
+[ "$FAILS" -eq 0 ]

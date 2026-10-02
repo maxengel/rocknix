@@ -1,0 +1,60 @@
+rclone: rclone v1.75.1 (/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/bin/rclone)
+FAIL T24-production-backup-scan-restore scan missed the real writer archive: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-current-legacy-os current branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-current-renamed current branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-legacy-legacy-os legacy branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-legacy-renamed legacy branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-healed-legacy-os healed branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+FAIL T24-healed-renamed healed branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}
+PASS T24-flat-legacy-os 
+FAIL T24-flat-renamed flat branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz', 'COUNT': '1'}
+PASS T24-foreign-legacy-os 
+PASS T24-foreign-renamed 
+PASS T01-classification 
+PASS T02-classification 
+PASS T03-classification 
+PASS T04-classification 
+PASS T05-classification 
+PASS T06-classification 
+PASS T07-classification 
+PASS T08-classification 
+PASS T09-classification 
+PASS T10-classification 
+PASS T11-classification 
+PASS T12-classification 
+PASS T13-classification 
+PASS T14-classification 
+PASS T15-classification 
+PASS T16-classification 
+PASS T22-classification 
+PASS T17-unreadable 
+FAIL T17-seed-timeout failed settlement rc=124 seeded cloud; caller=0
+FAIL T17-seed-failed failed settlement rc=1 seeded cloud; caller=0
+FAIL T18-bucket-backup-unknown failed listing became absence in cloud_backup
+FAIL T18-bucket-restore-unknown failed listing became absence in cloud_restore
+PASS T19-no-remote 
+PASS T23-content-collision 
+PASS T25-restricted-prefix 
+FAIL T20-follow-ROCKNIX archive abandoned by --follow: /Rasteratops/Backups
+FAIL T20-follow-GAMES archive abandoned by --follow: /Rasteratops/Backups
+FAIL T20-follow-custom archive abandoned by --follow: /Rasteratops/Backups
+FAIL T20-settle-ROCKNIX archive abandoned by --settle: /Rasteratops/Backups
+FAIL T20-settle-GAMES archive abandoned by --settle: /Rasteratops/Backups
+FAIL T20-settle-custom archive abandoned by --settle: /Rasteratops/Backups
+PASS T21-join-missing 
+FAIL T21-join-root --join, original='', got='/ROCKNIX/Content', expected=''
+PASS T21-join-derived 
+PASS T21-join-custom 
+PASS T21-follow-missing 
+FAIL T21-follow-root --follow, original='', got='/Rasteratops/Content', expected=''
+PASS T21-follow-derived 
+PASS T21-follow-custom 
+PASS T21-settle-missing 
+FAIL T21-settle-root --settle, original='', got='/Rasteratops/Content', expected=''
+PASS T21-settle-derived 
+PASS T21-settle-custom 
+PASS T21-apply-missing 
+FAIL T21-apply-root --apply, original='', got='/Rasteratops/Content', expected=''
+PASS T21-apply-derived 
+PASS T21-apply-custom 
+cloud-layout-test: 36 PASS, 22 FAIL; artifacts: /tmp/rasteratops-rc-delivery-20261002/baseline-image-tools

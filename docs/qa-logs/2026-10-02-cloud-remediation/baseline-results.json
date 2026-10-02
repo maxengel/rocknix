@@ -1,0 +1,256 @@
+[
+  {
+    "case": "T24-production-backup-scan-restore",
+    "status": "FAIL",
+    "why": "scan missed the real writer archive: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-current-legacy-os",
+    "status": "FAIL",
+    "why": "current branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-current-renamed",
+    "status": "FAIL",
+    "why": "current branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-legacy-legacy-os",
+    "status": "FAIL",
+    "why": "legacy branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-legacy-renamed",
+    "status": "FAIL",
+    "why": "legacy branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-healed-legacy-os",
+    "status": "FAIL",
+    "why": "healed branded=False: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-healed-renamed",
+    "status": "FAIL",
+    "why": "healed branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '', 'COUNT': '0'}"
+  },
+  {
+    "case": "T24-flat-legacy-os",
+    "status": "PASS"
+  },
+  {
+    "case": "T24-flat-renamed",
+    "status": "FAIL",
+    "why": "flat branded=True: {'LABEL': 'QA', 'MINE': '', 'NEWEST': '2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz', 'COUNT': '1'}"
+  },
+  {
+    "case": "T24-foreign-legacy-os",
+    "status": "PASS"
+  },
+  {
+    "case": "T24-foreign-renamed",
+    "status": "PASS"
+  },
+  {
+    "case": "T01-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T02-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T03-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T04-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T05-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T06-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T07-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T08-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T09-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T10-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T11-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T12-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T13-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T14-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T15-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T16-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T22-classification",
+    "status": "PASS"
+  },
+  {
+    "case": "T17-unreadable",
+    "status": "PASS"
+  },
+  {
+    "case": "T17-seed-timeout",
+    "status": "FAIL",
+    "why": "failed settlement rc=124 seeded cloud; caller=0"
+  },
+  {
+    "case": "T17-seed-failed",
+    "status": "FAIL",
+    "why": "failed settlement rc=1 seeded cloud; caller=0"
+  },
+  {
+    "case": "T18-bucket-backup-unknown",
+    "status": "FAIL",
+    "why": "failed listing became absence in cloud_backup"
+  },
+  {
+    "case": "T18-bucket-restore-unknown",
+    "status": "FAIL",
+    "why": "failed listing became absence in cloud_restore"
+  },
+  {
+    "case": "T19-no-remote",
+    "status": "PASS"
+  },
+  {
+    "case": "T23-content-collision",
+    "status": "PASS"
+  },
+  {
+    "case": "T25-restricted-prefix",
+    "status": "PASS"
+  },
+  {
+    "case": "T20-follow-ROCKNIX",
+    "status": "FAIL",
+    "why": "archive abandoned by --follow: /Rasteratops/Backups"
+  },
+  {
+    "case": "T20-follow-GAMES",
+    "status": "FAIL",
+    "why": "archive abandoned by --follow: /Rasteratops/Backups"
+  },
+  {
+    "case": "T20-follow-custom",
+    "status": "FAIL",
+    "why": "archive abandoned by --follow: /Rasteratops/Backups"
+  },
+  {
+    "case": "T20-settle-ROCKNIX",
+    "status": "FAIL",
+    "why": "archive abandoned by --settle: /Rasteratops/Backups"
+  },
+  {
+    "case": "T20-settle-GAMES",
+    "status": "FAIL",
+    "why": "archive abandoned by --settle: /Rasteratops/Backups"
+  },
+  {
+    "case": "T20-settle-custom",
+    "status": "FAIL",
+    "why": "archive abandoned by --settle: /Rasteratops/Backups"
+  },
+  {
+    "case": "T21-join-missing",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-join-root",
+    "status": "FAIL",
+    "why": "--join, original='', got='/ROCKNIX/Content', expected=''"
+  },
+  {
+    "case": "T21-join-derived",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-join-custom",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-follow-missing",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-follow-root",
+    "status": "FAIL",
+    "why": "--follow, original='', got='/Rasteratops/Content', expected=''"
+  },
+  {
+    "case": "T21-follow-derived",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-follow-custom",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-settle-missing",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-settle-root",
+    "status": "FAIL",
+    "why": "--settle, original='', got='/Rasteratops/Content', expected=''"
+  },
+  {
+    "case": "T21-settle-derived",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-settle-custom",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-apply-missing",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-apply-root",
+    "status": "FAIL",
+    "why": "--apply, original='', got='/Rasteratops/Content', expected=''"
+  },
+  {
+    "case": "T21-apply-derived",
+    "status": "PASS"
+  },
+  {
+    "case": "T21-apply-custom",
+    "status": "PASS"
+  }
+]
