@@ -4,9 +4,9 @@ description: Rigorous multi-pass code auditor that independently verifies spec c
 license: Apache-2.0
 metadata:
   execution: serial
-  version: 1.11.0
+  version: 1.12.0
   origin: 'Imported from birdwork-preflight .claude/skills/code-auditor; adapted for scaffold (bedrock→cornerstone; foreign refs softened). v1.7 platform-probe evidence floor adapted 2026-07-10 from birdwork/birdwork@e0ff051.'
-  adapted: 'v1.11 2026-09-24 the second opinion is a phase (4.6): the council GPT seat at max effort refutes and extends every Epic/Milestone audit, graded against the artifact, failing closed without the seat (fork #260; #186 had it by choice, #258 lacked it). v1.10 2026-08-24 gate hardening: mandatory tools/lint-audit-artifacts before Phase 6; Phase 7 outcomes re-derived from commands, not memory. v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list; explicit tier-selection table (two or more epics => milestone). v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
+  adapted: 'v1.12 2026-10-02 cross-lab reviewer selection and explicit local/two-model/extended audit depth; five-seat council remains a separate release escalation (D-WORKFLOW-137, fork #378). v1.11 2026-09-24 the second opinion is a phase (4.6): the council GPT seat at max effort refutes and extends every Epic/Milestone audit, graded against the artifact, failing closed without the seat (fork #260; #186 had it by choice, #258 lacked it). v1.10 2026-08-24 gate hardening: mandatory tools/lint-audit-artifacts before Phase 6; Phase 7 outcomes re-derived from commands, not memory. v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list; explicit tier-selection table (two or more epics => milestone). v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
 ---
 
 # Code Auditor
@@ -24,6 +24,22 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
 scope, do not mutate that scope from elsewhere - an audit of a moving target
 proves nothing about either state.
+
+## Review depth and scope
+
+Record both **scope** (Issue/Epic/Milestone below) and **review depth** before
+starting. [Review levels](references/review-levels.md) defines local-only,
+two-model and extended three-model audits, plus escalation to a separate full
+five-seat council for larger release candidates. Version numbers guide the
+choice; migration, security and compatibility risk can raise it. The release's
+issue records the chosen depth and reason.
+
+The ordinary independent audit has **two model perspectives total**: the primary
+auditor and one external reviewer from a different model lab. Codex/OpenAI-led
+work uses the pinned Anthropic reviewer; Anthropic-led work uses the pinned
+OpenAI reviewer. Shared OpenRouter/Facilitator transport does not make it a
+council run. A Milestone's blind and refutation passes are two calls to the same
+reviewer, not additional seats. See Phase 4.6 for selection and evidence.
 
 ## Scope tiers
 
@@ -197,7 +213,7 @@ phases 6–7 close the loop into the tracker.
 | 3     | Retrospective                   | `03-retrospective.md`                 | [`references/phases.md` § Phase 3](references/phases.md)   |
 | 4     | Synthesis                       | `04-analysis.md`                      | [`references/phases.md` § Phase 4](references/phases.md)   |
 | 4.5   | Finding verification            | appended to `04-analysis.md`          | [`references/phases.md` § Phase 4.5](references/phases.md) |
-| 4.6   | Second opinion (the council's GPT seat; Epic and Milestone tiers) | `04-analysis.md` § Second opinion + `second-opinions/` | [`references/phases.md` § Phase 4.6](references/phases.md) |
+| 4.6   | Independent review (selected depth; required for Epic/Milestone) | `04-analysis.md` § Second opinion + `second-opinions/` | [`references/phases.md` § Phase 4.6](references/phases.md) |
 | 5     | Punch list                      | `05-punch-list.md` (+ YAML index)     | [`references/phases.md` § Phase 5](references/phases.md)   |
 | 6     | Punch-list issue                | GitHub issue (`audit`, `punch-list`)  | Phase 6 below                                              |
 | 7     | Resolution gate                 | recorded outcome per item             | Phase 7 below                                              |
@@ -458,7 +474,7 @@ from a retro summary.
 7. Risk assessment (severity × impact × mitigation)
 8. Coverage boundary (what was examined vs deliberately NOT examined, verification depth per AC, audit dimensions not exercised)
 9. Finding verification (Phase 4.5 — refutation results for every Critical/High finding)
-9a. Second opinion (Phase 4.6 — the GPT seat's findings and refutations, each graded against the artifact; the command, the provenance path and the served model; mandatory at Epic and Milestone tiers, fails closed without the seat)
+9a. Second opinion (Phase 4.6 — the other lab's findings and refutations, each graded against the artifact; the command, the provenance path and the served model; mandatory at Epic and Milestone tiers, fails closed without the seat)
 10. Quality self-check (recorded table — one row per mandatory section, present/absent-with-reason; silent section-dropping becomes visible drift)
 
 Full structure in [`references/templates.md`](references/templates.md).
@@ -530,8 +546,8 @@ cross-service migration, etc.) — and even then, file the follow-up issue
 ### Verify resolutions the way findings are verified
 
 Phase 4.5 attacks every Critical/High **finding** before it is published.
-Phase 4.6 hands the whole analysis to a different model -- the council's GPT
-seat at its highest effort -- to refute and to extend, and the orchestrator
+Phase 4.6 hands the whole analysis to the selected frontier model from another
+lab, at its pinned effort, to refute and to extend, and the orchestrator
 grades every one of its items against the artifact before any reaches the
 punch list; a model refuting itself shares its own blind spots, which is
 why #186's seat found eleven items the orchestrator had not.

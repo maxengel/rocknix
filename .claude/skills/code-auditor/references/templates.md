@@ -90,7 +90,45 @@ artifact-contract lint now adds the columns up.
 
 ## Second opinion (Phase 4.6)
 
-**Run:** `tools/council/run invoke --member gpt --prompt-file second-opinions/gpt-brief.md --output second-opinions/gpt-6-astra-audit.md` [and, at Milestone tier, the blind pass first: `--prompt-file second-opinions/gpt-brief-blind.md --output second-opinions/gpt-6-astra-blind.md`]. **Identity gate:** `declared_model` / `final.verification.observed` from `<output>.provenance.json` (must read `openai/gpt-6-astra`). **Calls:** [1 or 2]; **effort:** max.
+**Primary:** [harness, model if known, developer/lab, identity source].
+**Depth:** [independent / extended]. **Perspectives:** [2 / 3 including primary].
+**External reviewers:** [1 / 2, each from a different lab]. **Calls:** [count per
+reviewer; Milestone blind then refutation, Epic refutation].
+**Run:** `tools/council/run invoke --member <member> --provider openrouter --prompt-file
+second-opinions/<member>-brief.md --output second-opinions/<member>-audit.md`;
+Milestone blind pass first. **Identity:** selected pin, declared and observed
+model, PASS, successful outcome and output digest from each Facilitator receipt.
+**Effort:** the installed recipe (Fable xhigh; Astra max).
+
+`second-opinions/review-plan.json` (Codex-led Milestone example; primary model
+may be `unknown` if its lab is established, with the evidence source stated):
+
+```json
+{
+  "schema_version": 1,
+  "depth": "independent",
+  "primary": {
+    "harness": "Codex",
+    "model": "openai/gpt-6-astra",
+    "lab": "openai",
+    "identity_source": "session metadata or explicit maintainer identification"
+  },
+  "reviewers": [{
+    "member": "claude",
+    "model": "anthropic/claude-fable-5.1",
+    "lab": "anthropic",
+    "effort": "xhigh",
+    "calls": [
+      {"phase": "blind", "output": "claude-blind.md"},
+      {"phase": "refutation", "output": "claude-audit.md"}
+    ]
+  }]
+}
+```
+
+Use `depth: local`, `reviewers: []` only for an explicitly local Issue audit.
+Extended depth has two reviewers from labs distinct from each other and the
+primary. Model recipes come from the installed roster, never this example alone.
 
 | Seat item | Orchestrator's grade | Evidence |
 | --- | --- | --- |
@@ -250,7 +288,7 @@ Covered in [`phases.md` § Phase 2](phases.md) as well. Reproduced here for quic
 **Finding:** [What was found — safe, risky, or broken]
 ```
 
-## Phase 4.6 -- the brief to the GPT seat (`second-opinions/gpt-brief.md`)
+## Phase 4.6 -- the brief to the selected reviewer (`second-opinions/<member>-brief.md`)
 
 ```markdown
 # Second opinion on a code audit -- [scope], [tier] tier
@@ -285,7 +323,7 @@ does not, and you say which.
 ---
 [04-analysis.md through § Finding Verification]
 ---
-[05-punch-list.md through the punch items]
+[Provisional findings from 04; Phase 5 is written only after independent review]
 ```
 
 The blind pass's brief (Milestone tier) is the same packet with the

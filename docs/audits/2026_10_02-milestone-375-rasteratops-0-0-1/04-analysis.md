@@ -193,19 +193,25 @@ The unchanged run101 main suite was not rerun to repeat its known fixture failur
 
 ## Second opinion
 
-Phase 4.6 is blocked on explicit permission to send the prepared packets to
-OpenRouter's pinned OpenAI GPT-6 Astra seat. Automatic approval review rejected
-the blind invocation because the general review request did not explicitly
-authorize exporting internal source, issue criteria and test evidence to that
-external destination. No model call ran. Permission for both passes was requested;
-there is no alternative-model or indirect-call workaround.
+**Selected depth:** independent, two model perspectives: the primary Codex/OpenAI
+auditor and one external Anthropic Fable 5.1 reviewer at `xhigh`. The maintainer
+identified the primary as Astra 6; no provider receipt attests the harness's exact
+model. Lab selection follows D-WORKFLOW-137 (#378), superseding the initial
+GPT-only packet choice. This is not a five-seat council run. The Milestone blind
+and refutation passes are two calls to the same Fable reviewer.
 
-Reviewable packets: `second-opinions/gpt-brief-blind.md` and
-`second-opinions/gpt-brief-refutation-prepared.md`. The latter will receive the
-blind reply before invocation. Neither includes live credentials or user cloud
-content. No provenance file exists because no request was made. The verifier-pins
-check freshly passes. No punch list or completed-audit claim before both identity
-gates and artifact-based grading, as code-auditor Phase 4.6 requires.
+Phase 4.6 remains pending authorization to send the prepared source/criteria/test
+packets through OpenRouter. Automatic approval review rejected the original GPT
+transfer because the general review request did not explicitly authorize that
+external export. Changing reviewer does not bypass that gate. No external review
+call ran and no provenance file exists. Selected plan and reviewable packets:
+`second-opinions/review-plan.json`, `claude-brief-blind.md`, and
+`claude-brief-refutation-prepared.md`. The latter receives the blind reply before
+invocation. There are no live credentials or user cloud contents in the packets.
+
+The current model/effort pins remain unchanged. Both identity gates and primary
+artifact grading must pass before Phase 5. A third reviewer or full council is
+an explicit depth change, not an inference from the number of calls.
 
 ## Instruction file recommendations
 

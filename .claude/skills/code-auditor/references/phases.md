@@ -449,19 +449,48 @@ not a choice (maintainer, 2026-09-24: *"I think it makes sense to modify
 the skill to do that ... GPT Astro 6 at a high level, whatever the highest
 effort level we can get for reasoning is."*).
 
-**Who and how.** The council's GPT seat -- `openai/gpt-6-astra` at effort
-`max`, through the project's Facilitator (`tools/council/run invoke --member
-gpt --prompt-file <brief> --output <file>`; OpenRouter, provider pinned to
-OpenAI, `allow_fallbacks: false`), which records the served model and the
-identity gate in `<file>.provenance.json`. Never a direct API call, never a
-different model in that seat, never the auditing model in a "critic" hat
-(`adversarial-council.md` § Hard routing rule: a pseudo-council is not a
-council). **Fails closed:** where the Facilitator, the key
-(`~/.config/council/env`) or the seat is unavailable, the audit pauses at
-this phase and the running log says which prerequisite is missing; it does
-not proceed to Phase 5 on the orchestrator's word alone, and it does not
-substitute another model or another prompt. An audit that reaches Phase 5
-without this section is an audit that skipped a phase.
+**Who and how (D-WORKFLOW-137).** Record the primary auditor's actual model
+lab and harness, then select the installed frontier reviewer from another lab.
+The model's developer is the lab; OpenRouter and a model's hosting endpoint are
+transport, not independent perspectives. Do not infer model identity merely
+from the editor's name. Record uncertainty rather than inventing a model ID.
+
+| Primary model lab | Default external reviewer | Invocation / installed effort |
+| --- | --- | --- |
+| OpenAI (including this Codex-led audit) | Anthropic Claude Fable 5.1 | `--member claude --provider openrouter`, `xhigh` |
+| Anthropic | OpenAI GPT-6 Astra | `--member gpt --provider openrouter`, `max` |
+| Another known lab | Fable or Astra, choosing a different lab | Use the corresponding installed recipe and explain the choice |
+| Unknown | Resolve the lab before dispatch | No same-model "critic" substitute |
+
+Use `tools/council/run invoke --member <member> --provider openrouter
+--prompt-file <brief> --output <file>`. The installed Facilitator recipes and
+model/effort verification remain authoritative; do not silently replace the
+pinned model with an unverified "latest" alias. Fable's approved effort is
+`xhigh`, not `max`; Astra remains `max` with its OpenAI provider pin.
+
+This is **two model perspectives**, primary plus one external reviewer, not a
+five-seat council. Reuse the invocation/identity checks only: do not start a
+council genesis, require five available seats, collect votes or claim council
+completion. An explicitly selected extended audit adds one reviewer from a
+third lab; both external reviewers get independently prepared blind/refutation
+passes as required by the scope, with no exchange of blind answers before both
+blind passes finish. Every finding still needs primary-artifact verification.
+
+Before dispatch, write `second-opinions/review-plan.json` using the template;
+record actual primary identity and its source, selected depth and reviewer
+recipes. After each call, verify the served identity, successful outcome,
+Facilitator provenance and output digest before advancing. No direct provider
+call or unverified ordinary subagent satisfies this phase. External provider
+permission is separate from reviewer selection.
+
+**Fails closed:** if the primary lab cannot be established, the selected
+reviewer/Facilitator is unavailable or the external transfer is not authorized,
+record the blocker and keep this phase pending. Do not proceed to Phase 5 or
+substitute a same-lab reviewer. Local-only Issue audits explicitly record Phase
+4.6 as not applicable; they do not claim independent review or satisfy an
+Epic/Milestone or release gate. A full council, when selected for the release,
+runs its own five-seat protocol on the audit evidence; it cannot be simulated
+by extending this section's number of calls.
 
 **Why a different model, and why second.** Two questions the maintainer
 asked to have worked out, answered here so they are not re-argued:
@@ -482,12 +511,11 @@ asked to have worked out, answered here so they are not re-argued:
   still produced eleven additions, so a one-call second opinion is worth
   having when two are not affordable.
 
-**The brief** (`second-opinions/gpt-brief.md`, template in
+**The brief** (`second-opinions/<member>-brief.md`, template in
 [`references/templates.md` § Second opinion](templates.md)) carries: the
 scope and the tier; the evidence packet -- `02-forward-audit.md` whole (its
 criteria, verdicts and `file:line` evidence), `03-retrospective.md`, and
-`04-analysis.md` through § Finding Verification; the punch list as it
-stands; and three asks in this order: (1) the seat's own findings from the
+`04-analysis.md` through § Finding Verification; the provisional findings in 04 (Phase 5 is not yet written); and three asks in this order: (1) the seat's own findings from the
 packet, each with severity and the packet's `file:line`, made before it
 comments on ours; (2) for every finding of ours at Medium or above (and any
 Low it thinks mis-graded) a refutation attempt -- agree, disagree, re-grade,
@@ -501,9 +529,8 @@ evidence packet with the verdict and finding columns removed -- the
 criteria, the code and command excerpts, the reads -- asking for findings
 alone; then the **refutation pass** above, with our findings and the blind
 pass's own list. The orchestrator compares the three lists (ours, the
-blind pass's, the refutation's). Epic and Issue tiers run the refutation
-pass alone. The number of calls and their `provenance.json` paths are
-recorded in the section.
+blind pass's, the refutation's). Epic and independently reviewed Issue tiers run the refutation pass alone. The number of model perspectives, external reviewers and calls, and their
+`provenance.json` paths are recorded separately in the section.
 
 **Grading -- the orchestrator's, and the rule is the subagent rule.** Every
 seat item is a lead, never evidence (SKILL.md § Evidence floor). For each,
