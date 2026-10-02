@@ -801,6 +801,43 @@ say_why() {
 # The summary's word for a phase (D-UI-028): COMPLETED, or COULDN'T FINISH.
 # rclone's 9 (nothing needed moving) is a completion. SUCCESS and COMPLETED
 # WITH ERRORS -- a partial success reported as errors -- retire.
+# Whether the cloud is bucket-based (S3 and compatibles, GCS, Swift, B2), and
+# on a bucket whether a folder exists: its parent lists it. cloud_restore's
+# two helpers, the same rule here so the two scripts never disagree about
+# whether a saves folder is there (#141).
+BUCKET_BASED=""
+bucket_based() {
+    if [ -z "${BUCKET_BASED}" ]; then
+        if rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true'; then
+            BUCKET_BASED=1
+        else
+            BUCKET_BASED=0
+        fi
+    fi
+    [ "${BUCKET_BASED}" = "1" ]
+}
+bucket_dir_listed() {
+    local path="${1%/}" parent name
+    name="${path##*/}"
+    [ -n "${name}" ] || return 0
+    parent="${path%/*}"
+    rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qx "${name}/"
+}
+
+# Whether the saves setting is a default this project once shipped
+# (/GAMES, /ROCKNIX/Saves), from cloud_migrate_layout's own list: a string
+# test, no network. Names compared as written.
+superseded_saves_setting() {
+    local tool s want="${SAVES_REMOTE%/}"
+    tool="$(dirname "$(readlink -f "$0")")/cloud_migrate_layout"
+    [ -x "${tool}" ] || tool=/usr/bin/cloud_migrate_layout
+    [ -x "${tool}" ] || return 1
+    while IFS= read -r s; do
+        [ -n "${s}" ] && [ "${s%/}" = "${want}" ] && return 0
+    done < <("${tool}" --superseded 2>/dev/null)
+    return 1
+}
+
 outcome_word() {
     case "$1" in
         0|9) echo "COMPLETED" ;;
@@ -1621,6 +1658,33 @@ backup_game_saves() {
         return 0
     fi
     
+    # A default this project once shipped (/GAMES, /ROCKNIX/Saves) that the
+    # cloud does not hold is no folder at all (D-CLOUD-161), and a backup
+    # does not make it (D-CLOUD-172): it made one before, on a device
+    # updated from stock ROCKNIX, and the startup card said SKIPPED - YOUR
+    # CLOUD FOLDER ISN'T SET UP YET over a backup that had just written
+    # nine saves into /GAMES (guest d, run 100). So it says what the
+    # restore says -- the offer line, which an automatic sync's card reads
+    # as that SKIPPED and a deliberate run as the offer to create the
+    # folder, whose seeding settles the setting on the current folders
+    # (cloud_migrate_layout --settle) -- and the cloud folder step asks at
+    # the next boot (D-CLOUD-170). Asked only for such a setting; a listing
+    # that cannot answer leaves the backup as it was, since skipping it on
+    # a guess would leave the saves only on the device.
+    if superseded_saves_setting; then
+        local saves_folder="${SAVES_REMOTE%/}" list_rc
+        rclone lsd "${REMOTENAME}${saves_folder}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; list_rc=$?
+        if [ ${list_rc} -eq 0 ] && bucket_based && ! bucket_dir_listed "${saves_folder}"; then
+            list_rc=3
+        fi
+        if [ ${list_rc} -eq 3 ]; then
+            log_message "saves folder ${SAVES_REMOTE} is a default an earlier version shipped, and the cloud has none; a backup does not make it (D-CLOUD-172)" "false"
+            log_message "Nothing backed up: your cloud has no ${saves_folder} folder yet." "true"
+            echo ">>> offer create-saves-folder|${saves_folder}"
+            return 0
+        fi
+    fi
+
     # Test remote connectivity before starting backup
     # One round trip, not two. mkdir is idempotent and fails when the remote
     # is unreachable or the sign-in has lapsed, so it is the reachability

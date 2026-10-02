@@ -13386,7 +13386,9 @@ rm -f "${LYRCONF}" "${LY}"/rec/*
 # (D-CLOUD-160's follow, 147 ms on the current folder and 419 ms in transition) is the step's.
 for lyf in cloud_backup cloud_restore; do
     src_of "projects/ROCKNIX/packages/network/rclone/sources/${lyf}" "${LY}/${lyf}"
-    lyhit=$(grep -nE '^[^#]*(cloud_migrate_layout|follow_layout)' "${LY}/${lyf}" || true)
+    # The follow and the layout's other network verbs; the --superseded list (a string test, no network)
+    # is the one verb the backup may ask for (D-CLOUD-172).
+    lyhit=$(grep -nE '^[^#]*(follow_layout|--(follow|join|settle|apply|state)\b)' "${LY}/${lyf}" || true)
     [ -z "${lyhit}" ]; check $? "${lyf} runs no folder check before its sync (D-CLOUD-170)" "${lyf}: $(echo "${lyhit}" | head -3 | tr '\n' '|' | cut -c1-200)"
 done
 
@@ -13508,6 +13510,40 @@ led_run rgb; [ "$(tail -1 "${LD}/helper-argv")" = "32 255 255 255 255 255 255" ]
 echo "analogsticks.led=200 255 0 0 0 0 255" >> "${LD}/settings"
 led_run rgb; [ "$(tail -1 "${LD}/helper-argv")" = "200 255 0 0 0 0 255" ]; check $? "rgb with a colour set hands the helper that colour" "helper got: $(tail -1 "${LD}/helper-argv")"
 led_run off; [ "$(led_vals)" = "0 " ] && [ "$(cat "${LD}/sys/multi-ledr2/leds/rgb:r2/multi_intensity")" = "0 0 0" ]; check $? "off zeroes every LED's brightness and colour" "wrote: $(led_vals)"
+
+echo "  ad. a backup does not make a missing earlier-default saves folder (D-CLOUD-172, #363): the offer instead, nothing written"
+# cloud_backup whole in the sandbox (the alias remote over a local folder), a save on the device, the conf on the
+# stock /GAMES. The cloud has no /GAMES: the run makes nothing, sends nothing, prints the offer and ends 0, so the
+# startup card's SKIPPED - YOUR CLOUD FOLDER ISN'T SET UP YET is true (run 100's case E found the backup half had
+# written nine saves under it). With /GAMES there it backs up as before; the current folder, absent, is still made.
+SV=$(sa_new d172); sa_script "${SV}" cloud_backup cloud_saves_root cloud_migrate_layout
+sv_conf() { cat > "${SV}/storage/.config/cloud_sync.conf" <<EOS
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="$1"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="$2"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+}
+mkdir -p "${SV}/storage/roms/gb"; echo save > "${SV}/storage/roms/gb/A.srm"
+printf -- '+ /**/*.srm\n- /**\n' > "${SV}/storage/.config/cloud_sync-rules.txt"
+sv_conf /GAMES /GAMES/backup
+sa_run "${SV}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ ! -e "${SV}/cloud/GAMES" ] && grep -q '^>>> offer create-saves-folder|/GAMES$' "${SV}/out"; check $? "a backup on a carried /GAMES the cloud does not hold makes no /GAMES, sends nothing, and offers the folder (rc ${RC})" "rc ${RC}; /GAMES in the cloud: $([ -e "${SV}/cloud/GAMES" ] && echo MADE || echo no); out: $(sa_tail "${SV}")"
+sa_run "${SV}" cloud_backup --yes --automatic --recent --saves-only
+[ "${RC}" -eq 0 ] && [ ! -e "${SV}/cloud/GAMES" ] && grep -q '^>>> offer create-saves-folder|/GAMES$' "${SV}/out"; check $? "and so does the exit sync's run (--automatic --recent), where the copy itself used to make the folder (rc ${RC})" "rc ${RC}; /GAMES: $([ -e "${SV}/cloud/GAMES" ] && echo MADE || echo no); out: $(sa_tail "${SV}")"
+mkdir -p "${SV}/cloud/GAMES"
+sa_run "${SV}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/GAMES/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "a /GAMES the cloud does hold is backed up into as before (rc ${RC})" "rc ${RC}; A.srm $([ -e "${SV}/cloud/GAMES/gb/A.srm" ] && echo sent || echo missing); out: $(sa_tail "${SV}")"
+rm -rf "${SV}/cloud/GAMES"; sv_conf /Rasteratops/Saves /Rasteratops/Backups
+sa_run "${SV}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/Rasteratops/Saves/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "the current folder, absent, is still made by the backup (rc ${RC})" "rc ${RC}; out: $(sa_tail "${SV}")"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
