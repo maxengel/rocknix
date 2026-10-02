@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""Production cloud scripts against isolated, real rclone filesystems (#365).
+
+Host regressions, not image qualification. Each case gets new cloud, config,
+cache and logs. --ref supplies old production bytes to the same assertions.
+--output retains command transcripts, final pointers and synthetic cloud bytes.
+"""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCES = Path('projects/ROCKNIX/packages/network/rclone/sources')
+NEW = '/Rasteratops'
+OLD = '/ROCKNIX'
+ARCHIVE = '2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz'
+DEVICE = 'QA-deadbeef01'
+
+
+def put(path, data, executable=False):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(data)
+    if executable:
+        path.chmod(0o755)
+
+
+class Fixture:
+    def __init__(self, path, args):
+        self.path, self.args, self.seq = path, args, 0
+        path.mkdir()
+        for folder in ['repo', 'shim', 'storage/.config/rclone', 'storage/roms/backup',
+                       'storage/.cache/cloud_sync', 'cloud', 'ctl', 'log', 'run']:
+            (path / folder).mkdir(parents=True, exist_ok=True)
+        for src in (ROOT / SOURCES).iterdir():
+            if not src.is_file():
+                continue
+            dest = path / 'repo' / src.name
+            if args.ref:
+                r = subprocess.run(['git', '-C', str(ROOT), 'show', f'{args.ref}:{SOURCES / src.name}'], capture_output=True)
+                if r.returncode:
+                    continue  # A helper introduced by the fix is absent on the old tree.
+                dest.write_bytes(r.stdout)
+            else:
+                shutil.copyfile(src, dest)
+            dest.chmod(0o755)
+        put(path / 'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=ROCKNIX\n')
+        put(path / 'storage/.config/rclone/rclone.conf', '[qa]\ntype = alias\nremote = /cloud\n')
+        put(path / 'repo/cloud_device_id', '''#!/bin/sh
+case "$1" in
+ --label) echo QA;; --legacy) cat /ctl/legacy 2>/dev/null;;
+ --previous) cat /ctl/previous 2>/dev/null;; *) echo QA-deadbeef01;;
+esac
+''', True)
+        for name, body in {
+            'logger': 'printf "%s\\n" "$*" >> /ctl/journal',
+            'ip': '[ -e /ctl/offline ] || echo "default via 10.0.2.2 dev eth0"',
+            'ping': '[ ! -e /ctl/offline ]',
+            'systemd-tmpfiles': 'exit 0',
+        }.items():
+            put(path / 'shim' / name, '#!/bin/sh\n' + body + '\n', True)
+        put(path / 'shim/rclone', '''#!/bin/bash
+printf '%s\\n' "$*" >> /ctl/argv
+if [ -f /ctl/faults ]; then
+ while IFS=$'\\t' read -r pattern code; do
+  [[ "$*" =~ $pattern ]] && { printf '%s\\n' "$*" >> /ctl/fault-fired; echo 'injected provider failure' >&2; exit "$code"; }
+ done < /ctl/faults
+fi
+if [ -e /ctl/bucket ]; then
+ if [ "$1 $2" = 'backend features' ]; then
+  printf '{"Hashes":["md5"],"Features":{"BucketBased":true}}\\n'; exit 0
+ fi
+ # Bucket prefixes can return successful empty lsd for a missing prefix.
+ if [ "$1" = lsd ]; then exit 0; fi
+fi
+exec /rclone.real "$@"
+''', True)
+        self.conf()
+        put(path / 'storage/.config/cloud_sync-rules.txt', '+ /**/*.srm\n- /**\n')
+
+    def conf(self, saves=NEW+'/Saves', backups=NEW+'/Backups', content=NEW+'/Content', keep=''):
+        values = dict(SAVESPATH='/storage/roms', SAVES_REMOTE=saves,
+                      SETTINGS_BACKUPS='/storage/roms/backup', SETTINGS_REMOTE=backups,
+                      BACKUPMETHOD='copy', RESTOREMETHOD='copy', BACKUPFILE_BACKUP_OPTION='no',
+                      BACKUPFILE_RESTORE_OPTION='no', LOG_LEVEL='INFO', LAYOUT_KEEP=keep,
+                      RCLONEOPTS='--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt',
+                      RCLONE_NET_OPTS='--contimeout 1s --timeout 2s --low-level-retries 1 --retries 1')
+        if content is not None:
+            values['CONTENT_REMOTE'] = content
+        put(self.path / 'storage/.config/cloud_sync.conf', ''.join(f'{k}="{v}"\n' for k,v in values.items()))
+
+    def pointers(self):
+        return dict(re.findall(r'^(\w+)="([^"\n]*)"$', (self.path / 'storage/.config/cloud_sync.conf').read_text(), re.M))
+
+    def file(self, name, data='sentinel\n'):
+        put(self.path / 'cloud' / name.lstrip('/'), data)
+
+    def directory(self, name):
+        (self.path / 'cloud' / name.lstrip('/')).mkdir(parents=True, exist_ok=True)
+
+    def archive(self, name, sentinel=b'settings sentinel\n', local=False):
+        path = self.path / ('storage/roms/backup' if local else 'cloud') / name.lstrip('/')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(path, 'w:gz') as tar:
+            info = tarfile.TarInfo('storage/.config/proof-sentinel'); info.size = len(sentinel)
+            tar.addfile(info, io.BytesIO(sentinel))
+        return path
+
+    def fault(self, pattern, rc=5):
+        put(self.path / 'ctl/faults', f'{pattern}\t{rc}\n')
+
+    def run(self, script, *argv):
+        self.seq += 1
+        cmd = ['bwrap', '--die-with-parent', '--unshare-pid', '--tmpfs', '/', '--ro-bind', '/usr', '/usr',
+               '--symlink', 'usr/bin', '/bin', '--symlink', 'usr/lib', '/lib', '--symlink', 'usr/lib64', '/lib64',
+               '--ro-bind', '/etc', '/etc', '--ro-bind', str(self.path/'profile'), '/etc/profile',
+               '--ro-bind', self.args.rclone, '/rclone.real', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp']
+        for folder, guest in [('repo','/repo'),('shim','/shim'),('storage','/storage'),('cloud','/cloud'),
+                              ('ctl','/ctl'),('log','/var/log'),('run','/var/run')]:
+            cmd += ['--bind', str(self.path/folder), guest]
+        cmd += ['--chdir', '/storage', '--setenv', 'HOME', '/storage', '--setenv', 'PATH', '/shim:/repo:/usr/bin:/bin',
+                'bash', '/repo/'+script, *argv]
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120,
+                           start_new_session=True)
+        stem = self.path / f'{self.seq:02d}-{script}'
+        stem.with_suffix('.log').write_text(r.stdout)
+        stem.with_suffix('.json').write_text(json.dumps(dict(argv=[script,*argv], rc=r.returncode, pointers=self.pointers()), indent=2))
+        require(r.returncode not in (126,127), f'fixture could not execute {script}: {r.stdout[-500:]}')
+        return r
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def read_facts(path):
+    return dict(line.split('=',1) for line in path.read_text().splitlines() if '=' in line) if path.exists() else {}
+
+
+def scan(f):
+    r = f.run('cloud_scan')
+    require(r.returncode == 0, f'scan rc={r.returncode}: {r.stdout[-300:]}')
+    return read_facts(f.path/'storage/.cache/cloud_sync/scan/settings')
+
+
+def archive_roundtrip(f):
+    src = f.archive(ARCHIVE, local=True)
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()
+    r = f.run('cloud_backup', '--system-only', '--yes')
+    sent = f.path/'cloud/Rasteratops/Backups'/DEVICE/ARCHIVE
+    require(r.returncode == 0 and sent.exists(), f'production writer rc={r.returncode}; no per-device archive: {r.stdout[-400:]}')
+    require(hashlib.sha256(sent.read_bytes()).hexdigest() == digest, 'writer changed archive bytes')
+    facts = scan(f)
+    # Continue through restore even when discovery is broken: preserve evidence of both endpoints.
+    src.unlink()
+    r = f.run('cloud_restore', '--system-only', '--yes')
+    require(r.returncode == 0 and src.exists() and hashlib.sha256(src.read_bytes()).hexdigest() == digest,
+            f'production restore failed to recover exact writer archive rc={r.returncode}')
+    require(facts.get('MINE') == ARCHIVE, f'scan missed the real writer archive: {facts}')
+
+
+def archive_selection(f, kind, branded=False):
+    folders = {'current': DEVICE, 'legacy': 'qa-old', 'healed': 'QA-ee5013fc56', 'flat': '', 'foreign': 'Other-beef'}
+    folder = folders[kind]
+    if kind == 'legacy': put(f.path/'ctl/legacy', folder+'\n')
+    if kind == 'healed': put(f.path/'ctl/previous', folder+'\n')
+    f.archive(f'Rasteratops/Backups/{folder}/{ARCHIVE}')
+    if branded:
+        put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=RASTERATOPS\n')
+    facts = scan(f)
+    expected = '' if kind == 'foreign' else ARCHIVE
+    require(facts.get('MINE') == expected, f'{kind} branded={branded}: {facts}')
+
+
+def state_case(f, saves, state, files=(), dirs=(), keep=''):
+    backups = '/GAMES/backup' if saves == '/GAMES' else saves.rsplit('/',1)[0]+'/Backups'
+    f.conf(saves, backups, keep=keep)
+    for name in files: f.file(name)
+    for name in dirs: f.directory(name)
+    before = f.pointers()
+    r = f.run('cloud_migrate_layout', '--state')
+    facts = dict(line.split('=',1) for line in r.stdout.splitlines() if '=' in line)
+    require(r.returncode == 0 and facts.get('STATE') == state, f'expected {state}: rc={r.returncode}, {r.stdout}')
+    require(f.pointers() == before, 'read-only state changed pointers')
+    for name in files: require((f.path/'cloud'/name.lstrip('/')).read_text() == 'sentinel\n', 'state changed cloud bytes')
+
+
+def settle_failure(f, rc):
+    f.conf('/GAMES','/GAMES/backup', None)
+    put(f.path/'repo/cloud_migrate_layout', f'#!/bin/sh\n[ "$1" = --settle ] && exit {rc}\nprintf "/GAMES\\n/ROCKNIX/Saves\\n"\n', True)
+    before = f.pointers()
+    r = f.run('cloud_setup', '--seed-folders')
+    require(not any((f.path/'cloud').rglob('*')), f'failed settlement rc={rc} seeded cloud; caller={r.returncode}')
+    require(f.pointers() == before, 'failed settlement changed pointers')
+
+
+def backup_tier(f, mode, root='/ROCKNIX', custom=False):
+    saves = '/GAMES' if root == '/GAMES' else root+'/Saves'
+    backups = '/Mine/Backups' if custom else root+('/backup' if root == '/GAMES' else '/Backups')
+    f.conf(saves,backups,root+'/Content')
+    archive = f.archive(f'{backups}/{DEVICE}/{ARCHIVE}')
+    f.directory(NEW+'/Saves')
+    r = f.run('cloud_migrate_layout', mode)
+    require(r.returncode in (0,3), f'{mode}: {r.stdout}')
+    pointer = f.pointers()['SETTINGS_REMOTE']
+    found = f.path/'cloud'/pointer.lstrip('/')/DEVICE/ARCHIVE
+    require(found.exists() and found.read_bytes() == archive.read_bytes(), f'archive abandoned by {mode}: {pointer}')
+
+
+def content_choice(f, mode, content):
+    saves = NEW+'/Saves' if mode == '--join' else OLD+'/Saves'
+    f.conf(saves, OLD+'/Backups', content)
+    if mode == '--join': f.file(OLD+'/Saves/gb/A.srm')
+    if mode == '--follow': f.directory(NEW+'/Saves')
+    if content == '': f.file('/ROMs/gb/Root.gb')
+    r = f.run('cloud_migrate_layout', mode)
+    require(r.returncode in (0,3), f'{mode} rc={r.returncode}: {r.stdout[-300:]}')
+    target = OLD+'/Content' if mode == '--join' else NEW+'/Content'
+    expected = target if content is None or content == OLD+'/Content' else content
+    require(f.pointers().get('CONTENT_REMOTE') == expected,
+            f'{mode}, original={content!r}, got={f.pointers().get("CONTENT_REMOTE")!r}, expected={expected!r}')
+    if content == '': require((f.path/'cloud/ROMs/gb/Root.gb').read_text() == 'sentinel\n', 'root content changed')
+
+
+def provider_failure(f, script):
+    f.conf(OLD+'/Saves', OLD+'/Backups', OLD+'/Content')
+    f.directory(OLD+'/Saves'); f.file(OLD+'/Saves/gb/A.srm')
+    put(f.path/'storage/roms/gb/A.srm','sentinel\n')
+    put(f.path/'ctl/bucket','1')
+    f.fault(r'^lsf --dirs-only qa:/ROCKNIX/?( |$)')
+    before = (f.path/'cloud/ROCKNIX/Saves/gb/A.srm').read_bytes()
+    r = f.run(script, '--yes')
+    require((f.path/'ctl/fault-fired').exists(), 'fault did not reach production call')
+    require('>>> offer create-saves-folder' not in r.stdout, f'failed listing became absence in {script}')
+    require((f.path/'cloud/ROCKNIX/Saves/gb/A.srm').read_bytes() == before, 'provider failure changed sentinel')
+
+
+def unreadable(f):
+    f.conf('/GAMES','/GAMES/backup',None)
+    f.directory('/ROCKNIX')
+    f.fault(r'^lsf .*qa:/ROCKNIX')
+    before=f.pointers()
+    r=f.run('cloud_migrate_layout','--settle')
+    require(r.returncode not in (0,3) and f.pointers()==before, 'unreadable cloud became empty/changed pointers')
+
+
+def no_remote(f):
+    put(f.path/'storage/.config/rclone/rclone.conf','')
+    r=f.run('cloud_scan')
+    require(r.returncode != 0 and not (f.path/'storage/.cache/cloud_sync/scan/done').exists(), 'unlinked scan succeeded')
+
+
+def collision(f):
+    f.conf(OLD+'/Saves',OLD+'/Backups',OLD+'/Content')
+    f.file(OLD+'/Saves/gb/A.srm'); f.file(OLD+'/Content/ROMs/gb/A.gb')
+    f.file(NEW+'/Content/ROMs/gb/A.gb','unrelated\n')
+    r=f.run('cloud_migrate_layout','--apply')
+    require(r.returncode != 0, 'unmarked content collision not refused')
+    require((f.path/'cloud/Rasteratops/Content/ROMs/gb/A.gb').read_text()=='unrelated\n', 'unrelated content overwritten')
+    # Record partially advanced pointers for the recovery proof, rather than assuming atomic migration.
+
+
+def restricted(f):
+    f.file(NEW+'/Saves/gb/A.srm')
+    f.fault(r'^lsf .*qa: --')
+    r=f.run('cloud_scan','--folder')
+    require(r.returncode == 0, f'folder-only scan required root-list permission: {r.stdout}')
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--ref'); p.add_argument('--output',type=Path)
+    p.add_argument('--case',default='',help='substring of case name')
+    candidates = sorted(ROOT.parent.glob('*/build.*GENERIC_X64.x86_64/image/system/usr/bin/rclone'))
+    p.add_argument('--rclone',default=str(candidates[0]) if candidates else shutil.which('rclone'))
+    p.add_argument('--inject-failure',action='store_true')
+    args=p.parse_args()
+    require(args.rclone is not None and shutil.which('bwrap'), 'requires rclone and bwrap')
+    args.rclone=str(Path(args.rclone).resolve())
+    version = subprocess.run([args.rclone, 'version'], capture_output=True, text=True, check=True).stdout.splitlines()[0]
+    print(f'rclone: {version} ({args.rclone})', flush=True)
+    owned = args.output is None
+    output = args.output or Path(tempfile.mkdtemp(prefix='cloud-layout-'))
+    output.mkdir(parents=True,exist_ok=True)
+    cases=[('T24-production-backup-scan-restore',archive_roundtrip)]
+    for kind in ['current','legacy','healed','flat','foreign']:
+        for branded in [False,True]:
+            cases.append((f'T24-{kind}-'+('renamed' if branded else 'legacy-os'),lambda f,k=kind,b=branded: archive_selection(f,k,b)))
+    rows=[
+      ('T01',NEW+'/Saves','current',[NEW+'/Saves/gb/A.srm'],[],''),
+      ('T02',NEW+'/Saves','current',[],[],''),
+      ('T03',NEW+'/Saves','current',[OLD+'/Saves/gb/A.srm'],[],''),
+      ('T04',OLD+'/Saves','superseded-with-files',[OLD+'/Saves/gb/A.srm'],[],''),
+      ('T05',OLD+'/Saves','superseded-with-files',[OLD+'/Saves/gb/A.srm',NEW+'/.layout'],[NEW+'/Saves'],''),
+      ('T06',OLD+'/Saves','superseded-with-files',[OLD+'/Saves/gb/A.srm',NEW+'/Saves/gb/B.srm'],[],''),
+      ('T07','/GAMES','superseded-empty',[],[],''),
+      ('T08',OLD+'/Saves','superseded-empty',[],[],''),
+      ('T09','/GAMES','superseded-empty',[],['/GAMES'],''),
+      ('T10','/GAMES','superseded-with-files',[OLD+'/Saves/gb/A.srm'],[],''),
+      ('T11','/GAMES','superseded-with-files',[OLD+'/Saves/gb/A.srm'],['/GAMES'],''),
+      ('T12',OLD+'/Saves','superseded-empty',[NEW+'/Saves/gb/A.srm'],[],''),
+      ('T13',OLD+'/Saves','kept',[OLD+'/Saves/gb/A.srm'],[],OLD+'/Saves'),
+      ('T14',OLD+'/Saves','kept',[],[],OLD+'/Saves'),
+      ('T15','/Mine/Saves','own',['/Mine/Saves/gb/A.srm'],[],''),
+      ('T16','/Mine/Saves','own',[],[],''),
+      ('T22','/GAMES','superseded-with-files',['/GAMES/gb/A.srm',OLD+'/Saves/gb/B.srm'],[],''),
+    ]
+    for cell,saves,state,files,dirs,keep in rows:
+        cases.append((cell+'-classification',lambda f,s=saves,t=state,fs=files,ds=dirs,k=keep: state_case(f,s,t,fs,ds,k)))
+    cases += [('T17-unreadable',unreadable),('T17-seed-timeout',lambda f:settle_failure(f,124)),
+              ('T17-seed-failed',lambda f:settle_failure(f,1)),
+              ('T18-bucket-backup-unknown',lambda f:provider_failure(f,'cloud_backup')),
+              ('T18-bucket-restore-unknown',lambda f:provider_failure(f,'cloud_restore')),
+              ('T19-no-remote',no_remote),('T23-content-collision',collision),('T25-restricted-prefix',restricted)]
+    for mode in ['--follow','--settle']:
+        for root in [OLD,'/GAMES']:
+            cases.append((f'T20-{mode[2:]}-{root[1:]}',lambda f,m=mode,r=root:backup_tier(f,m,r)))
+        cases.append((f'T20-{mode[2:]}-custom',lambda f,m=mode:backup_tier(f,m,custom=True)))
+    for mode in ['--join','--follow','--settle','--apply']:
+        for choice,value in [('missing',None),('root',''),('derived',OLD+'/Content'),('custom','/Mine/ROMs')]:
+            cases.append((f'T21-{mode[2:]}-{choice}',lambda f,m=mode,c=value:content_choice(f,m,c)))
+    if args.inject_failure:
+        cases=[('constructed-failure',lambda f:require(False,'deliberately false assertion'))]
+    results=[]
+    try:
+        for name,fn in cases:
+            if args.case and args.case not in name: continue
+            fixture=Fixture(output/name,args)
+            try:
+                fn(fixture)
+                result=dict(case=name,status='PASS')
+            except (AssertionError,subprocess.TimeoutExpired) as error:
+                result=dict(case=name,status='FAIL',why=str(error))
+            results.append(result)
+            print(result['status'],name,result.get('why',''),flush=True)
+        require(results,'no cases matched')
+        (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+        failed=sum(r['status']=='FAIL' for r in results)
+        print(f'cloud-layout-test: {len(results)-failed} PASS, {failed} FAIL; artifacts: {output}',flush=True)
+        return int(failed>0)
+    finally:
+        if owned: shutil.rmtree(output)
+
+
+if __name__=='__main__':
+    sys.exit(main())

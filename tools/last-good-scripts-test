@@ -248,6 +248,8 @@ set -u
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 BASE_REF="${BASE_REF:-1d1503180d}"
+# Focused production layout cases can run without the unrelated legacy groups.
+if [ "${1:-}" = --cloud-layout ]; then shift; exec "${ROOT}/tools/cloud-layout-test" "$@"; fi
 OLD=0
 [ "${1:-}" = "--old" ] && OLD=1
 
@@ -13544,6 +13546,13 @@ sa_run "${SV}" cloud_backup --yes --saves-only
 rm -rf "${SV}/cloud/GAMES"; sv_conf /Rasteratops/Saves /Rasteratops/Backups
 sa_run "${SV}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/Rasteratops/Saves/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "the current folder, absent, is still made by the backup (rc ${RC})" "rc ${RC}; out: $(sa_tail "${SV}")"
+
+echo "  ae. cloud folder state table and archive writer/reader contracts (#365, #383)"
+layout_args=()
+[ "${OLD}" -eq 1 ] && layout_args+=(--ref "${BASE_REF}")
+[ -n "${SA_RCLONE_SRC:-}" ] && layout_args+=(--rclone "${SA_RCLONE_SRC}")
+"${ROOT}/tools/cloud-layout-test" "${layout_args[@]}"
+check $? "cloud folder state-table regressions" "cloud folder state-table regressions failed"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
