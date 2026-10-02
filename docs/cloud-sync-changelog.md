@@ -21,6 +21,25 @@ document is asking for help with.
 ---
 
 
+## Rasteratops identity and manual updates (2026-10-02)
+
+Source implementation under #337/#383. The cold image, upgrade rehearsal,
+and VM frames are still required before these changes are qualified.
+
+- **The operating system carries the Rasteratops name and wordmark.** Boot,
+  the interface, and the default theme use the icon-free Tiny5 Duo wordmark.
+  Persisted paths, partition labels, settings, and network names retain their
+  RC2 identities (D-WORKFLOW-123/127/130).
+- **Updates are manual in 0.0.1.** `MANUAL UPDATES` explains where to get the
+  device's update. Inherited automatic and forced settings cannot contact the
+  previous distribution's updater; its statistics entry point is inert and
+  its timer masked (D-WORKFLOW-093/110). The adoption filename contains
+  `-from-ROCKNIX` so RC2 can apply it (D-WORKFLOW-128).
+- **Offline subset achievements keep their own game identity.** The upstream
+  correction is backported to the current proxy; its award-parity tests pass.
+  Queue/flush verification on the image remains required (#384).
+
+
 ## Cloud-folder preparation and settings archive compatibility (2026-10-02)
 
 Implementation under #383, with host production-script regressions passed.

@@ -133,7 +133,7 @@ while read -r d; do
             *webkitgtk.org/*)               latest=$(latest_webkitgtk) ;;
             *download.gnome.org/sources/*)  latest=$(latest_gnome "$(sed -nE 's#.*/sources/([^/]+)/.*#\1#p' <<<"$eurl")") ;;
             *ftp.gnu.org/gnu/*|*savannah.gnu.org/releases/*)
-                                            latest=$(latest_listing "$(dirname "$eurl")/" "$name") ;;
+                                            latest=$(latest_listing "$(dirname "${eurl/#http:/https:}")/" "$name") ;;
             *dotat.at/*)                    latest=$(latest_listing "$(dirname "$eurl")/" "$name")
                                             [ -n "$latest" ] || latest=$(latest_github fanf2/unifdef) ;;   # dotat.at is often down; same author, same tags
             *github.com/*)                  latest=$(latest_github "$(github_repo "$eurl")") ;;

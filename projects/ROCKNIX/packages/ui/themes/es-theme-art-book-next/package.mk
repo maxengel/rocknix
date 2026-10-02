@@ -14,6 +14,8 @@ PKG_TOOLCHAIN="manual"
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/share/themes/${PKG_NAME}
     cp -rf * ${INSTALL}/usr/share/themes/${PKG_NAME}
+    cp ${PKG_DIR}/sources/rasteratops-wordmark.svg ${INSTALL}/usr/share/themes/${PKG_NAME}/
+    cp ${PKG_DIR}/sources/Tiny5-OFL.txt ${INSTALL}/usr/share/themes/${PKG_NAME}/
     rm -rf ${INSTALL}/usr/share/themes/${PKG_NAME}/_inc/systems/{artwork-circuit,artwork-classic,artwork-nintendont,artwork-noir,artwork-outline}
     sed -i '/<include name="\(noir\|nintendont\|circuit\|outline\)"/d' ${INSTALL}/usr/share/themes/${PKG_NAME}/theme.xml
     sed -i '/<\/theme>/i\
