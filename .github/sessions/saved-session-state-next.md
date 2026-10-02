@@ -18,7 +18,8 @@ work log and #383 before touching source. Older context is archived at
    Work is in `/workspace/repos/rocknix.worktrees/conflict-resolution`, branch
    `feature/conflict-resolution`. Its historical merges cannot be pushed
    (#371); integrate new commits into `next` by cherry-pick, not by merging
-   its old history. `next` was clean at c5c866b60f at this checkpoint.
+   its old history. The implementation commits are already integrated: `next` is clean at
+   3d7c075f63; feature source is at bd033f8adf. Do not cherry-pick them again.
 3. Read #383, #365, #337/#344, #361/#362 and #384 through their last comments,
    with `gh --repo rasteratops/distribution ... --json body,comments`.
    #375/#382's initial cross-lab audit is complete. Its five product findings
@@ -33,8 +34,8 @@ work log and #383 before touching source. Older context is archived at
    Host harness verdicts use the narrower filter in the VM rule so PASS is
    not erased. Explicitly name the fork for every gh operation.
 
-> Saved: 2026-10-02T21:07:21Z. Working branch: feature/conflict-resolution.
-> Source changes below are prepared locally; cold build has not started.
+> Saved: 2026-10-02T21:18:56Z. Working branch: feature/conflict-resolution.
+> Source changes below are committed and integrated locally; cold build has not started.
 
 ## Current focus
 
@@ -51,7 +52,9 @@ pins need the owner's disposition under the candidate preflight rule.
 
 - Distribution commits on this feature branch, after the content-equivalent
   audit head a3a2f395c4: d3753beab5 (delivery/futro),8a27b0ec92 (negative
-  regressions),dbbbdc73c4 (cloud fixes). Cherry-pick them into `next` in order.
+  regressions),dbbbdc73c4 (cloud fixes),bd033f8adf (identity/preflight).
+  Already cherry-picked into `next` as b2cad5c56f,3b9a62d976,f864baac02,
+  3d7c075f63 respectively; product/rule content matches.
 - The cloud scripts share device-specific settings archive discovery, read
   both OS suffixes but retain the ROCKNIX writer contract, preserve populated
   settings tiers and explicit empty content roots, propagate settlement/follow
@@ -77,7 +80,7 @@ pins need the owner's disposition under the candidate preflight rule.
   Tiny5 Duo source/OFL and generated wordmark are retained. Native make and
   in-memory production rendering pass640x480 at0/90/180/270 and1280x960.
   GitHub full-hash archive SHA256 f989e6e1f0e2f5db5350b9e429231a12f572e2ba71652ba68ac4311a7014b490.
-- Current distribution edits pin ES/splash, set DISTRONAME=RASTERATOPS,
+- Committed distribution changes pin ES/splash, set DISTRONAME=RASTERATOPS,
   OS_VERSION=0.0.1 and IMAGE_SUFFIX=from-ROCKNIX. DISTRO, OSNAME, partition
   labels, kernel hostname, commands/settings/paths remain RC2-compatible.
   Manual updater and statistics shims are inert; timer symlinks to /dev/null.
@@ -103,46 +106,51 @@ pins need the owner's disposition under the candidate preflight rule.
 
 ## Live jobs and immediate next commands
 
-- Full host suite rerun job1165475; watcher details in
-  `last-good-qualified.status`, files `last-good-qualified.{log,rc,pid}` under
-  the temp directory. Started21:08UTC. The preceding last-good-final run ended
-  with one import-path harness failure and one missing WebKit tarball SKIP;
-  both are fixed (parent package added to PYTHONPATH, verified archive copied
-  into the shared source cache). Do not edit the runner during this rerun.
-  Launch future runs through Python Popen(start_new_session=True) with
-  SIGINT/SIGQUIT reset to SIG_DFL; ignored SIGINT invalidates cancellation tests.
-- Current source preflight runs to `rc-preflight-current.{log,rc}` in temp.
-  It is an inventory, not a pass: retained pins, old acceptance rows and open
-  runtime checkboxes remain. Do not confuse freshness0 with rc-preflight0.
-- No build or VM is running at this checkpoint. No shell tools besides the
-  full host suite are intentionally held in flight; verify before edits.
+- Corrected full host suite completed with rc0:1367 harness PASS,0 FAIL,
+  0 SKIPPED; all72 focused cloud cases PASS, plus the upstream award-parity
+  suite. Receipt: `docs/qa-logs/2026-10-02-candidate-preflight/full-host-suite.log`.
+  Temp files `last-good-qualified.{log,rc,status}` retain the raw run. Its
+  job1165475 and watcher1200633 are historical now, not processes to stop.
+  No test, build or VM job remains intentionally running at this checkpoint.
+  Future long-job watchers must run in the same host namespace as the job;
+  sandbox ps cannot see the host PID. For cancellation tests reset SIGINT and
+  SIGQUIT to SIG_DFL when launching the detached process through Python.
+- Historical source preflight at21:05 ended1; `rc-preflight-current.{log,rc}`
+  in temp describes dbbbdc73c4 and the old acceptance file, not the current
+  tree. Rerun on the final integrated/build tree after disposition changes.
+  Freshness0 is not rc-preflight0. Five audit findings had no bug label and
+  were omitted by this historical inventory; the labels are now corrected.
+- No build or VM is running at this checkpoint. No shell runner is intentionally held in flight; verify before edits.
 
 ## Next steps, in order
 
-1. Complete the corrected host run and retain its final receipt. The import
-   path and missing-source fixes are already in place; do not repeat them.
-2. Finish and commit the prepared step3 inputs, integrate new distribution
-   commits by cherry-pick into clean `next`. Preserve the separate cloud-epic
+1. Read the final passing host receipt; do not repeat the suite without a
+   relevant source change. The import path and source-cache fixes are complete.
+2. The implementation inputs are already committed/integrated. Commit the
+   final receipts and updated handoff next. Preserve the separate cloud-epic
    worktree's held changelog. Confirm the pin answer before updating #361/#362
    and adding accepted rows; do not reinterpret a timeout as approval.
 3. Update `docs/releases/rc-accept.txt` against current facts: D-WORKFLOW-111's
    frozen-base row is corrected and the stale proxy acceptance removed; proxy/libsoup
    choices need their disposition. Each fixed issue needs a code trace and
-   Already written line. #384 needs its own source trace after commit.
+   Already written line. #384's source trace is posted; add its integrated commit when logging QA.
 4. Cold-build GENERIC_X64 under `build.RASTERATOPS-GENERIC_X64.x86_64`.
    Build worktree `/workspace/repos/rocknix.worktrees/generic-x64`, branch
    build/generic-x64 at b2378d9c33196f24066f1bcd233e14fa88211001. Only generated
    documentation was dirty; inspect, restore only that generated file, then
    ff-only to integrated next. Never rename the warm ROCKNIX build root.
    Follow `/workspace/tmp/rocknix-session/build-x64-run101.sh` for mounts,
-   replacing the warm-clean step and naming this new cold run. Digest pinned
+   replacing the warm-clean step and EVERY hardcoded build-root reference,
+   including the failure thread-log collector, and naming this new cold run.
+   No cold launcher exists yet. Digest pinned
    in Makefile: ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39.
    Build as max, with main.git and `/workspace/cache/rocknix-sources` mounts.
    `tools/build-preflight` was READY:47GB RAM available,1.9TB free, no guests.
    Record actual input commits/digest/concurrency, source archive index and
    log. Launch with pidfile/resultfile and `tools/watch-job`; record the live
    watcher. Candidate storage is local, by digest, and QA writes outside it.
-5. Qualify exactly that stored artifact: full `tools/vm-qa` (all15 suites),
+5. Qualify exactly that stored artifact: full `tools/vm-qa` (all15 default suites plus the required opt-in
+   link/ra-offline proofs;17 suites are declared),
    RC2 upgrade rehearsal, WebDAV and S3, `tools/cloud-pair-migration`, promoted
    guest proof order H,A,C,D,B,E,I,J,K,L,F,G,T08,T11,T12 with per-case resets,
    time-to-play, #364 five-sample legacy/current overhead<=30ms, startup card
@@ -171,8 +179,10 @@ pins need the owner's disposition under the candidate preflight rule.
 - `tools/rasteratops-vm-cloud-epic` has not been exercised against an image;
   a successful shell syntax/negative control is not proof of its UI walk.
   T23 interrupted content retry and future fleet-marker version handling need
-  the #365 evidence; #356 design note is still owed. D-CLOUD-169 requires fleet
-  updates first; RC2 is not claimed to understand a new layout marker.
+  the #365/#356 evidence. `docs/rasteratops/cloud-layout.md` now records the
+  implemented transition and the unfinished numbered/future-version contract.
+  D-CLOUD-169 covers fresh/empty joins and mixed roots; it does not require
+  fleet-wide upgrades or prove old builds understand a future marker.
 - The cloud-epic distro worktree holds an uncommitted changelog whose “no sync
   checks the folder” claim is false. Preserve then reconcile it against the
   final candidate; do not overwrite the owner's held work.

@@ -2,6 +2,12 @@
 
 These are host source receipts, not image qualification.
 
+`full-host-suite.log`: the final corrected run exits0 with1367 harness PASS,
+0 FAIL and0 SKIPPED. The nested focused runner passes all72 cloud cases;
+the upstream award-parity suite also passes. Both the corrected import path
+and verified WebKit2.54.1 source cache are used. Implementation source is
+bd033f8adf, integrated on next as3d7c075f63.
+
 - `identity-source.log`: all source identity contracts pass in a
   network-isolated filesystem. `identity-template-negative.log` applies only
   the new name/version templates to the preceding source and must fail.
