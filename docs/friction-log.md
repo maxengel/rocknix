@@ -68,3 +68,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-02 21:12 UTC -- a watcher in the sandbox could not see its host job and falsely reported it dead; the replacement runs in the host process namespace -- guard: live status file and actual host PID read -- issue: #383
 
 - 2026-10-02 22:28 UTC -- the first-release status inherited RC2 bug waivers and overlooked a confirmed recovery race labelled only audit; generic VM pass counts also hid unfinished version/retry/actor coverage. Removed old waivers, exposed #320 to the gate, and reconciled each first-release goal to source and artifact evidence. Guard: tools/rc-preflight bug gate plus docs/rasteratops/release-readiness.md; issue: #385.
+
+- 2026-10-02 22:42 UTC -- a handoff command copied from the ES CMake target could not run because host CMake is absent; even in a CMake environment it needs explicit RapidJSON headers. The resume now gives the equivalent g++ command, compiled and exercised against the existing8-case suite. Guard: docs/qa-logs/2026-10-02-readiness/handoff-proof.md and retained compile/baseline receipts; issue: #368.
