@@ -9,7 +9,7 @@ Every number below was read on 2026-09-30 from the vendor's own page or API, exc
 | Need | Now | Later |
 | --- | --- | --- |
 | The secret store, OpenBao in a container (#347) | one tiny always-on VM, no public ports | the same |
-| The agent's host, rasterabot (#348) | one small VM: `gh`, git, Node 24 for the Facilitator, Python for the mail SDK, ssh to serval over the tailnet | the same |
+| The agent's host, blitterbot (#348; renamed 2026-10-02, D-WORKFLOW-136) | one small VM: `gh`, git, Node 24 for the Facilitator, Python for the mail SDK, ssh to serval over the tailnet | the same |
 | A runner or a cloud build box (#344 P5, D-WORKFLOW-084) | none | a 24 to 32 vCPU, 64 to 128 GB, 500 GB+ NVMe machine, or bare metal, for cold builds and hosted QA experiments |
 | The placeholder site (#345) | GitHub Pages, no VM | the same |
 | Domain and mail | Hostinger | Hostinger |
