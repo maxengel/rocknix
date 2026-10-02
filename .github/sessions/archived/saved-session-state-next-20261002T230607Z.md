@@ -14,31 +14,8 @@ not RC-ready.** No combined branded 0.0.1 image exists. Keep 0.0.1 as working
 version; the owner's optional 1.0.0 suggestion did not authorize a rename.
 Do not restart the initial audit or treat its completion as product acceptance.
 
-## Current priorities and naming — #388
-
-The binding running order is the GitHub milestone body:
-https://github.com/rasteratops/distribution/milestone/7,
-now named **M7: Rasteratops 0.0.1**. D-WORKFLOW-139 and the newly adopted
-`.claude/rules/milestone-phase-naming.md` make it authoritative. The rules now
-number30; the delivery/futro/retro naming references resolve locally.
-
-**Current priority: M7.P1** state/migration/recovery (#365/#356/#320).
-Then M7.P2 qualified inputs; M7.P3 cold build plus image qualification;
-M7.P4 approved independent fixes audit; M7.P5 separately gated release
-staging. M7.P0 records the tracking-convention prerequisite #388. Open issue
-titles now carry their phase; #383/#344/#354 are milestone-wide umbrellas.
-M comes from the milestone name, not GitHub's ordinal; issue numbers are
-references, not priority. Closed issue titles and #344's historical contract
-section numbers are preserved. See the milestone for their explicit mapping.
-
-When work starts/finishes or priorities change, update current/next work,
-phase status and evidence in that body, align affected open titles, and
-read back the live result in the same session. Keep this checkpoint and
-secondary plans aligned. Image-only criteria remain open until an engineering
-build provides their proof; they do not prohibit creating that build.
-
-> Saved: 2026-10-02T23:08:50Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261002T230607Z.md.
+> Saved: 2026-10-02T22:36:11Z. Branch: feature/conflict-resolution.
+> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261002T223611Z.md.
 
 ## Authorization and worktrees
 

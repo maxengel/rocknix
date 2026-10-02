@@ -5,6 +5,13 @@ epic: #354. This assesses the first Rasteratops release, not a renewal of
 RC2's exceptions. Keep 0.0.1 as the working version. The owner's offer of
 1.0.0 does not change the acceptance criteria or authorize a rename.
 
+The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
+is the binding **current** execution order (D-WORKFLOW-139, #388). This document
+retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
+P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
+Current priority is M7.P1. Update the milestone and affected open issue titles
+when priorities change; issue numbers are references, not queue positions.
+
 **Verdict: not ready to call a build an RC.** No combined branded 0.0.1
 image exists yet. Several fixes have strong host evidence, but the cloud
 migration contract and proxy refresh need implementation, older known
@@ -127,31 +134,31 @@ five-seat council is required to resolve these first-release defects.
 
 ## Ordered route to an RC
 
-1. **State contract and negative controls:** #356 versions, numbered steps,
+1. **M7.P1 — State contract and negative controls:** #356 versions, numbered steps,
    interruption/retry/fleet; #320 recovery lock; #365 actor coverage. A new
    build cannot retroactively teach RC2 to understand future markers. State
    the supported older-build boundary and prove compatible behaviour; do not
    invent a fleet-wide-upgrade prerequisite from D-CLOUD-169.
-2. **Qualified source inputs:** #361 proxy preservation, freshness gaps,
+2. **M7.P2 — Qualified source inputs:** #361 proxy preservation, freshness gaps,
    changed-package checks and relevant host suites; #310/#327/#332 software
    evidence and #371/#367 host gates. Diagnostic VM images here are
    engineering builds, not RCs.
-3. **Freeze and cold build:** record distro/ES/splash commits, container
+3. **M7.P3 — Freeze and cold build:** record distro/ES/splash commits, container
    digest, source inventory and concurrency; build under RASTERATOPS. Store
    actual artifacts with manifest/digests, verify before/after QA. Never
    rename a warm root or select a newest-date glob.
-4. **Qualify that image:** clean install, RC2 upgrade, 15 default vm-qa
+4. **M7.P3 — Qualify that image:** clean install, RC2 upgrade, 15 default vm-qa
    suites plus required link/RA opt-ins, WebDAV/S3, guest pair, independently
    reset promoted cases and failing controls, future-marker/retry cases,
    writer-shaped archives, pending subset flush, memory/launch/timing,
    boot/card/update/identity frames at 640×480 and Nova's 1280×960 in English
    and French, image sweeps and licence/source evidence. Close software bugs
    with traces and `Already written:` treatment of existing state.
-5. **Independent fixes audit:** approved primary plus Fable 5.1/xhigh through
+5. **M7.P4 — Independent fixes audit:** approved primary plus Fable 5.1/xhigh through
    verified Facilitator. Do not restart #375 or count blind/refutation as
    additional seats. Resolve findings; changed product inputs require rebuild
    and renewed affected evidence before an RC claim.
-6. **Release staging:** exact manifest-bound draft/source bundle, release/
+6. **M7.P5 — Release staging:** exact manifest-bound draft/source bundle, release/
    adoption/recovery notes and docs. RG35XX SP migration and other supported
    devices' smoke facts remain named per-action device work; attach only
    qualified assets. Publication remains separately authorized.
@@ -160,3 +167,8 @@ Can this be done on the VM? **Yes** for software acceptance, with synthetic
 providers and hardware-path fixtures. Actual board boot, boot-medium/migration
 and physical LED/panel facts belong in `docs/releases/device-facts.md`.
 No personal cloud is needed to prove the state machine or recovery paths.
+
+Image-only criteria remain open until an engineering build produces their
+evidence; they block RC designation, not that build. #344's old P0–P6 labels
+are contract sections, explicitly mapped in the milestone body, not M7 phase
+numbers. Milestone-wide delivery/release/cloud umbrellas omit P in their titles.

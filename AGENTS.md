@@ -24,7 +24,7 @@ file is right and this file has a bug.
 **Canonical deep-dive docs (this file summarizes; they are authoritative):**
 
 - `packages/README.md` — the authoritative `package.mk` format reference.
-- `.claude/rules/*.md` — the canonical guides, all 29, listed below with their one-line
+- `.claude/rules/*.md` — the canonical guides, all 30, listed below with their one-line
   descriptions and when each loads. `instruction-files.md` is their index and carries the
   front-matter standard (D-WORKFLOW-009). Open the every-session ones before starting;
   open a scoped one before touching its paths.
@@ -152,6 +152,10 @@ No Conventional Commits. Scope by package or device, matching history:
   (D-WORKFLOW-005): it cannot tell a checkout from hours of build output.
 - Issues go on the fork: always `gh --repo rasteratops/distribution` (`gh` defaults to upstream
   here, which has Issues disabled).
+- The milestone body is the current ordered plan: current/next work, dependencies
+  and exit evidence. Keep open titles aligned as `M7.P1: ...`; M comes from the
+  milestone name, P from its body. Update both when priorities change; preserve
+  closed titles (`milestone-phase-naming.md`, D-WORKFLOW-139).
 - User-facing behavior changes need a follow-up docs PR to the separate
   `ROCKNIX/rocknix.org` repo — code and the public docs must not drift.
 - Every package the fork introduces is at its latest upstream release or pinned with a
@@ -226,6 +230,7 @@ every-session ones at the start of a session and a scoped one before touching it
 - `issue-tracking.md` -- Where to file issues / tracking lists for this working copy, and how they are structured.
 - `learning-capture.md` -- Capture-learning loop: when storing a memory, also consider an instruction-file abstraction and append to the dated work log.
 - `least-surprise.md` -- Surprise the player as little as possible: things work as they expect and the same way every time. The tie-breaker for interface and sync decisions.
+- `milestone-phase-naming.md` -- Milestone bodies hold the current ordered priorities; milestone/phase prefixes identify planned work independently of issue chronology. Read before creating, moving or renaming milestone work.
 - `player-language.md` -- Player-facing language is clear first, then as short as it can be while still clear, and sized to the space it is shown in. Applies to every label, dialog, card line and script sentence.
 - `release-candidates.md` -- The standard operating procedure for every release candidate: nothing behind before the cut, a clean baseline, the candidate's build, every test, play-testing on the test device, the call, the two-agent upstream audit, then the submission and builds for every test device (D-WORKFLOW-047).
 - `time-to-play.md` -- Time to play -- from the interface to a game's first frame, and from one game's exit to the next -- is a first-class goal that weighs on every cloud, sync and interface decision.

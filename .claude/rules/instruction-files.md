@@ -107,6 +107,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `fork-workflow.md` | the branch model, and building an upstream PR by content so no personal path leaks | `**` |
 | `instruction-files.md` | where the rules live, how they load, the front-matter standard, and this index | `**` |
 | `issue-tracking.md` | issues on the fork only; Milestone → Epic → Issue; what a ticked acceptance criterion means | `**` |
+| `milestone-phase-naming.md` | milestone bodies hold current ordered priorities; M/P issue titles identify placement, not issue chronology | `**` |
 | `learning-capture.md` | a learning becomes a rule, a tool or a work-log entry — never only a memory | `**` |
 | `upgrade-and-install.md` | every change lands on a device that already has state; check the upgrade and the clean install | `**` |
 | `worktrees.md` | one worktree per branch under `../rocknix.worktrees/`, build worktrees on `build/*`, removal via `tools/fork-worktree` | `**` |

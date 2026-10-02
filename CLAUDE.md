@@ -19,7 +19,7 @@ a feature worktree, or read the rules from `next` (#367).
 - `packages/README.md` — the authoritative `package.mk` format reference.
 - `.claude/rules/*.md` — the canonical scoped guides, **loaded automatically**: a rule with a
   `paths:` glob loads when a matching file enters context, one without loads every session.
-  All 29 of them, indexed in `instruction-files.md` (which also carries the front-matter
+  All 30 of them, indexed in `instruction-files.md` (which also carries the front-matter
   standard, D-WORKFLOW-009), so nothing is reachable only by accident:
 
   | Always (no glob, or `paths: "**"`) | Scoped |
@@ -127,6 +127,7 @@ No Conventional Commits. Scope by package or device, matching history:
 - Feature work: branch `feature/<name>` from `next` in a worktree at `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
 - Upstream PRs use a throwaway branch built **by content**: `git checkout next -- <the feature paths>` onto a detached `upstream/next`, one commit. The old `git rebase --onto upstream/next next pr/<name>` recipe is retired — it produces an empty branch, silently, once the feature has been merged into `next`. `.githooks/pre-push` guards `pr/*`; it is the backstop, not the plan.
 - Issues go on the fork: always `gh --repo rasteratops/distribution` (upstream has Issues disabled).
+- The milestone body is the current ordered plan: current/next work, dependencies and exit evidence. Keep open titles aligned as `M7.P1: ...`; M comes from the milestone name, P from its body. Update both when priorities change; preserve closed titles (`milestone-phase-naming.md`, D-WORKFLOW-139).
 - User-facing behavior changes need a follow-up docs PR to the separate `ROCKNIX/rocknix.org` repo.
 - Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`. A learning that is a *procedure* becomes a tool or a flag, not prose (`learning-capture.md` § 3).
 - Decisions go in `docs/decision-register.md` the same session they are made, and are cited by ID rather than re-argued; the table is **append-only** (`decision-register.md`). Out-of-band maintainer requests become fork issues the same session, quoting their words (`issue-tracking.md`, D-QA-012).
