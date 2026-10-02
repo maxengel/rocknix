@@ -182,8 +182,11 @@ class Guest:
             return 255, ""
 
     def put(self, local, remote):
-        subprocess.run(["scp", "-q", "-P", self.port] + self._opts() + [local, self.host + ":" + remote],
-                       capture_output=True)
+        """scp's exit status: a copy that failed is said by the caller, never
+        assumed done (a missing directory on a fresh guest made the conf
+        copy fail silently, and two comparisons timed syncs to nowhere)."""
+        return subprocess.run(["scp", "-q", "-P", self.port] + self._opts() + [local, self.host + ":" + remote],
+                              capture_output=True).returncode
 
     def drop_master(self):
         subprocess.run(["ssh", "-O", "exit", "-o", "ControlPath=" + self.cp,
@@ -370,7 +373,8 @@ def ensure_rom(g, rom, workdir):
     local = os.path.join(workdir, "TTProbe.gb")
     build_gb_probe(local)
     g.sh("mkdir -p /storage/roms/gb")
-    g.put(local, GB_PROBE)
+    if g.put(local, GB_PROBE) != 0:
+        sys.exit("time-to-play: could not copy the probe ROM to the guest's " + GB_PROBE)
     return GB_PROBE, True
 
 
@@ -926,12 +930,20 @@ def normalise_routes(g, routes):
 
 
 def set_conf(g, text):
+    # A fresh image has no /storage/.config/rclone -- the setup wizard makes
+    # it -- so the copy is preceded by the directory, and a copy that fails
+    # stops the run: on runs 99 and 100's comparisons it failed silently,
+    # the guest had no remote, and every cell timed a sync that reached
+    # nothing (2026-10-02; vm-qa makes the directory before it seeds).
     fh = tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False)
     fh.write(text)
     fh.close()
-    g.put(fh.name, RCLONE_CONF)
-    g.sh("chmod 600 " + RCLONE_CONF)
+    g.sh("mkdir -p " + os.path.dirname(RCLONE_CONF))
+    rc = g.put(fh.name, RCLONE_CONF)
     os.remove(fh.name)
+    if rc != 0:
+        sys.exit("time-to-play: could not write the guest's %s (scp exited %d)" % (RCLONE_CONF, rc))
+    g.sh("chmod 600 " + RCLONE_CONF)
 
 
 # --------------------------------------------------------------------------
@@ -1076,11 +1088,15 @@ def main():
     def restore():
         for f in fixtures:
             f.down()
+        # Put back as found, and said when it could not be: a restore that
+        # fails leaves the guest on the run's settings.
         if os.path.exists(saved_conf) and os.path.getsize(saved_conf) > 0:
-            g.put(saved_conf, RCLONE_CONF)
+            if g.put(saved_conf, RCLONE_CONF) != 0:
+                print("time-to-play: could not put the guest's rclone.conf back", file=sys.stderr)
             g.sh("chmod 600 " + RCLONE_CONF)
         if os.path.exists(saved_cloud) and os.path.getsize(saved_cloud) > 0:
-            g.put(saved_cloud, CLOUD_CONF)
+            if g.put(saved_cloud, CLOUD_CONF) != 0:
+                print("time-to-play: could not put the guest's cloud_sync.conf back", file=sys.stderr)
         g.sh("ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0 2>/dev/null; "
              "ip route del blackhole 10.0.2.2/32 2>/dev/null; true")
         g.sh(". /etc/profile; set_setting cloudsaves.startup %s; set_setting cloudsaves.gameexit %s"
@@ -1152,10 +1168,11 @@ def main():
             report["remotes"] = g.sh(
                 "grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' " + CLOUD_CONF)[1]
         g.sh(". /etc/profile; set_setting cloudsaves.gameexit 1", timeout=120)
-        # A guest booted a moment ago may not reach the cloud yet: one probe
-        # straight after a reboot read "no" on a guest that answered a minute
-        # later, and the whole cell then timed a sync that did nothing. Up to
-        # a minute, then the answer stands (and a "no" still fails the run).
+        # Probed for up to a minute, for a guest whose link is still coming
+        # up; then the answer stands, and a "no" still fails the run. (The
+        # "no" that runs 99 and 100's comparisons read was a conf never
+        # written -- set_conf -- not a slow link, which this loop was first
+        # added for on a wrong reading, 2026-10-01.)
         for _ in range(12):
             report["remote_reachable"] = g.sh(
                 "rclone lsd qa-cloud: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 "
