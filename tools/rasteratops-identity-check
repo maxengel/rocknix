@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Check 0.0.1 identity inputs and retained RC2 contracts (#337, #383).
+
+This source check does not replace clean/upgrade VM frames and network proof.
+Use --tree to test a scratch tree, including a template-only negative control.
+"""
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--tree", type=Path, default=Path(__file__).resolve().parent.parent)
+parser.add_argument("--es", type=Path, required=True)
+args = parser.parse_args()
+root, es = args.tree.resolve(), args.es.resolve()
+failures = 0
+
+
+def check(ok, label):
+    global failures
+    print(("PASS " if ok else "FAIL ") + label)
+    failures += not ok
+
+
+def read(path):
+    try:
+        return path.read_text()
+    except OSError:
+        check(False, "read " + str(path))
+        return ""
+
+
+def value(text, name):
+    match = re.search(r'^\s*' + re.escape(name) + r'="([^"]*)"', text, re.M)
+    return match.group(1) if match else None
+
+
+options = read(root / "distributions/ROCKNIX/options")
+version = read(root / "distributions/ROCKNIX/version")
+for name, expected in [("DISTRONAME", "RASTERATOPS"), ("OSNAME", "rocknix"),
+                       ("DISTRO_BOOTLABEL", "ROCKNIX"), ("DISTRO_DISKLABEL", "STORAGE")]:
+    check(value(options, name) == expected, name + " = " + expected)
+check(value(version, "OS_VERSION") == "0.0.1", "semantic OS version")
+check(value(version, "IMAGE_SUFFIX") == "from-ROCKNIX", "RC2 adoption filename suffix")
+for file in ["packages/linux/package.mk", "projects/ROCKNIX/packages/linux/package.mk"]:
+    check('--set-str CONFIG_DEFAULT_HOSTNAME "ROCKNIX"' in read(root / file),
+          "retained kernel hostname: " + file)
+
+scripts = root / "projects/ROCKNIX/packages/rocknix/sources/scripts"
+with tempfile.TemporaryDirectory(prefix="rasteratops-identity-") as work:
+    work = Path(work)
+    marker = work / "external-call"
+    # Observe old query paths without reaching the network. Unexpected commands
+    # and nonzero statuses fail; no personal config is sourced by the new shims.
+    for command in ["curl", "wget", "ping", "get_setting", "set_setting", "logger"]:
+        stub = work / command
+        stub.write_text('#!/bin/sh\nprintf called >> "$IDENTITY_CALL_MARKER"\nexit 99\n')
+        stub.chmod(0o755)
+    (work / "profile").write_text(":\n")
+    env = {"PATH": "/work:/usr/bin:/bin", "HOME": "/work",
+           "IDENTITY_CALL_MARKER": "/work/external-call"}
+    sandbox = ["/usr/bin/bwrap", "--unshare-all", "--die-with-parent",
+               "--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin",
+               "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64",
+               "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+               "--dir", "/etc", "--ro-bind", str(work / "profile"), "/etc/profile",
+               "--dir", "/storage", "--ro-bind", str(scripts), "/source",
+               "--bind", str(work), "/work", "--chdir", "/work"]
+    cases = [("rocknix-update", ["check"], 1),
+             ("rocknix-update", ["--help"], 0),
+             ("rocknix-update", ["force"], 1),
+             ("rocknix-update", ["20261001"], 1),
+             ("rocknix-report-stats", [], 0)]
+    for script, argv, expected in cases:
+        source = read(scripts / script)
+        check(not re.search(r"https?://(?:update|stats)\.rocknix\.org", source),
+              "retired endpoint absent: " + script + " " + " ".join(argv))
+        try:
+            run = subprocess.run([*sandbox, "/bin/sh", "/source/" + script, *argv], env=env,
+                                 capture_output=True, text=True, timeout=5)
+            silent = argv == ["check"] or script == "rocknix-report-stats"
+            output_ok = not run.stdout if silent else "manual updates" in run.stdout
+            check(run.returncode == expected and output_ok and not run.stderr
+                  and not marker.exists(), "inert legacy entry point: " + script + " " + " ".join(argv))
+        except (OSError, subprocess.TimeoutExpired):
+            check(False, "entry point failed or timed out: " + script)
+timer = root / "projects/ROCKNIX/packages/rocknix/system.d/rocknix-report-stats.timer"
+check(timer.is_symlink() and os.readlink(timer) == "/dev/null", "statistics timer masked")
+
+api = read(es / "es-app/src/ApiSystem.cpp")
+menu = read(es / "es-app/src/guis/GuiMenu.cpp")
+check('GetEnv("OS_NAME")' in api, "ES reads the displayed OS identity")
+check('if (getApplicationName() == "RASTERATOPS")\n        return false;' in api,
+      "ES refuses inherited automatic/forced update queries")
+check('_("MANUAL UPDATES")' in menu and '_("ENABLE RASTERATOPS SCREENSHOT")' in menu,
+      "manual update and screenshot rows")
+check('ENABLE ROCKNIX SCREENSHOT' not in menu, "old screenshot display literal removed")
+check(':/rasteratops-wordmark.svg' in read(es / "es-core/src/Splash.h"), "ES wordmark selected")
+recipe = read(root / "projects/ROCKNIX/packages/ui/emulationstation/package.mk")
+try:
+    head = subprocess.check_output(["git", "-C", str(es), "rev-parse", "HEAD"], text=True).strip()
+except subprocess.CalledProcessError:
+    head = None
+check(head is not None and value(recipe, "PKG_VERSION") == head, "ES recipe pins the checked commit")
+check(value(recipe, "PKG_LICENSE") == "MIT", "ES licence matches its source")
+
+art = root / "docs/rasteratops/art/rasteratops-wordmark.svg"
+theme = root / "projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next"
+paths = [art, es / "resources/rasteratops-wordmark.svg", theme / "sources/rasteratops-wordmark.svg"]
+digests = [hashlib.sha256(read(path).encode()).hexdigest() for path in paths]
+check(len(set(digests)) == 1 and art.is_file(), "ES and theme use the canonical wordmark bytes")
+check('+         <path>./rasteratops-wordmark.svg</path>' in read(theme / "patches/001-rasteratops-splash.patch"),
+      "theme selects the wordmark, retaining custom splash support")
+check('cp ${PKG_DIR}/sources/rasteratops-wordmark.svg' in read(theme / "package.mk"),
+      "theme installs its selected wordmark")
+for file in ["LICENSE.md", "TRADEMARK.md", "NAMING.md"]:
+    check(bool(read(root / file).strip()), "identity policy present: " + file)
+print(f"identity source contracts: {failures} failure(s); image qualification still required")
+sys.exit(1 if failures else 0)

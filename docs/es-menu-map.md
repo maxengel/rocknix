@@ -67,7 +67,7 @@ to decide where something belongs.
 | **SOUND** | VOLUME · MUSIC · SOUNDS |
 | **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · SYNCTHING SERVICES · VPN SERVICES · FINISH RESTORE PROCESS (only after a restore) — *no cloud group; D-UI-015/017* |
 | **SCRAPER** | tabbed: SCRAPE · OPTIONS · ACCOUNTS |
-| **UPDATES & DOWNLOADS** | DOWNLOADS · SOFTWARE UPDATES |
+| **UPDATES & DOWNLOADS** | DOWNLOADS · SOFTWARE UPDATES (`MANUAL UPDATES` on Rasteratops0.0.1; opens the release-page instructions, with no automatic-update, force or branch controls) |
 | **SYSTEM SETTINGS** | SYSTEM · HARDWARE · DEVICE · STORAGE · PERFORMANCE · TWEAKS · SUSPEND · LED HARDWARE · ADVANCED |
 
 Two placement rules the existing tree already follows:

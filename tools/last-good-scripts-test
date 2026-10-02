@@ -1963,6 +1963,10 @@ for prel in ${TPATCHES}; do
 done
 [ "${TPATCH_OK}" -eq 1 ]; check $? "the client at ${PIN:0:10} with $(echo "${TPATCHES}" | grep -c .) patch(es) applied in order, each compiled: $(cd "${T}/patched/linux/raofflineproxy" && python3 -m py_compile *.py 2>&1 | head -1 || true)ok" "a patch did not apply; the runs below are against a client the tree does not describe"
 CLIENT="${T}/patched/linux"
+# The upstream subset-award regression runs against exactly the patched
+# source above, including the HTTP queue/flush cases (#384).
+PYTHONPATH="${T}/patched:${CLIENT}" python3 -m unittest discover -s "${CLIENT}/tests" -p test_linux_award_parity.py > "${T}/award-parity.log" 2>&1
+check $? "the pinned proxy's award-parity suite, including subset game ids" "award-parity suite: $(tail -8 "${T}/award-parity.log" | tr '\n' '|')"
 {
     sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${T}/repo/fns.sh"

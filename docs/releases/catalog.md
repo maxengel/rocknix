@@ -8,6 +8,8 @@ facts -- what only a handheld can show, and when each was last seen -- are
 
 | Kept as | Cut | BUILD_ID | Built | Where it is | What it carried | Proof |
 | --- | --- | --- | --- | --- | --- | --- |
+| `x64-all-20261002-b2378d9c33` | ROCKNIX GENERIC_X64 -- run 101, D-CLOUD… | `b2378d9c33` | 2026-10-02 00:55:29-00:57:18 UTC, warm … |  |  | The pair test's negative control (the new tool against run 99) FAILED as designed. The mixed-installation test (tools/cloud-pair-migration, RC2 69e6039f8f in place beside a fresh run 101, qa-b2378d9c33-pair-migration-fr… |
+| `x64-all-20261001-cb0b051b72` | ROCKNIX GENERIC_X64 -- run 100, the clo… | `cb0b051b72` | 2026-10-01 23:38:05-23:40:58 UTC, warm … |  |  | The mixed-installation test (tools/cloud-pair-migration, RC2 69e6039f8f in place beside a fresh run 100): PASS 39/0, steps 2, 5 and 5m written for the step (5m: a guest that backed up into the earlier folder is merged b… |
 | `x64-all-20261001-041900bfa7` | ROCKNIX GENERIC_X64 -- run 99, the clou… | `041900bfa7` | 2026-10-01 20:44:10-20:46:03 UTC, warm … |  |  | The mixed-installation test (tools/cloud-pair-migration, RC2 69e6039f8f updated in place beside a fresh run 99): PASS 27/0 at 20:49, PASS 28/0 at 21:40 with the step-5 journal check (6aa3fa5ea3); its negative control wi… |
 | `x64-all-20261001-64a14539bc` | ROCKNIX GENERIC_X64 -- run 98, the clou… | `64a14539bc` | 2026-10-01 19:41:02-19:43:50 UTC, warm … |  |  | vm-qa (qa-64a14539bc-webdav-a-20261001-1945, 19:45-20:12 UTC): all fifteen suites PASS, frame-diff 0 unclaimed of 17 claimed boxes; the restore page's dimmed SETTINGS row at the rows' inset. The upgrade rehearsal from R… |
 | `x64-all-20261001-d9493fe339` | ROCKNIX GENERIC_X64 -- run 97, the clou… | `d9493fe339` | 2026-10-01 16:49:00-16:51:45 UTC, warm … |  |  | vm-qa (qa-d9493fe339-webdav-a-20261001-1653, 16:53-17:20 UTC): fourteen suites PASS; frame-diff FAIL on three boxes: the restore page's dimmed SETTINGS row drawn flush with the panel's edge (fixed in ES 551c5a762) and t… |
@@ -106,5 +108,5 @@ facts -- what only a handheld can show, and when each was last seen -- are
 | `h700-all-20260921-d55169e59e` | ROCKNIX H700 -- second release candidat… | `d55169e59ee9a11c76f808d814a686052bb4d075` | 2026-09-21 16:38-16:41 UTC, warm roots,… |  |  | GENERIC_X64 twin (run 13, same pin) on guest d: the cut S3 upload reads COULDN'T FINISH / DON'T WORRY, NOTHING CHANGED. (EN, a283f504a0) and N'A PAS PU SE TERMINER / PARAMETRES - VOUS N'ETES PAS EN LIGNE / PAS D'INQUIET… |
 | `h700-rc-20260920-77e7e97515` | BUILD_ID 77e7e975150eaf58ff0903302320df… | `-` |  |  |  |  |
 
-97 cuts with a RECORD.txt. A folder without one is an image nobody recorded, which is the
+99 cuts with a RECORD.txt. A folder without one is an image nobody recorded, which is the
 shape #257 and the runbook forbid: write the RECORD.txt before the copy.

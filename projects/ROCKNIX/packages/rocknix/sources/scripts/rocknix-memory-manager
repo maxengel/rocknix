@@ -148,7 +148,7 @@ show_status_json() {
 }
 
 show_status() {
-    echo "--- ROCKNIX Memory Manager Status ---"
+    echo "--- Rasteratops Memory Manager Status ---"
     printf "System RAM:  %s MB\n" "$TOTAL_MEM_MB"
     printf "RAM Tier:    %s\n" "$([ "$IS_LOW_RAM" = true ] && echo "Low" || ([ "$IS_MID_RAM" = true ] && echo "Mid" || echo "High"))"
     printf "SoC Tier:    %s\n" "$([ "$IS_HIGH_PERF_SOC" = true ] && echo "High Performance" || echo "Standard")"

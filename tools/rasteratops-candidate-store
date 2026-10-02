@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Keep a candidate bundle by manifest digest, without overwriting it (#344).
+
+put --store DIR --inputs INPUTS.json FILE... copies images and evidence under
+DIR/sha256/<manifest digest> using a store lock and an atomic directory rename.
+verify BUNDLE checks every byte before and after QA. QA writes elsewhere.
+This is local candidate storage; it never creates or publishes a release.
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+
+def digest(path):
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def verify(bundle):
+    manifest = bundle / "manifest.json"
+    if manifest.is_symlink() or digest(manifest) != bundle.name:
+        raise ValueError("manifest digest does not match the bundle name")
+    data = json.loads(manifest.read_text())
+    if data["schema"] != 1 or not data["files"]:
+        raise ValueError("unsupported or empty manifest")
+    for name, expected in data["files"].items():
+        if Path(name).name != name or name in {".", "..", "manifest.json"}:
+            raise ValueError("invalid artifact name")
+        path = bundle / name
+        if path.is_symlink() or not path.is_file() or digest(path) != expected["sha256"] or path.stat().st_size != expected["bytes"]:
+            raise ValueError("artifact does not match: " + name)
+    if set(p.name for p in bundle.iterdir()) != {*data["files"], "manifest.json"}:
+        raise ValueError("bundle contains unrecorded files")
+    print("PASS candidate bundle " + str(bundle))
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+sub = parser.add_subparsers(dest="command", required=True)
+put = sub.add_parser("put")
+put.add_argument("--store", type=Path, required=True)
+put.add_argument("--inputs", type=Path, required=True)
+put.add_argument("files", type=Path, nargs="+")
+check = sub.add_parser("verify")
+check.add_argument("bundle", type=Path)
+args = parser.parse_args()
+try:
+    if args.command == "verify":
+        verify(args.bundle.resolve())
+    else:
+        inputs = json.loads(args.inputs.read_text())
+        if not isinstance(inputs, dict) or not inputs:
+            raise ValueError("input record must be a nonempty object")
+        store = args.store.resolve()
+        target = store / "sha256"
+        target.mkdir(parents=True, exist_ok=True)
+        with (store / ".lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            staging = Path(tempfile.mkdtemp(prefix=".incoming-", dir=target))
+            try:
+                files = {}
+                for source in args.files:
+                    if source.is_symlink() or not source.is_file() or source.name in {"manifest.json", *files}:
+                        raise ValueError("invalid or duplicate source: " + str(source))
+                    before = digest(source)
+                    destination = staging / source.name
+                    shutil.copyfile(source, destination)
+                    after = digest(destination)
+                    if before != after or digest(source) != after:
+                        raise ValueError("source changed while copying: " + str(source))
+                    files[source.name] = {"sha256": after, "bytes": destination.stat().st_size}
+                manifest = staging / "manifest.json"
+                manifest.write_text(json.dumps({"schema": 1, "inputs": inputs, "files": files}, sort_keys=True, indent=2) + "\n")
+                for path in staging.iterdir():
+                    with path.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                bundle = target / digest(manifest)
+                if bundle.exists():
+                    verify(bundle)
+                else:
+                    # Finish writes before making the directory visible to QA.
+                    for path in staging.iterdir():
+                        path.chmod(0o444)
+                    staging.chmod(0o555)
+                    staging.rename(bundle)
+                    for directory in [bundle, target]:
+                        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            os.fsync(fd)
+                        finally:
+                            os.close(fd)
+                    verify(bundle)
+            finally:
+                if staging.exists():
+                    staging.chmod(0o755)
+                    shutil.rmtree(staging)
+except (OSError, ValueError, KeyError, TypeError) as error:
+    print("FAIL candidate store: " + str(error), file=sys.stderr)
+    sys.exit(1)

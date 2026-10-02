@@ -156,8 +156,8 @@ pre_make_target() {
   # set initramfs source
   ${PKG_BUILD}/scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(kernel_initramfs_confs) ${BUILD}/initramfs"
 
-  # set default hostname based on ${DISTRONAME}
-  ${PKG_BUILD}/scripts/config --set-str CONFIG_DEFAULT_HOSTNAME "${DISTRONAME}"
+  # Keep the RC2 network identity across the display rename (D-WORKFLOW-123).
+  ${PKG_BUILD}/scripts/config --set-str CONFIG_DEFAULT_HOSTNAME "ROCKNIX"
 
   # disable swap support if not enabled
   if [ ! "${SWAP_SUPPORT}" = yes ]; then
