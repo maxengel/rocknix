@@ -1,0 +1,47 @@
+case=settings_only_follow rc=0
+Now using /Rasteratops/Saves for your saves.
+Now using /Rasteratops/Backups for your settings backups.
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Followed: this device now uses qa:/Rasteratops/Saves, which another device already made.
+SAVES_REMOTE="/Rasteratops/Saves"
+SETTINGS_REMOTE="/Rasteratops/Backups"
+CONTENT_REMOTE="/Rasteratops/Content"
+legacy_archive=2026_10_01-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz
+backups_queries=0
+copy_or_delete_calls=0
+REPRO: old settings pointer replaced without inspecting its archives
+case=settings_only_settle rc=0
+Now using /Rasteratops/Saves for your saves.
+Now using /Rasteratops/Backups for your settings backups.
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Your cloud had nothing in qa:/ROCKNIX/Saves; this device now uses qa:/Rasteratops/Saves.
+SAVES_REMOTE="/Rasteratops/Saves"
+SETTINGS_REMOTE="/Rasteratops/Backups"
+CONTENT_REMOTE="/Rasteratops/Content"
+legacy_archive=2026_10_01-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz
+backups_queries=0
+copy_or_delete_calls=0
+REPRO: settle also replaces the old settings pointer
+case=explicit_root_follow rc=0
+Now using /Rasteratops/Saves for your saves.
+Now using /Rasteratops/Backups for your settings backups.
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Followed: this device now uses qa:/Rasteratops/Saves, which another device already made.
+SAVES_REMOTE="/Rasteratops/Saves"
+SETTINGS_REMOTE="/Rasteratops/Backups"
+CONTENT_REMOTE="/Rasteratops/Content"
+legacy_archive=2026_10_01-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz
+backups_queries=0
+copy_or_delete_calls=0
+REPRO: explicit empty content root replaced with current Content folder
+case=custom_content_control rc=0
+Now using /Rasteratops/Saves for your saves.
+Now using /Rasteratops/Backups for your settings backups.
+Followed: this device now uses qa:/Rasteratops/Saves, which another device already made.
+SAVES_REMOTE="/Rasteratops/Saves"
+SETTINGS_REMOTE="/Rasteratops/Backups"
+CONTENT_REMOTE="/Mine/ROMs"
+legacy_archive=2026_10_01-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz
+backups_queries=0
+copy_or_delete_calls=0
+CONTROL: named custom content choice retained

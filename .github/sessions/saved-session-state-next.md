@@ -6,7 +6,7 @@
 
 > **Update, 2026-10-02 05:19 UTC**: the Blitterbot migration (#374, D-WORKFLOW-136) is complete for local Git, SSH, mail and MCP integration. The maintainer confirmed the new GitHub email; old commits remain attributed and verified. Local `next` now includes the selected session records and council-instruction update (#372, D-WORKFLOW-135), so the cloud worktree above is behind those instruction/documentation changes. Its held changelog, image/QA artifacts and #365 next step are unchanged; merge the current instructions before resuming there. The branding-name correction remains on `feature/identity` at `c4a4cd188c` with #337. On the maintainer's subsequent push authorization, `next` at `f0b131f12b` and the identity branch at `c4a4cd188c` were published through the normal guards; GitHub attributes both commits to Blitterbot and reports valid signatures, and the three triggered CI runs passed (#374). The older session-branch blocker remains #371; no guard was bypassed.
 
-> **Readiness review update, 2026-10-02 06:39 UTC (#375)**: Blitterbot migration is complete. The new review is `docs/audits/2026_10_02-milestone-375-rasteratops-0-0-1/04-analysis.md`; it distinguishes current defects from stale fixtures and untested combinations. `docs/rasteratops/cloud-folder-state-table.md` and `docs/retros/2026-10-02-cloud-runs-95-101.md` now exist and the retro was propagated to the tracker. Fresh host suite: 1365/0/0; corrected RC2/run101 pair: 42/0, retained at `qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606`. Main VM report remains 14/15; no new image or product change. #376/#377 track archive-name compatibility and failed bucket listing. The formal code-auditor Milestone review is paused at Phase 4.6: automatic approval review rejected exporting internal source/evidence to the external reviewer through OpenRouter without explicit permission. Both packets are prepared, permission requested; no external model call ran. #378 / D-WORKFLOW-137 now selects Anthropic Fable 5.1 at xhigh for this OpenAI-led audit; `second-opinions/review-plan.json` records two perspectives and two calls, not a five-seat council. Do not skip the phase or claim the audit complete. The guests and server from this review are no longer running; older PIDs below are historical, never commands to reuse without verification.
+> **Readiness review complete, 2026-10-02 16:28 UTC (#375 / #382)**: `docs/audits/2026_10_02-milestone-375-rasteratops-0-0-1/04-analysis.md` and `05-punch-list.md` are the current route. The maintainer approved both Fable transfers; blind and refutation completed through the Facilitator, served Fable 5.1 at xhigh, with identity/outcome/digest checks PASS. Two perspectives (Codex/OpenAI + Fable/Anthropic), not a five-seat council. Six audit items have recorded outcomes: five open product findings in 0.0.1 (#376 archive suffix, #381 scan misses per-device backup folders, #377 failed bucket list, #379 settings-only pointer abandonment, #380 explicit content-root overwrite), plus report-quality correction resolved here. T17 settlement failure was host-reproduced and stays in #365. The state table now carries T01–T25; all model leads have artifact-based grades. Fresh host suite1365/0/0 and corrected pair42/0 remain the existing receipts; main VM14/15 and timing/card gates remain red. No new image/product change, no running review model/VM job. Next is #365's executable proof model, then the product fixes and actual OS identity/final qualification. #378's automatic version-depth thresholds remain planning guidance, not an adopted release gate. Older PIDs below are historical; never reuse them without verification.
 
 ## Start here (if this project is new to you)
 
@@ -24,8 +24,8 @@ Readiness review #375 of cloud epic #354 and the actual Rasteratops 0.0.1 OS
 identity/release work #337/#344. D-WORKFLOW-134's table and mini-retro analysis
 now exist; #365's executable cell coverage and in-tree guest proof remain open.
 No product changes were made during the review. The corrected pair test is green,
-but this does not qualify a combined branded candidate. Complete the independent
-review authorization gate, then follow the ordered route in `04-analysis.md`.
+but this does not qualify a combined branded candidate. The independent review is complete;
+follow the ordered route in `04-analysis.md` and the punch list #382.
 
 ## Completed This Session (2026-10-01 to 02)
 
@@ -70,15 +70,16 @@ Open threads:
 
 ## Next Steps
 
-1. Resume #375 at code-auditor Phase 4.6 only after explicit permission for
-   the prepared source/evidence packets to Anthropic Fable 5.1 at xhigh via
-   OpenRouter (D-WORKFLOW-137; `second-opinions/review-plan.json`). Run the blind pass, then refutation with the blind reply appended;
-   validate both provenance gates and grade findings against primary artifacts.
+1. Read the completed #375/#382 audit and its six recorded outcomes. Five
+   product findings remain open for0.0.1; the audit is complete, not the release.
+   Both approved Fable passes are done; do not call them again or ask permission
+   again. Their outputs/provenance and the exact input packets are immutable.
 2. Under #365, turn the T01–T19 model into tests and promote the guest proof
    with per-case resets and a demonstrated nonzero failure. Keep
    D-CLOUD-170–172 unless the model supplies an explicit reason to change them.
 3. Fix #366's ordinary/stale fixtures, #363's startup-card ordering, #377's
-   unknown bucket result and #376's legacy settings compatibility; resolve
+   unknown bucket result, #376's legacy settings compatibility, #381's per-device
+   archive discovery, #379's settings-only migration and #380's explicit root; resolve
    #364's measured extra listing cost. The corrected pair rerun is already
    42/0 on run101, not work to repeat without a relevant change.
 4. Implement actual OS identity under #337/#344 and qualify one frozen input
