@@ -1,0 +1,18 @@
+# Running log — Rasteratops 0.0.1 readiness review
+
+- 2026-10-02T05:54:52+00:00 — Phase 0 opened for [#375](https://github.com/rasteratops/distribution/issues/375). User requests comprehensive code/status review before resuming the candidate. Identity migration is complete. No product mutations while the audit is active.
+- Scope: milestone readiness across cloud epic #354 and release/OS identity #337/#344, concentrating on changes since accepted RC2, runs 95–101, current folder actors, and candidate gates. Inherited kernel/emulator implementations are not a fresh whole-distribution audit.
+- Baselines: instruction snapshot `next` c9625abf7398adbec57139ccc819733c6764b203; this documentation worktree a971f56ebe053fe5e01a414e7b5ea1a7101c3b10; run-101 distro b2378d9c33 and ES pin e108699ea to be independently verified.
+- Method: code-auditor Milestone phases 0–7, serial; read-only research fan-out within Phase 1; #365 state/actor table and mini-retro before folder changes (D-WORKFLOW-134). Prior summary verdicts are leads only; independent primary evidence controls new verdicts. Historical results will not be represented as fresh tests.
+- VM-first: #375 records yes, GENERIC_X64 plus synthetic cloud. Host checks cover tooling. No physical device action or release publication in this review.
+- Full issue bodies/comments cached under `/tmp/rasteratops-rc-review-20261002/issue-N.json`, fetched live for 20 linked issues. Skills and next's rules read; current instruction-tree comparison exits 0.
+
+- 2026-10-02T05:59:06+00:00 — Phase 1: two evidence-only research readers dispatched under Phase 1.4.5 (cloud epic and release/identity), no product writes or independent verdicts. Read run-101 RECORD, raw round-trip and pair logs, timing samples, cloud layout/scan actors and ES boot waiter. No KVM or render node, no saved guest socket/PID in this runtime; Docker list shows no ROCKNIX QA container. Fresh VM qualification remains unavailable here; saved evidence is explicitly historical.
+
+- Phase 1 settled: cached #356/#361 added; primary cloud/source and release decision seams read. Evidence agents returned paths/quoted criteria only. Phase 2 begins. Sandbox-only KVM absence corrected by escalated probe; actual devices exist. Host isolated suite launched; namespace preflight and network-enabled ceremony check exit 0. Two source-predicate probes recorded in evidence/: unknown bucket listing and OS-name archive selection.
+
+- Phase 2 primary verification: existing corrected pair tool on RC2/run101 with isolated scratch backend completed at 06:08:26 UTC: 42 PASS, 0 FAIL, rc receipt in `qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606`. This supersedes the earlier tool's 34/5 result for those expectations only. Opened saved E frame: card overlays folder page; production waiter/linger trace confirms why. State table and required retrospective written; product remains unchanged.
+
+- 2026-10-02T06:29:27+00:00 — Phases 2–4.5 documented: 123 exact criterion entries, cross-system review, predicate reproductions, and refutation attempts. Full host suite 1365/0/0; corrected pair 42/0. Frozen merge-base verified. Phase 4.6 external blind invocation rejected by automatic approval review; explicit permission requested for both prepared GPT Astra packets. No external model call ran, no provenance exists, and Phase 5 has not begun. Disposable pair guests are stopped and the scratch WebDAV PID is no longer running.
+
+- 2026-10-02T06:37:37+00:00 — Mini-retro propagation complete: bodies verified on ten issues; full retro on #354. Findings tracked as #376/#377. Work log and friction record appended. No product mutation and no formal audit completion while Phase 4.6 is blocked.

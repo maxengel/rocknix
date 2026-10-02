@@ -6,6 +6,8 @@
 
 > **Update, 2026-10-02 05:19 UTC**: the Blitterbot migration (#374, D-WORKFLOW-136) is complete for local Git, SSH, mail and MCP integration. The maintainer confirmed the new GitHub email; old commits remain attributed and verified. Local `next` now includes the selected session records and council-instruction update (#372, D-WORKFLOW-135), so the cloud worktree above is behind those instruction/documentation changes. Its held changelog, image/QA artifacts and #365 next step are unchanged; merge the current instructions before resuming there. The branding-name correction remains on `feature/identity` at `c4a4cd188c` with #337. On the maintainer's subsequent push authorization, `next` at `f0b131f12b` and the identity branch at `c4a4cd188c` were published through the normal guards; GitHub attributes both commits to Blitterbot and reports valid signatures, and the three triggered CI runs passed (#374). The older session-branch blocker remains #371; no guard was bypassed.
 
+> **Readiness review update, 2026-10-02 06:39 UTC (#375)**: Blitterbot migration is complete. The new review is `docs/audits/2026_10_02-milestone-375-rasteratops-0-0-1/04-analysis.md`; it distinguishes current defects from stale fixtures and untested combinations. `docs/rasteratops/cloud-folder-state-table.md` and `docs/retros/2026-10-02-cloud-runs-95-101.md` now exist and the retro was propagated to the tracker. Fresh host suite: 1365/0/0; corrected RC2/run101 pair: 42/0, retained at `qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606`. Main VM report remains 14/15; no new image or product change. #376/#377 track archive-name compatibility and failed bucket listing. The formal code-auditor Milestone review is paused at Phase 4.6: automatic approval review rejected exporting internal source/evidence to OpenRouter's pinned OpenAI GPT Astra seat without explicit permission. Both packets are prepared, permission requested; no external model call ran. Do not skip the phase or claim the audit complete. The guests and server from this review are no longer running; older PIDs below are historical, never commands to reuse without verification.
+
 ## Start here (if this project is new to you)
 
 0. **Check what you loaded.** The `CLAUDE.md` in your context should contain a paragraph that begins "Resuming work, or new to the project?". If it does not, your instructions are older than this file: read `CLAUDE.md` and `.claude/rules/*.md` from disk (or `git show next:<path>`) before trusting any of them. If you started in a worktree, also run `git diff --quiet next -- .claude CLAUDE.md AGENTS.md || echo STALE`; a stale feature worktree merges `next` first (#367).
@@ -18,7 +20,12 @@
 
 ## Current Focus
 
-The cloud folder question inside the cloud epic (#354), paused for a step back. D-CLOUD-170 (#363) replaced a folder check before every sync with a cloud folder step at the end of the setup wizard and at boot. D-CLOUD-172 (#364) stopped a backup from making an absent folder that is an earlier default. Run 101 (`b2378d9c33`) carries both and is proven: guest d's proof 34 PASS, 0 FAIL. On 2026-10-02 the maintainer asked for a step back (#365, D-WORKFLOW-134). No more folder code changes until one table exists of the folder's states and what each script and screen does in each, the open failures are classified against it, and the mini-retro has run. The same night: the work had drifted from process (#367, D-WORKFLOW-132), and this handoff was asked for (#368, D-WORKFLOW-133).
+Readiness review #375 of cloud epic #354 and the actual Rasteratops 0.0.1 OS
+identity/release work #337/#344. D-WORKFLOW-134's table and mini-retro analysis
+now exist; #365's executable cell coverage and in-tree guest proof remain open.
+No product changes were made during the review. The corrected pair test is green,
+but this does not qualify a combined branded candidate. Complete the independent
+review authorization gate, then follow the ordered route in `04-analysis.md`.
 
 ## Completed This Session (2026-10-01 to 02)
 
@@ -37,15 +44,15 @@ The cloud folder question inside the cloud epic (#354), paused for a step back. 
 
 ## In Progress
 
-Nothing is running. Left up on purpose for the next proofs:
-
-- **Guest d**: QEMU pid 2583579, pidfile `/tmp/rocknix-qemu-d.pid`. Stop it with `kill $(cat /tmp/rocknix-qemu-d.pid)`.
-- **The QA WebDAV server**: pid 868108. Stop it with `tools/cloud-test-backend down`.
+At the end of #375's verification, no review VM or scratch QA server remains
+running. The original handoff's guest-d PID 2583579 and WebDAV PID 868108 were
+historical and no longer described live processes. Verify pidfile ownership and
+command identity before a future stop; do not use those saved PID numbers.
 
 Open threads:
 
-- **The step back (#365).** The reading is done; the 01:47 entry in the 10-02 work log lists every place the folder is decided. The table is not written yet.
-  - #365's body still heads its plan "Proposed, for the maintainer's yes"; D-WORKFLOW-134 has since decided the step back itself, so edit the heading.
+- **The step back (#365).** The reading is done; the 01:47 entry in the 10-02 work log lists every place the folder is decided. The state table and mini-retro are now written; see the readiness update above. Executable coverage and proof promotion remain open.
+  - #365's heading is now reconciled to D-WORKFLOW-134; no repeat approval is required for the step back.
   - Two cases found by reading and **not run**:
     - A device on `/ROCKNIX/Saves` after another device moved, with the old root gone: the startup sync's restore half may read COULDN'T FINISH before the step follows.
     - A carried `/GAMES` that exists but is empty while the saves are in `/ROCKNIX/Saves`: the startup sync's backup may write into `/GAMES` before the step, which would then offer the move from there.
@@ -63,14 +70,29 @@ Open threads:
 
 ## Next Steps
 
-1. Write the folder state table for #365 under `docs/`, the open failures classified against it, citing D-CLOUD-171 (2) for the ordering. Change no folder code before it (D-WORKFLOW-134).
-2. Run the mini-retro on the cloud epic with the `mini-retro` skill; `tools/ceremony-check` read it at 4 of 5 active days on 2026-10-02.
-3. Then: #366 (the round-trip fixture, and the stale-name check reading `cloud_migrate_layout --superseded`), the pair test re-run on run 101, the change-log revision, #367's follow-on, #371, and #368's armature findings.
-4. Waiting on the maintainer:
-   - **The libsoup pin (#362).** The next candidate's step 0 fails until it is decided.
-   - **D-CLOUD-168's merge**, put to them to confirm or reverse on #353 (2026-10-01 15:41).
-   - **#349's settings line**, which exists in three versions: shipped `GENERIC X64, 09/30/2026`; the criterion's `FROM <label>, <date>`; and D-CLOUD-164's approved `<DEVICE>, <DATE>`, with `30 SEP 2026`.
-   - **Also**: the device facts read on the devices (#270), #344's P1 items, and #369 (parked).
+1. Resume #375 at code-auditor Phase 4.6 only after explicit permission for
+   the prepared source/evidence packets to OpenRouter's pinned OpenAI GPT Astra
+   seat. Run the blind pass, then refutation with the blind reply appended;
+   validate both provenance gates and grade findings against primary artifacts.
+2. Under #365, turn the T01–T19 model into tests and promote the guest proof
+   with per-case resets and a demonstrated nonzero failure. Keep
+   D-CLOUD-170–172 unless the model supplies an explicit reason to change them.
+3. Fix #366's ordinary/stale fixtures, #363's startup-card ordering, #377's
+   unknown bucket result and #376's legacy settings compatibility; resolve
+   #364's measured extra listing cost. The corrected pair rerun is already
+   42/0 on run101, not work to repeat without a relevant change.
+4. Implement actual OS identity under #337/#344 and qualify one frozen input
+   set: clean/RC2 upgrade, WebDAV/S3, pair, whole-boot cases, frames and timing.
+   Preserve the cloud worktree's held changelog until it accurately describes
+   the implemented behavior. #367/#368/#371 retain their separate tooling work.
+5. Candidate preflight still needs current #361/#362 dispositions and a resolved
+   dmidecode freshness query. RAOfflineProxy is now 13 commits behind as of this
+   review. D-CLOUD-168 remains the recorded operational direction; its request
+   for confirmation/reversal has not been replaced with an invented answer.
+   #349's row wording is already approved by D-CLOUD-164 and reconciled in the
+   issue; do not ask again. Broader codebase review and infrastructure topology
+   are outside 0.0.1 (D-WORKFLOW-102/113). Device actions and release publication
+   retain their specific approval gates. #369 remains parked.
 
 ## Key Files Modified
 
