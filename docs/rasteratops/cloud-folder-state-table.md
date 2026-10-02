@@ -64,8 +64,14 @@ use their deliberate-run presenter. Presence results assume successful listings.
 | T17 | Unreadable cloud / no route | Scan reports error; dismissal still reaches seeding | Join/state errors stop opening scan | Offline asks connection; online error stays on scan page | Refusal/error | Existing fallback policy tries backup on inconclusive probe | Same within automatic deadline | Refusal/error |
 | T18 | Bucket C listing succeeds, parent listing fails | Layout reader reports failed read | Same | Same | Bucket helper cannot distinguish absence/error | Helper converts failure to absence; offers and skips | Same | Same helper behavior |
 | T19 | No linked remote / unreadable config | Setup/link or report unreadable | Setup or error | No step; config error is not settlement | Existing setup/config refusal | Same | Same | Same |
+| T20 | E saves empty, old Backups holds archives | Settle can abandon settings pointer (#379) | Follow can abandon settings pointer | CREATE IT uses --apply and copies backups; scan-follow does not | Saves path sees empty; settings restore still uses old pointer until scan | Settings writes old tier independently | Saves-only rules unchanged | Same independent tier behavior |
+| T21 | Explicit CONTENT_REMOTE empty = cloud root | Settlement can replace chosen root (#380) | Join/follow can replace chosen root | Same scan transition | Saves do not decide content | Saves do not decide content | Same | Same |
+| T22 | Both old defaults hold saves; lone device | Configured root wins | Configured root wins | Same after startup | Read configured root | Write configured root | Same | Same; other old root is a coverage residual |
+| T23 | Unmarked current Content conflicts with old content | Apply may leave saves/backups current and content refused | Same on move | Same | Normal configured paths | Normal configured paths | Same | Marker/retry/fleet recovery needs a cell; not reproduced |
+| T24 | Normal per-device settings archive, no flat archive | Writer seeds/writes per-device folder | cloud_scan root listing misses it (#381) | Folder scan itself does not list archives | Settings restore knows device folders | Settings writer appends device id | Saves-only path | Saves rows not the settings scan |
+| T25 | Bucket permissions allow selected prefix but not root listing | Root-probe behavior unverified | Root probe may refuse scan | Same online scan | Parent probes differ | Existing direct behavior | Same | Permission fixture owed; no regression claimed |
 
-Orthogonal rules: a kept/custom content pointer is retained during follow/settle;
+Orthogonal rules: a named custom content pointer is retained during follow/settle, but explicit empty cloud-root selection is overwritten (#380);
 settings and content are separate tiers. A restore-finish marker gates the boot
 page; FINISH arms it and LATER postpones it. Kid/kiosk mode excludes it. Locks
 serialize transfer/move on one device, not across the fleet. A current folder
@@ -80,10 +86,14 @@ a distributed lock or a complete numbered migration engine (#356).
 | T08/T12 restore errors before follow | Existing #365 hypothesis: reproduce whole boot with old parent absent and fleet present. Do not reverse D-CLOUD-171's lock ordering without testing the replacement. |
 | T09/T11 empty exists vs absent | Existing #365 hypothesis: startup can write into an empty `/GAMES` before scan discovers saves in `/ROCKNIX/Saves`. Needs whole-boot fixture with distinguishable bytes in both roots. |
 | T13/T14 kept old folder | D-CLOUD-172 does not exempt kept folders; boot eligibility does. Record recovery and cost cases in #365's suite before changing either policy. |
-| T17 settle failure | `cloud_setup:739–740` deliberately ignores unsuccessful `--settle` and continues. Test a transient failed read followed by successful writes; document whether this exception to unknown-state refusal is intended. |
-| T18 bucket failure | New #375 finding: source-predicate probe returns an absence offer after parent `lsf` exit 5. Repair the helper's three-way result and its backup/restore callers; prove whole-script behavior on S3. |
+| T17 settle failure | `cloud_setup:739–740` deliberately ignores unsuccessful `--settle` and continues. Host production caller probe now reproduces rc124/rc1 followed by successful seeding of GAMES. #365 must prevent those writes while retaining D-CLOUD-171’s wizard continuation and prove recovery on the VM. |
+| T18 bucket failure | New #375 finding: source-predicate probe returns an absence offer after parent `lsf` exit 5. Repair the helper's three-way result and its backup/restore callers; prove backup behavior in a reachable synthetic bucket fixture and the ungated restore sibling on S3 (#377); ordinary bucket-prefixed S3 backup paths do not enter the literal old-root guard. |
 | Worker ended vs card gone | `ThreadedCloudSync.cpp:719–735` clears its instance before 1.5/5 s card linger; the boot waiter only checks the instance. Saved run-101 E frame shows the overlap. Track under #363/#365. |
 | Extra per-sync probe | D-CLOUD-172 guard costs 59 ms in saved benchmark; D-CLOUD-170's 30 ms criterion remains red. #364 must resolve against this table, not weaken the test silently. |
+| T20 settings-only | #379: preserve old archives through pointer-only follow/settle; --apply already copies the tier. Host probe is not VM qualification. |
+| T21 explicit content root | #380: distinguish missing key from an explicit empty value, including existing contradictory tests. |
+| T22/T23/T25 | #365 coverage residuals; configured-first stays, unrelated current content stays protected, no restricted-permission regression claimed without a fixture. |
+| T24 archive directory contract | #381: scan must discover the same writer-shaped archive the restore reader can use; current flat-root fixture is insufficient. |
 
 ## Test matrix contract
 

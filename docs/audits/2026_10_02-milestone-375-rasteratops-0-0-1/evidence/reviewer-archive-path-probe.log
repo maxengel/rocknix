@@ -1,0 +1,15 @@
+rclone v1.60.1-DEV
+case=production_device_subfolder rc=0
+LABEL=QA
+MINE=
+NEWEST=
+COUNT=0
+lsf --files-only --include *.{zip,tar.gz} qa:Rasteratops/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+REPRO: writer-shaped per-device archive is invisible to opening scan
+case=legacy_flat_root_control rc=0
+LABEL=QA
+MINE=2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz
+NEWEST=2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz
+COUNT=1
+CONTROL: the same archive at the flat legacy root is found

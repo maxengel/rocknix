@@ -1,6 +1,6 @@
 # Rasteratops 0.0.1 readiness review
 
-**Date:** 2026-10-02. **Request:** [#375](https://github.com/rasteratops/distribution/issues/375).
+**Date:** 2026-10-02. **Punch list:** [#382](https://github.com/rasteratops/distribution/issues/382). **Request:** [#375](https://github.com/rasteratops/distribution/issues/375).
 **Baselines:** next `c9625abf7398adbec57139ccc819733c6764b203`; run101 distro
 `b2378d9c33196f24066f1bcd233e14fa88211001`; ES
 `e108699ea313ecd5ec64b4310a4ea665e05ca19f`; identity branch `c4a4cd188c`.
@@ -21,9 +21,13 @@ boot-card overlap remain. Several whole-boot state combinations are untested.
 Blitterbot's identity migration is complete. The OS identity release is separate:
 the inspected branches still build a ROCKNIX/date-versioned image, use the old
 splash and update endpoint, and have no qualified combined RASTERATOPS 0.0.1
-image. The review found two additional compatibility/error-handling seams:
+image. The primary review found two compatibility/error-handling seams:
 changing OS_NAME hides RC2 settings archives (F-01), and a failed bucket-parent
-listing becomes an absence offer (F-02). Neither implies observed loss of saves.
+listing becomes an absence offer (F-02). Neither implies observed loss of saves. Independent review also established
+settings-only pointer abandonment (#379), an explicit content-root overwrite
+(#380), and the scan/writer archive-directory mismatch (#381). The latter is
+current, before the rename: the scan misses the per-device folders normal
+backups use. T17 failed settlement/seeding was reproduced and remains with #365.
 
 Keep the setup/boot/transfer-page settlement design. Finish #365's model-based
 proofs, repair the narrowly identified seams, integrate branding and compatibility,
@@ -40,8 +44,8 @@ they are not a percentage of product completion.
 | Verdict | Count |
 | --- | --- |
 | PASS | 20 |
-| PARTIAL | 58 |
-| FAIL | 18 |
+| PARTIAL | 56 |
+| FAIL | 20 |
 | SKIP | 13 |
 | UNTESTABLE | 14 |
 
@@ -93,11 +97,29 @@ OS_NAME, and ignored settlement failures. The two new confirmed findings are:
   its result. A synthetic `lsd=0`, bucket=true, `lsf=5` yields an absence offer
   and exit0. This contradicts D-CLOUD-172's unknown-result fallback. The restore
   helper is the sibling to inspect. Preserve present/absent/error separately;
-  a whole-script S3 fault case must demonstrate truthful outcome and retry.
+  a reachable synthetic bucket fixture must exercise the backup guard, while S3 can exercise the ungated restore sibling. Ordinary bucket-prefixed S3 backup paths miss the exact superseded-name guard.
 
 Complexity hotspots: migration's join/settle/follow/apply dispatch; the setup
 callback's continuation into seeding even after failed scan; archive parsing
 across local and cloud restoration. `GuiMenu.cpp` splitting is outside 0.0.1.
+
+Additional confirmed findings from the second opinion and primary follow-up:
+
+- **G-02 — Medium (#379):** follow/settle replaces the settings pointer after
+  testing only saves. A populated old Backups tier is never inspected or copied.
+  `--apply` already has a separate copying path; the defect is pointer-only flow.
+- **G-10 — Low (#380):** an explicit empty content root is a deliberate choice
+  to seeding, but migration overwrites it as if the key were absent.
+- **G-13 — High (#381):** `cloud_backup:2037` writes per-device archive folders;
+  `cloud_scan:210` lists only the flat tier root. The full production scan with
+  real host rclone cannot see a writer-shaped archive; the flat-root control works.
+- **A-7 — Low, resolved here:** the original PARTIAL notes were generic. All 58
+  now identify criterion-specific missing evidence; two become FAIL for G-13.
+
+Full probe outputs and primary verification are in
+`evidence/reviewer-lead-verification.md`. They establish the script-level paths;
+final-image VM regression is still required. Existing T17 seeding on settlement
+failure is reproduced and narrowed to Low under #365, not a duplicate punch item.
 
 ## Cornerstone conformance
 
@@ -132,6 +154,9 @@ invented as a fresh duplicate issue.
 | Risk | Severity | Impact | Mitigation |
 | --- | --- | --- | --- |
 | F-01 identity/archive coupling | High | Legacy settings invisible during migration/recovery | Compatible reader/writer contract and old/new image fixture |
+| G-13 archive-directory mismatch | High | Normal per-device settings backups invisible to scan | Align scan with writer/restore and use a production upload fixture |
+| G-02 settings-only migration | Medium | Old archives remain but settings pointer leaves them | Tier-aware follow/settle and restore proof |
+| G-10 explicit content root | Low | Deliberate root choice silently replaced | Distinguish missing key from explicit empty |
 | F-02 unknown bucket state | Medium | Backup skipped and wrong setup advice after provider failure | Three-way predicate and S3 failure injection |
 | T08/T11/T12 startup interactions | High verification priority | Wrong root can win or misleading startup outcome | Whole-boot byte/pointer/outcome cases; currently hypotheses |
 | Legacy extra listing | Medium | Per-exit cost contradicts accepted goal | #364 explicit decision and repeated measurement |
@@ -171,6 +196,11 @@ invented as a fresh duplicate issue.
    D-WORKFLOW-120 is the later per-asset smoke-test rule. RK3566 and upstream
    submission are outside this release.
 
+The independent pass adds priority to the route: fix #381's archive discovery
+alongside #376 before trusting any settings-restore frame; cover settings-only
+archives (#379) and explicit root choices (#380) in #365. Keep the seeding fault
+repair in #365. Corrected AC counts are documented in 02's refutation follow-up.
+
 ## Coverage boundary
 
 Examined: source/consumer paths above, run95–101 records, selected raw logs,
@@ -179,9 +209,13 @@ images, instruction/register/menu/vocabulary checks and live freshness inventory
 Host namespace restrictions required escalated execution; KVM works there.
 
 Not exercised: final branded image (not implemented), whole-boot T08/T11/T12,
-live Dropbox trust-page before/after, S3 whole-script failure probe, device boot
+live Dropbox trust-page before/after, reachable bucket/restore fault probes, device boot
 chains, runner-enabled state, whole inherited ROCKNIX codebase (D-WORKFLOW-102).
 The unchanged run101 main suite was not rerun to repeat its known fixture failure.
+Additional unverified cells: restricted bucket-list permissions, lone-device two
+old populated roots, content collision before marker publication, interruption
+between sequential pointer writes. These have #365 coverage ownership; none is
+called a reproduced product failure. Host probe details/version are explicit.
 
 ## Finding verification
 
@@ -189,6 +223,7 @@ The unchanged run101 main suite was not rerun to repeat its known fixture failur
 | --- | --- | --- | --- |
 | F-01 | High | Yes, conditional on approved rename | Exact production matcher run with both OS names; searched all archive consumers for legacy fallback. Local reader remains OS_NAME-specific. No claim that the rename already shipped. |
 | F-02 | Medium | Yes for predicate | Exact helper/control block with failed parent list returns absence offer; sibling helper and D-CLOUD-172 fallback read. Real S3 full-script execution remains fix acceptance. |
+| G-13 | High | Yes, source/host scope | prepare never appends device folder; writer does; actual scan lsf argv is nonrecursive. Full-script real local-rclone nested/flat controls reproduce the mismatch. Candidate VM UI proof remains owed. |
 | Boot card overlap (#363) | Medium | Yes | Opened E frame; mInstance clears before linger; waiter checks worker/job/GUI, not notification. Existing issue, not new punch item. |
 
 ## Second opinion
@@ -200,18 +235,57 @@ model. Lab selection follows D-WORKFLOW-137 (#378), superseding the initial
 GPT-only packet choice. This is not a five-seat council run. The Milestone blind
 and refutation passes are two calls to the same Fable reviewer.
 
-Phase 4.6 remains pending authorization to send the prepared source/criteria/test
-packets through OpenRouter. Automatic approval review rejected the original GPT
-transfer because the general review request did not explicitly authorize that
-external export. Changing reviewer does not bypass that gate. No external review
-call ran and no provenance file exists. Selected plan and reviewable packets:
-`second-opinions/review-plan.json`, `claude-brief-blind.md`, and
-`claude-brief-refutation-prepared.md`. The latter receives the blind reply before
-invocation. There are no live credentials or user cloud contents in the packets.
+The maintainer explicitly approved both transfers. Both calls completed through
+`tools/council/run invoke --member claude --provider openrouter --prompt-file
+second-opinions/<brief> --output second-opinions/<output>` (paths are relative to
+this audit folder here; the actual commands used full repository-relative paths).
+Facilitator 1.14.0; each output has a sibling `.provenance.json` below. Manual
+per-call verification and the installed review-plan checker passed actual model,
+effort, outcome, Facilitator attestation and both recorded output hashes. The
+council-research-specific lints are absent in this export; its rule's documented
+manual fallback was used. Output and receipt bytes are immutable.
 
-The current model/effort pins remain unchanged. Both identity gates and primary
-artifact grading must pass before Phase 5. A third reviewer or full council is
-an explicit depth change, not an inference from the number of calls.
+| Output | Served model | Effort | Outcome / identity | SHA256 |
+| --- | --- | --- | --- | --- |
+| claude-fable-5.1-blind.md | anthropic/claude-fable-5.1 | xhigh | success / PASS | `e1fa0466ce06157d978e5879c7549d1b683ad7e6c70097c45203028c95765644` |
+| claude-fable-5.1-audit.md | anthropic/claude-fable-5.1 | xhigh | success / PASS | `23b695f113f98473d07daefc6632e14dcb11c6edfd1b60335cd6e3a41eec9fb2` |
+
+The blind call had one HTTP429 then a successful retry; refutation succeeded on
+its first attempt. Two perspectives, one external reviewer, two verified calls.
+Inputs: `claude-brief-blind.md` and `claude-brief-refutation.md`. The latter adds
+missing same-scope source context requested by the blind reader and its reply
+verbatim. No product code changed between calls.
+
+| Seat lead | Primary grade | Artifact / disposition |
+| --- | --- | --- |
+| Blind G-01 / refutation F-01 | confirmed, conditional High | OS-name matcher probe and all named consumers; folds into #376. CLI fallback is limited to the chosen device/legacy folder, not an arbitrary fleet archive. |
+| G-02 / A-1 | agree, narrowed; Medium | Full-script layout probe: follow/settle abandons old Backups pointer; --apply copies it. New #379. |
+| G-03 / A-2 | agree, re-graded Low | Full cloud_setup fault probe rc124/1 creates GAMES; success control does not. Readable config and successful later writes required. Existing T17/#365. |
+| G-04 / F-02 | agree, narrowed; Medium | Exact predicate and restore sibling read; #377 acceptance corrected to reachable backup fixture plus S3 restore. Features-query error is a related unproven branch. |
+| G-05 | agree, narrowed | 59ms guest benchmark persists, #364. No proven handheld extrapolation; VM-first policy stands. |
+| G-06 | confirmed tracked gap | Freshness exit2, dmidecode UNKNOWN; current #361/#362 dispositions still required. |
+| G-07 | confirmed tracked gap | Run101 round-trip0/9 and bare GAMES fixture; #366 owns guard/comment-exclusion cases. |
+| G-08 | disagree, with artifact | Configured-first is explicit at cloud_migrate_layout:73–92, D-CLOUD-169, test:13345. Two-old-root lone-device residual stays #365. |
+| G-09 | could not verify defect | Overall 20s bound is distinct from per-call maxima; no slow-provider reproduction. Budget/cancellation cases remain #365. |
+| G-10 | confirmed Low | Existing root-choice test:4688–4701 versus layout probe rewriting explicit empty. New #380. |
+| G-11 | could not verify | Root probe exists, restricted permission policy untested; #365 coverage boundary. |
+| G-12 | agree, narrowed | D-CLOUD-164/167 supersede old proposals; conditional other-devices-follow wording stays #353/#365. |
+| Minor pointer-write interruption | could not verify | Sequential writes at627–640 and815–885; interruption case recorded under #365. |
+| Minor shared exit2 | disagree, with artifact | cloud_scan:124,195; distinct invocation contexts, no demonstrated behavior defect. |
+| Minor duplicated defaults | agree, narrowed | Literal roots at script/UI anchors; #356 owns future migration-contract work, no new defect. |
+| A-3 marker/content collision | could not verify | :1012–1028,1249–1259 protect unrelated content and can defer marker; recovery-cell proof owed under #365/#356. |
+| A-4 silent planning interval | agree, narrowed | Listings precede first unit at1200; no measured unacceptable latency; existing move timing scope. |
+| A-5 folder-layout question | confirmed new High G-13 | Writer:2037, restore:2020–2098, scan:210 and real local-rclone probe. README is accurate; scan misses per-device folders. New #381. |
+| A-6 provenance | agree, narrowed | Host probes confirmed; benchmark is guest-d execution in saved bench.log, not host-only. Warm-up characterization unproved. |
+| A-7 criterion-note quality | confirmed, resolved | All 58 original PARTIAL notes now specific; AC349-04/350-05 regraded FAIL. Packets retain original bytes. |
+
+**Net effect:** five audit-discovered product findings (#376/#377/#379/#380/#381)
+plus one report-quality finding resolved in this change. Three product findings
+were added by the independent passes and primary follow-up; two initial findings
+were corroborated and narrowed. Existing seeding failure was reproduced/regraded,
+not duplicated. Every numbered lead, addition and minor note has a disposition;
+source-only residuals remain explicit. Detailed checks, refutations and limits:
+`evidence/reviewer-lead-verification.md`.
 
 ## Instruction file recommendations
 
@@ -228,8 +302,8 @@ No additional generic rule or new skill is justified by this review.
 | Conformance and cross-system tables | Present in 03 |
 | Coverage boundary | Present in 02 and 04 |
 | High finding refutation | Present; F-01 conditional trigger stated |
-| Independent second opinion | Blocked Phase4.6: explicit external-transfer permission requested |
+| Independent second opinion | Complete: two verified Fable calls; every lead graded against primary artifacts |
 | Instruction recommendations | Present |
 | Visual evidence consolidation | Present; E frame opened, C/F/G limits explicit |
 | Verdict vocabulary | PASS/PARTIAL/FAIL/SKIP/UNTESTABLE |
-| Traceability and reproducibility | Source lines, scripts, logs and image IDs retained; final review after second opinion |
+| Traceability and reproducibility | Source lines, probes, logs, image IDs and immutable reviewer receipts retained |

@@ -107,7 +107,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Repository transfers and bot identity are recorded in D-WORKFLOW-112/136; the splash recipe still uses the old pin/URL. Missing: fork-owned splash pin and final all-worktree recipe/remote inventory (splash/package.mk:5–9).
 
 ### AC-344-11: The bot token's scope inventory (repositories × permissions × expiry) is recorded and an expiry reminder is configured on the mail channel.
 **Source:** #344, body checkbox 11.
@@ -116,7 +116,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-WORKFLOW-136 and #374 establish the renamed account and tested access. Missing from this review: a complete repositories/permissions/expiry inventory and the expiry-reminder receipt; successful authentication alone does not prove them.
 
 ### AC-344-12: A workflow grep finds no `pull_request`, `pull_request_target` or `workflow_run` job with `runs-on: self-hosted`; a trigger dry-run from a throwaway fork schedules no self-hosted job.
 **Source:** #344, body checkbox 12.
@@ -134,7 +134,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The self-hosted pull-request trigger remains in .github/workflows/validate-pull-request.yml:3–19. Runner enabled state, canary, permission, socket and setuid probes were not executed; no isolation or disabled-state receipt is claimed.
 
 ### AC-344-14: The build container is mirrored under fork control; the build invocation references it by `@sha256:`; `docker inspect` or a build-log line shows that digest consumed.
 **Source:** #344, body checkbox 14.
@@ -143,7 +143,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** P0 records the upstream build-container digest (docs/rasteratops/p0-read.md). Missing: a fork-controlled mirrored image and a candidate build log showing that exact digest consumed; a recorded upstream digest is only the first half.
 
 ### AC-344-15: A source-tarball archive index lists every fetched tarball with its hash, in fork-owned storage inside the backup scope.
 **Source:** #344, body checkbox 15.
@@ -152,7 +152,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The source cache/build trees exist as recorded in docs/rasteratops/p0-read.md. Missing: a complete tarball hash index bound to the candidate manifest and evidence it is in fork-controlled backed-up storage.
 
 ### AC-344-16: A snapshot ID is recorded; a representative file is restored; the restore-drill log shows the blueprint completing a warm build on a clean host with no secret present.
 **Source:** #344, body checkbox 16.
@@ -170,7 +170,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Kept candidate directories and the frozen 9fd38fa870 merge-base are verified in 01. Missing: a frozen combined-candidate manifest and proof that every candidate-store writer uses the intended flock wrapper.
 
 ### AC-344-18: The freeze is in force with the emergency exception written. -- D-WORKFLOW-111, 2026-10-01: `upstream/next` at `9fd38fa870` (fetched 2026-09-29 11:02 UTC); the exception is a security fix for a matrix target, cherry-picked by a register row.
 **Source:** #344, body checkbox 18.
@@ -235,7 +235,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** git merge-base HEAD upstream/next still returns 9fd38fa870 (01); current product base has not advanced. Missing: the same comparison bound to the final branded P2 image/manifest, which does not exist.
 
 ### AC-344-25: The RC2 guest's early signal is recorded (offered or not offered; the comparison result).
 **Source:** #344, body checkbox 25.
@@ -244,7 +244,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** P0 updater analysis establishes date/semver comparison and manual Branch B (docs/rasteratops/p0-updater.md; D-WORKFLOW-093). Missing: an RC2 guest offered/not-offered trace against the actual candidate release metadata.
 
 ### AC-344-26: A draft release exists with only the X64 asset.
 **Source:** #344, body checkbox 26.
@@ -253,7 +253,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** tools/fork-publish-release:19–38 still selects dated artifacts. Missing: a draft containing only the qualified semver X64 artifact, verified against its manifest; this review created no release.
 
 ### AC-344-27: The device image is built; the manifest's input block (distribution, ES and splash commits, container digest, source index) is diff-empty against P2's; the per-image `BUILD_ID` and hash are in the manifest and the candidate store.
 **Source:** #344, body checkbox 27.
@@ -361,7 +361,7 @@
 
 **Evidence:** docs/rasteratops/p0-read.md, p0-updater.md and support-matrix.md; distributions/ROCKNIX/options:17 and version:5; Makefile:129–130; .github/workflows/validate-pull-request.yml:3–19; tools/fork-publish-release:19–38; D-WORKFLOW-093/102/111/113/120/123/126.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** No publication action was taken in this review; D-WORKFLOW-121 still requires the release-specific yes. Missing: an immutable qualified candidate/action-log boundary, followed later by the explicit publication receipt.
 
 ### AC-344-39: Each #341 relaxation the release needs lands with a bidirectional test: the newly permitted pattern passes and the secret and PII fixtures are still blocked.
 **Source:** #344, body checkbox 39.
@@ -482,7 +482,7 @@
 
 **Evidence:** distributions/ROCKNIX/options:17; version:5; rocknix-update:10; splash/package.mk:5–9. Identity branch c4a4cd188c still has these old values. D-WORKFLOW-123/127–130; archive-identity-probe.log.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_sync.conf/defaults and cloud_migrate_layout:57–59 use Rasteratops; vocabulary check passes. Missing: clean branded-image cloud listing after saves plus settings backup, proving all three tiers and no new ROCKNIX root.
 
 ### AC-337-05: Every `/ROCKNIX` cloud path in the interface and the scripts is listed by the sweep (`docs/rasteratops/p0-sweep-hits.txt`, rule `cloud-path`, 56 lines) and each is changed or marked history in the same commit; the sweep re-run on the candidate's tree lists none as current.
 **Source:** #337, body checkbox 5.
@@ -491,7 +491,7 @@
 
 **Evidence:** distributions/ROCKNIX/options:17; version:5; rocknix-update:10; splash/package.mk:5–9. Identity branch c4a4cd188c still has these old values. D-WORKFLOW-123/127–130; archive-identity-probe.log.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The P0 sweep identifies legacy cloud-path hits; current production also intentionally reads superseded roots (cloud_migrate_layout:65). Missing: the candidate-tree reversal sweep classifying every remaining hit as compatibility/history or current behavior.
 
 ### AC-337-06: `DISTRONAME="RASTERATOPS"`: `os-release` reads `OS_NAME="RASTERATOPS"`, the images are `RASTERATOPS-<board>.<arch>-0.0.1.*`, the info page reads `OPERATING SYSTEM: RASTERATOPS` (a 640x480 frame from guest d; `/etc/os-release` from the image's SYSTEM); repositories, packages and hosts stay lowercase `rasteratops`; the cloud folder is `/Rasteratops` (D-CLOUD-158).
 **Source:** #337, body checkbox 6.
@@ -527,7 +527,7 @@
 
 **Evidence:** distributions/ROCKNIX/options:17; version:5; rocknix-update:10; splash/package.mk:5–9. Identity branch c4a4cd188c still has these old values. D-WORKFLOW-123/127–130; archive-identity-probe.log.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-WORKFLOW-129 settles the unchanged SSH credential contract. Missing: the release-note line and separate public SSH-page documentation PR carrying that decision; no new credential decision is needed.
 
 ### AC-354-01: The mixed-installation test (`tools/cloud-pair-migration` on `tools/vm-pair`): guest a updated in place from RC2's image with a `/ROCKNIX` cloud, guest b a fresh install on the same QA cloud; at the end both confs read `/Rasteratops/{Saves,Backups,Content}`, a save written on each arrives on the other, nothing was removed from `/ROCKNIX` before its verified copy, a guest that missed its step and wrote into the earlier folder is merged by MOVE (D-CLOUD-168), and the log names each step: its PASS lines, and its negative control on a build without the join (D-CLOUD-169) failing.
 **Source:** #354, body checkbox 1.
@@ -536,7 +536,7 @@
 
 **Evidence:** run101 report.md and rehearsal.log; current pair rerun 42/0 at qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606; state table and saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Fresh corrected pair log is 42/0 on RC2/run101; historical no-join negative control is in 01. Missing: the same pair proof bound to the final branded candidate plus the new settings-only/archive-path cells; existing passing saves cases do not cover them.
 
 ### AC-354-02: The rehearsal (`tools/vm-upgrade-rehearsal`) from RC2's x64 image keeps every piece of state across the update (its PASS), and a stock-shaped conf carried across (`/GAMES`, nothing in the cloud) meets the cloud folder step at the boot after rather than a dialog from the startup sync: the startup stamp's `78 no-folder` and the step's CREATE IT offer in 640x480 frames (guest d's epic proof, case E; D-CLOUD-166, D-CLOUD-170).
 **Source:** #354, body checkbox 2.
@@ -545,7 +545,7 @@
 
 **Evidence:** run101 report.md and rehearsal.log; current pair rerun 42/0 at qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606; state table and saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Run101 upgrade rehearsal passes, but saved E frame shows the outcome card over the folder page. Missing: unobstructed stock-shaped boot step and 78 no-folder trace on the final candidate (#363/#365).
 
 ### AC-354-03: `tools/vm-qa` on the candidate passes every suite, `frame-diff` against the accepted baseline explains every changed frame by one of the children, `tools/vocabulary-check` and `tools/es-menu-map-check` pass.
 **Source:** #354, body checkbox 3.
@@ -563,7 +563,7 @@
 
 **Evidence:** run101 report.md and rehearsal.log; current pair rerun 42/0 at qa-b2378d9c33-pair-migration-from-69e6039f8f-20261002-0606; state table and saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-CLOUD-164/167 settle the strings; vocabulary check passes. Missing: final French frames/string reconciliation, corrected held changelog (its no-sync-checks claim is false), and the public cloud-sync docs PR.
 
 ### AC-349-01: On the transfer page, the SETTINGS restore row's line under the label names the device the archive to be restored came from, read from the label in its file name (`backuptool` prints it; the interface reads it): a 640x480 frame from a `tools/vm-walks` walk shows `FROM <device label>, <date>`.
 **Source:** #349, body checkbox 1.
@@ -572,7 +572,7 @@
 
 **Evidence:** cloud_scan:203–227; cloud_restore:2125; backuptool:157–167; ES GuiMenu.cpp:4848–4861; D-CLOUD-162/164; saved proof case C has frames, no check calls.
 
-**Notes / gaps:** D-CLOUD-164 approved DEVICE, DATE without FROM; do not re-ask that choice. Locale date in saved frame differs from the example. More seriously, OS_NAME-based matcher loses legacy archives after rebranding (F-01).
+**Notes / gaps:** GuiMenu.cpp:4855–4871 renders DEVICE, DATE as D-CLOUD-164 approved. Missing: an asserted candidate frame produced from a real per-device uploaded archive; case C frames alone do not exercise the writer path (G-13).
 
 ### AC-349-02: `docs/es-menu-map.md` carries the SETTINGS row's two states, offered with the device and date or dimmed with `NO SETTINGS BACKUP FROM THIS DEVICE YET` (D-UI-039, D-CLOUD-162), and `tools/es-menu-map-check` passes in `tools/vm-qa`'s `menumap` suite. *(Rewritten 2026-10-01: the choice page it named is superseded.)*
 **Source:** #349, body checkbox 2.
@@ -592,16 +592,16 @@
 
 **Evidence:** cloud_scan:203–227; cloud_restore:2125; backuptool:157–167; ES GuiMenu.cpp:4848–4861; D-CLOUD-162/164; saved proof case C has frames, no check calls.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** GuiMenu.cpp:4855–4862 implements the intended dimmed row. Missing: the public cloud-sync page/PR documenting same-device selection, and a corrected scan implementation for actual uploaded archives (G-13).
 
 ### AC-349-04: After the scan page (#350), the SETTINGS restore row is offered only when the cloud's Backups folder holds an archive whose label equals this device's `cloud_device_id --label`; with the QA cloud seeded with a foreign label only, guest d's 640x480 frame shows the row dimmed with its reason, and with its own label seeded the row is offered with `FROM <label>, <date>` under it.
 **Source:** #349, body checkbox 4.
 
-**Verdict:** PARTIAL
+**Verdict:** FAIL
 
 **Evidence:** cloud_scan:203–227; cloud_restore:2125; backuptool:157–167; ES GuiMenu.cpp:4848–4861; D-CLOUD-162/164; saved proof case C has frames, no check calls.
 
-**Notes / gaps:** D-CLOUD-164 approved DEVICE, DATE without FROM; do not re-ask that choice. Locale date in saved frame differs from the example. More seriously, OS_NAME-based matcher loses legacy archives after rebranding (F-01).
+**Notes / gaps:** FAIL after refutation follow-up G-13: cloud_backup:2037 writes Backups/<device-id>/, while cloud_scan:210 lists the flat root. reviewer-archive-path-probe.log runs full cloud_scan with real local rclone: nested own archive yields MINE empty/COUNT0; flat control yields MINE. VM UI proof remains required.
 
 ### AC-349-05: A restore never takes another device's archive by default: `backuptool` restores the newest archive of this device's label, and its journal line names the label it chose; the foreign-label case on guest d leaves `system.hostname` unchanged.
 **Source:** #349, body checkbox 5.
@@ -610,7 +610,7 @@
 
 **Evidence:** cloud_scan:203–227; cloud_restore:2125; backuptool:157–167; ES GuiMenu.cpp:4848–4861; D-CLOUD-162/164; saved proof case C has frames, no check calls.
 
-**Notes / gaps:** Cloud system-only path selects device label; local backuptool deliberately retains any-device newest behavior. Scope/body must distinguish them. F-01 requires legacy-name compatibility on the final image.
+**Notes / gaps:** The UI passes the selected own archive, while direct cloud_restore:2020–2125 selects device/legacy folders and local backuptool deliberately supports recovery from any device. Missing: candidate foreign-only sentinel/journal proof and compatible old suffixes (#376); do not broaden local recovery semantics.
 
 ### AC-349-06: The scan page's line reads, while it runs, the words approved for #350 (proposed: `CHECKING WHAT SETTINGS AND CONTENT YOUR CLOUD HAS FOR THIS DEVICE...`), and the outcome vocabulary when it ends (`es-player-text.md`); frames from the walk show both.
 **Source:** #349, body checkbox 6.
@@ -619,7 +619,7 @@
 
 **Evidence:** cloud_scan:203–227; cloud_restore:2125; backuptool:157–167; ES GuiMenu.cpp:4848–4861; D-CLOUD-162/164; saved proof case C has frames, no check calls.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_scan:153–247 emits the three scan items and why protocol. Missing: asserted 640x480/French frames covering live and completed states using the approved words, not the superseded proposal.
 
 ### AC-350-01: Pressing CONTINUE on RESTORE FROM CLOUD opens a page of its own, titled for the comparison, with the live line and CANCEL as the one way out while it runs (D-UI-078); the options page follows when the listing is in. A `tools/vm-walks` frame sequence shows dialog, page, options, and no frame with a card drawn over a dialog.
 **Source:** #350, body checkbox 1.
@@ -628,7 +628,7 @@
 
 **Evidence:** cloud_scan:153–247; ES GuiMenu.cpp:5400–5433; D-CLOUD-167; vocabulary-check and es-menu-map-check logs.
 
-**Notes / gaps:** D-CLOUD-167 makes scan run on opening, before options; detailed content comparison remains after class selection. Original CONTINUE/full-scan wording is stale, not evidence that the approved flow should be reversed.
+**Notes / gaps:** D-CLOUD-167 and GuiMenu.cpp:5400–5433 place the opening scan before options. Missing: asserted candidate frame sequence with CANCEL, completed scan/options and no overlapping card; original CONTINUE-first wording is superseded.
 
 ### AC-350-02: When the comparison fails (the cloud unreachable: the dead port of `tools/cloud-test-backend`), the page says why in the outcome vocabulary (`COULDN'T FINISH - …`, `es-player-text.md`) and offers TRY AGAIN beside CLOSE; a frame shows it.
 **Source:** #350, body checkbox 2.
@@ -637,7 +637,7 @@
 
 **Evidence:** cloud_scan:153–247; ES GuiMenu.cpp:5400–5433; D-CLOUD-167; vocabulary-check and es-menu-map-check logs.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_scan:90–126 maps failed reads to outcome words and stops. Missing: candidate dead-endpoint frame and TRY AGAIN/CLOSE transition proving the page recovers after the fault is removed.
 
 ### AC-350-03: `docs/es-menu-map.md` carries the page (D-UI-039); `tools/es-menu-map-check` passes.
 **Source:** #350, body checkbox 3.
@@ -657,16 +657,16 @@
 
 **Evidence:** cloud_scan:153–247; ES GuiMenu.cpp:5400–5433; D-CLOUD-167; vocabulary-check and es-menu-map-check logs.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The inspected ES pin e108699ea is in built run101; no C++ edit in this review. Missing: a syntax-check receipt for the eventual fix pin and a corrected committed changelog (the current cloud worktree section is held).
 
 ### AC-350-05: The scan page runs `cloud_setup --content-location`, the settings-archive listing by label and `cloud_content_restore --scan` before the options page opens; the options page on guest d lists only rows the scan found (a frame per seeded case: settings for this label, settings for a foreign label only, content under `/ROCKNIX/Content`, content nowhere).
 **Source:** #350, body checkbox 5.
 
-**Verdict:** PARTIAL
+**Verdict:** FAIL
 
 **Evidence:** cloud_scan:153–247; ES GuiMenu.cpp:5400–5433; D-CLOUD-167; vocabulary-check and es-menu-map-check logs.
 
-**Notes / gaps:** D-CLOUD-167 makes scan run on opening, before options; detailed content comparison remains after class selection. Original CONTINUE/full-scan wording is stale, not evidence that the approved flow should be reversed.
+**Notes / gaps:** FAIL for normal settings uploads: source and real local-rclone probe show the opening scan omits per-device Backups subfolders (G-13). Content comparison is intentionally after class choice (D-CLOUD-167); missing candidate seeded-case frames must reflect that approved order.
 
 ### AC-350-06: Its live line says what it is checking in the words approved for it (proposed: `CHECKING WHAT SETTINGS AND CONTENT YOUR CLOUD HAS FOR THIS DEVICE...`); the string and its French land in the same commit (D-UI-051).
 **Source:** #350, body checkbox 6.
@@ -675,7 +675,7 @@
 
 **Evidence:** cloud_scan:153–247; ES GuiMenu.cpp:5400–5433; D-CLOUD-167; vocabulary-check and es-menu-map-check logs.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-CLOUD-164/167 settle the intended scan language. Missing: final source-to-French reconciliation and French scan-page frame; no repeat approval of the superseded proposed sentence is needed.
 
 ### AC-351-01: 1: the Close control sits at the bottom of the page, below the note, with at least 2rem of space above it, and a tap asks a confirmation (the safe answer first) before Escape is sent; a 390 px headless-Firefox render shows the placement, and the page's load test (the harness from #330) passes.
 **Source:** #351, body checkbox 1.
@@ -684,7 +684,7 @@
 
 **Evidence:** cloud_oauth:646–655,1016; cloud-signin-window.c:430–439; projects/ROCKNIX/filesystem/etc/machine-info; historical frames docs/qa-frames/2026-10-01/351.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Run98 phone-page CSS work is recorded in 01. Missing here: retained 390px placement/confirmation frame plus the named load-test PASS for the final page bytes; source history is not that render.
 
 ### AC-351-02: 2: the state line has at least `.75rem` above and below it in both states (`Checking…`, `Connected.`); the two 390 px renders show it.
 **Source:** #351, body checkbox 2.
@@ -693,7 +693,7 @@
 
 **Evidence:** cloud_oauth:646–655,1016; cloud-signin-window.c:430–439; projects/ROCKNIX/filesystem/etc/machine-info; historical frames docs/qa-frames/2026-10-01/351.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The phone spacing implementation is in the run98 history (01). Missing: both Checking and Connected 390px renders showing the stated spacing for the final page.
 
 ### AC-351-03: 3: every image ships `/etc/machine-info` with `CHASSIS=handset` (D-NET-016; `feature/cloud-epic` 98e1a30362) and the sign-in window sends WebKit's Mobile user agent: on guest d a page that echoes `navigator.userAgent` through the window reads `... Mobile Safari/605.1.15`, and frames of Dropbox's sign-in and trust pages from the window before and after show the touch layout; re-read on the next staging as a frame from the window at the panel's size.
 **Source:** #351, body checkbox 3.
@@ -702,7 +702,7 @@
 
 **Evidence:** cloud_oauth:646–655,1016; cloud-signin-window.c:430–439; projects/ROCKNIX/filesystem/etc/machine-info; historical frames docs/qa-frames/2026-10-01/351.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** projects/ROCKNIX/filesystem/etc/machine-info ships CHASSIS=handset (D-NET-016). Missing: guest window navigator.userAgent echo and Dropbox before/after touch-layout frames; no provider-owned page behavior was inferred.
 
 ### AC-351-04: 4: the finishing page carries the shared `STYLE` (the card, the `h1`, the note), reads as a success, and says what happens next; a frame from guest d's window shows it.
 **Source:** #351, body checkbox 4.
@@ -711,7 +711,7 @@
 
 **Evidence:** cloud_oauth:646–655,1016; cloud-signin-window.c:430–439; projects/ROCKNIX/filesystem/etc/machine-info; historical frames docs/qa-frames/2026-10-01/351.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The finishing-page style work is recorded in the run98 chain (01). Missing: final guest-window success-page frame showing the shared style, success text and next action.
 
 ### AC-351-05: Every string added has its French in the same commit where it is an interface string (D-UI-051), and `tools/vocabulary-check` passes on the scripts.
 **Source:** #351, body checkbox 5.
@@ -720,7 +720,7 @@
 
 **Evidence:** cloud_oauth:646–655,1016; cloud-signin-window.c:430–439; projects/ROCKNIX/filesystem/etc/machine-info; historical frames docs/qa-frames/2026-10-01/351.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Fresh vocabulary check passes with 165 strings. Missing: touched interface strings matched to French entries and final localized frames; vocabulary lint alone does not prove translation coverage.
 
 ### AC-352-01: `cloud_content_restore --scan` lists a pre-tier folder only when this device has a folder of that name under `/storage/roms` or the name is a supported system (`legacy_dirs` / `supported_systems`), the same rule `resolve_src` applies; a `tools/cloud-round-trip` case seeds `Photos/` and `Documents/` at the root and the scan's output carries neither line.
 **Source:** #352, body checkbox 1.
@@ -729,7 +729,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_content_restore legacy_dirs/supported_systems filtering exists and host suite is green. Missing: the named candidate VM round-trip with Photos/Documents seeded and absent from actual scan output (#366 currently blocks main round-trip).
 
 ### AC-352-02: When the content root holds no `ROMs/` and no known system folder, the page says so instead of listing: `YOUR CLOUD HAS NO ROMS OR BIOS FOLDER AT <folder>. CHOOSE THE FOLDER WHERE YOUR CONTENT IS.` (words to the maintainer for approval, `player-language.md`), with a row that opens the folder chooser; a 640x480 frame shows it.
 **Source:** #352, body checkbox 2.
@@ -738,7 +738,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** GuiMenu.cpp:5226 provides the empty-content message and chooser. Missing: asserted candidate empty-root frame in approved English/French; D-CLOUD-167, not the old proposal, controls wording.
 
 ### AC-352-03: A CHOOSE CLOUD FOLDER page (the `GuiFileBrowser` pattern fed by `rclone lsf`, `es-native-ui.md` § Reusable precedents) sets `CONTENT_REMOTE` through `cloud_setup`, and the transfer page re-reads it; the walk's frames show the chosen folder and the journal shows the `Content path` line.
 **Source:** #352, body checkbox 3.
@@ -747,7 +747,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_setup content setter and GuiMenu.cpp chooser are implemented. Missing: a candidate walk that chooses a folder, reopens the transfer page and retains its Content path journal line; explicit root also needs G-10 compatibility.
 
 ### AC-352-04: With `CONTENT_REMOTE` back at `/ROCKNIX/Content` and the QA cloud seeded with `Photos/` and `Documents/` at its root, CONTENT TO RESTORE on guest d lists only ROM systems and BIOS: the walk's 640x480 frame and the scan's output lines. (The Nova's own listing is re-read on its next staging, as a read, and noted here in a comment.)
 **Source:** #352, body checkbox 4.
@@ -756,7 +756,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Legacy-root fixtures remain legitimate migration inputs; filtering source excludes unrelated folders. Missing: asserted candidate output/frame for Photos/Documents beside ROM systems at the old root; no physical-device read substitutes for this VM case.
 
 ### AC-352-05: `docs/es-menu-map.md` carries the chooser (D-UI-039); `tools/es-menu-map-check` and `tools/vocabulary-check` pass; the cloud-sync page on the site says where the content folder is chosen (`documentation-accuracy.md`).
 **Source:** #352, body checkbox 5.
@@ -765,7 +765,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Fresh menu-map (52 screens) and vocabulary checks pass. Missing: public cloud-sync documentation PR explaining where the content folder is chosen.
 
 ### AC-352-06: When the configured content root holds no `ROMs/` and no known system folder, the scan looks under the cloud root's `/ROCKNIX/Content` (the saves root's parent, `cloud_setup:629-631`) and, finding `ROMs/` or `BIOS/` there, offers that folder first (`YOUR CONTENT IS IN /ROCKNIX/Content. USE IT?` -- words for approval) and writes `CONTENT_REMOTE` on yes; on guest d with `CONTENT_REMOTE=""` and content seeded under `/ROCKNIX/Content`, the frame shows the offer and the journal shows the `Content path` line after it.
 **Source:** #352, body checkbox 6.
@@ -774,7 +774,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-CLOUD-167 auto-applies found content; GuiMenu.cpp:5208–5238 implements that path. Missing: candidate frame plus saved CONTENT_REMOTE/journal proof when content is found only under the old derived root. The obsolete USE IT confirmation is not owed.
 
 ### AC-352-07: Only then, with nothing found under either, the chooser opens; a frame shows it with the QA cloud's root folders listed as folders to pick from, never as systems.
 **Source:** #352, body checkbox 7.
@@ -783,7 +783,7 @@
 
 **Evidence:** cloud_content_restore:1299–1308; ES GuiMenu.cpp:5206–5279; cloud_setup --content-location; saved proof F/G frame-only coverage; D-CLOUD-156/167.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** GuiMenu.cpp chooser follows an unsuccessful content search. Missing: candidate no-content walk proving its rows are selectable folders, never ROM systems, and selected folder persists.
 
 ### AC-353-01: A carried upstream `/GAMES` (a value no player typed) counts as no folder (D-CLOUD-161). At the end of cloud setup the seeding points it at `/Rasteratops` and makes the three folders without asking (D-CLOUD-169: `tools/last-good-scripts-test`'s `--settle` lines); at boot the cloud folder step offers CREATE IT / CHOOSE A FOLDER / NOT NOW (D-CLOUD-170: guest d's epic proof, case E's frame), and so does a transfer page's scan, where CREATE IT writes the three `/Rasteratops` paths (case B: the conf's three lines and `tools/cloud-test-backend ls`); with a `/GAMES` that holds files the dialog is the move naming `/GAMES` (case B0's frame).
 **Source:** #353, body checkbox 1.
@@ -792,7 +792,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Host settle cases and saved B/B0/E frames exist. Missing: per-case reset/assertions and final candidate pointer/cloud-byte proof for absent, empty and populated GAMES; T17 settlement failure remains a concrete gap.
 
 ### AC-353-02: An earlier `/ROCKNIX` folder gets one dialog, MOVE first (D-CLOUD-160): MOVE copies, verifies and deletes (the move page's frames on guest d; `tools/cloud-test-backend ls` shows `/Rasteratops` whole and no `/ROCKNIX`; a kill during the copy leaves `/ROCKNIX` intact and a second MOVE completes it); another device on `/ROCKNIX` is re-pointed at its next cloud folder step or transfer-page scan with no dialog (`tools/cloud-pair-migration` step 5's journal line, D-CLOUD-170), one that wrote there first is merged by its MOVE (step 5m, D-CLOUD-168); KEEP USING leaves a device on `/ROCKNIX` for good; NOT NOW asks again at the next boot and the next transfer page.
 **Source:** #353, body checkbox 2.
@@ -801,7 +801,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Corrected pair42/0 proves move/follow/late-writer merge on run101. Missing: final candidate interruption/resume and KEEP/NOT NOW UI cases; settings-only follow (G-02) and marker/content collision remain uncovered.
 
 ### AC-353-03: The folder is settled by the cloud folder step, at the end of cloud setup and at boot (D-CLOUD-170, #363), never by a sync: with the folder absent the startup and exit syncs end in the card's `SKIPPED - YOUR CLOUD FOLDER ISN'T SET UP YET` pointing at MANAGE CLOUD STORAGE (the startup stamp's `78 no-folder`, D-CLOUD-166), and 640x480 frames show the step at the end of setup (guest d's epic proof, case L) and at boot (cases E and I).
 **Source:** #353, body checkbox 3.
@@ -810,7 +810,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_scan owns join/follow and the boot step is implemented. Missing: asserted final setup/boot frames after the card disappears; backup still performs the accepted D-CLOUD-172 presence probe, so no-sync-checks prose must be narrowed.
 
 ### AC-353-04: The offer carries a third choice to pick a different folder (the folder chooser of #352), and its text has no icon or glyph drawn between its two sentences: a 640x480 frame from guest d and, when it is next staged, one from the device.
 **Source:** #353, body checkbox 4.
@@ -819,7 +819,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** The chooser exists in GuiMenu.cpp:5308–5433. Missing: final 640x480 offer frame proving all three choices and absence of the old glyph; a future device frame is a staging artifact, not this review’s acceptance substitute.
 
 ### AC-353-05: The words the offer uses are approved by the maintainer before the build (`player-language.md`): proposed `YOUR CLOUD HAS NO /ROCKNIX/Saves FOLDER YET.` / `CREATE IT`, `CHOOSE A FOLDER`, `NOT NOW`; their French lands in the same commit (D-UI-051).
 **Source:** #353, body checkbox 5.
@@ -828,7 +828,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-CLOUD-164 approves offer wording and D-CLOUD-158 replaces the root with Rasteratops. Missing: final French counterpart/frame; the literal old ROOT proposal in the snapshot was reconciled in the tracker.
 
 ### AC-353-06: The default folder's name (`/ROCKNIX` today, D-WORKFLOW-101; `/Rasteratops` proposed) is a register row on the maintainer's word, with D-WORKFLOW-101's mixed-installation test run before any default changes.
 **Source:** #353, body checkbox 6.
@@ -837,7 +837,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** D-CLOUD-158/159 settle Rasteratops and the new pair run42/0 verifies current migration shapes. Missing: mixed-installation proof for the final branded candidate before publication; the default-name decision is not pending.
 
 ### AC-353-07: The move carries `Saves-replaced` (the set-aside of conflict losers beside the saves folder) to `/Rasteratops/Saves-replaced` by the same copy, verify, delete, and nothing of ours remains under the old name afterwards: a `tools/last-good-scripts-test` case seeds a set-aside copy under the old layout and reads it back under the new one with the old folder gone; the round trip on the VM shows the sync's next set-aside landing under `/Rasteratops`.
 **Source:** #353, body checkbox 7.
@@ -846,7 +846,7 @@
 
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** cloud_migrate_layout:1229–1235 carries Saves-replaced and host suite covers the shelf. Missing: final candidate VM round-trip showing the next conflict loser lands under the new shelf after migration (#366).
 
 ### AC-356-01: `cloud_migrate_layout` runs numbered steps from the marker's version to the build's, each with the move dialog, each copy-verify-delete, each a journal line naming the step; a `tools/cloud-round-trip` case seeds layout 1 and ends at layout 2 with the marker written and nothing lost (hash list before and after).
 **Source:** #356, body checkbox 1.
@@ -864,7 +864,7 @@
 
 **Evidence:** cloud_migrate_layout:70,896–908,799–825; no numbered dispatch in main:910–1000; rg --files docs/rasteratops and direct read find no cloud-layout.md; issue #356 remains open.
 
-**Notes / gaps:** New-build pair follow passes; RC2 has no marker-aware path. An old image cannot be retroactively taught this. Reconcile criterion with accepted fleet staging order; do not label it passed.
+**Notes / gaps:** New-build pair follow passes; RC2 has no marker-aware path. Missing: an executable numbered-layout compatibility case consistent with fleet staging; an old image cannot be retroactively taught marker handling.
 
 ### AC-356-03: The step for `/GAMES` and `/ROCKNIX` is step 1 and is the one #353 ships; the design note lives in `docs/rasteratops/cloud-layout.md`.
 **Source:** #356, body checkbox 3.
@@ -933,7 +933,7 @@
 
 **Evidence:** cloud_migrate_layout:1277–1284; cloud_scan:153–185; cloud_backup:1674–1687; ES GuiMenu.cpp:5545–5603 and ThreadedCloudSync.cpp:719–735; host suite log; pair 42/0; saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Pair step2 and saved setup proof show join before seeding. Missing: asserted final CHECKING/MOVE/COMPLETE frame sequence with isolated preconditions and settlement fault/retry coverage (T17).
 
 ### AC-363-07: At boot, for a guest whose conf names an earlier folder it has not kept, with a remote set up, the step comes up after the startup sync's card: CHECKING YOUR CLOUD, then the question; NOT NOW brings it back at the next boot; after MOVE the next boot raises nothing and the journal reads `nothing to settle` (frames at 640x480 and the journal, guest d).
 **Source:** #363, body checkbox 7.
@@ -951,7 +951,7 @@
 
 **Evidence:** cloud_migrate_layout:1277–1284; cloud_scan:153–185; cloud_backup:1674–1687; ES GuiMenu.cpp:5545–5603 and ThreadedCloudSync.cpp:719–735; host suite log; pair 42/0; saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Boot eligibility and offline branch are in GuiMenu.cpp:5545–5603. Missing: candidate monitor-link-cut frame proving exact offline actions at640x480 and successful continuation after reconnect.
 
 ### AC-363-09: With a settings restore's marker and an earlier folder both set at boot (written on guest d, a named stand-in for a restore followed by an update), FINISH RESTORE PROCESS comes first with nothing over it; its FINISH brings the step once the screen is free; its LATER brings neither until the next boot (frames at 640x480).
 **Source:** #363, body checkbox 9.
@@ -960,7 +960,7 @@
 
 **Evidence:** cloud_migrate_layout:1277–1284; cloud_scan:153–185; cloud_backup:1674–1687; ES GuiMenu.cpp:5545–5603 and ThreadedCloudSync.cpp:719–735; host suite log; pair 42/0; saved E frame.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Restore-finish callback arms the folder-step wait (GuiMenu.cpp:5545–5603). Missing: isolated candidate frame sequences for FINISH and LATER, including a still-visible startup outcome card.
 
 ### AC-363-10: `tools/cloud-pair-migration` covers both later cases: the other guest's step follows after the move (step 5), and a guest that missed its step and backed up into the earlier folder has those saves merged by MOVE with nothing left behind (step 5m) -- its PASS lines.
 **Source:** #363, body checkbox 10.
@@ -991,7 +991,7 @@
 
 **Evidence:** cloud_backup:1674–1687; host section ad four cases; run101 E log/frame; follow-bench-100/bench.log identifies run101, 325 versus 266 ms.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Run101 E proof retains the no-folder outcome and no old-root creation, but its frame overlaps the scan. Missing: corrected final-candidate stock-shaped boot proof with cloud listing, stamp and unobstructed CREATE IT frame.
 
 ### AC-364-03: The cost the listing adds to an exit sync on an earlier folder (59 ms on run 101's follow benchmark, against 16 ms on run 100) is kept with its reason or removed, decided against #365's folder table (D-WORKFLOW-134).
 **Source:** #364, body checkbox 3.
@@ -1000,7 +1000,7 @@
 
 **Evidence:** cloud_backup:1674–1687; host section ad four cases; run101 E log/frame; follow-bench-100/bench.log identifies run101, 325 versus 266 ms.
 
-**Notes / gaps:** Cost is recorded, but no retain/remove disposition yet; #365 table now supports making that choice. Existing gate stays red.
+**Notes / gaps:** Guest benchmark log records five samples each, 325/266ms medians and59ms delta. Missing: the retain/remove disposition against #365 and a candidate remeasurement meeting that recorded decision; no handheld extrapolation is established.
 
 ### AC-365-01: `docs/` carries the cloud folder's state table: each combination of conf state and cloud state, with what each actor does and the code line that does it. A walk of the table against the scripts lists no cell where two actors disagree, or names each disagreement as a decision.
 **Source:** #365, body checkbox 1.
@@ -1009,7 +1009,7 @@
 
 **Evidence:** docs/rasteratops/cloud-folder-state-table.md; docs/retros/2026-10-02-cloud-runs-95-101.md; tools/last-good-scripts-test:13274–13490; /workspace/tmp/rocknix-session/epic-proof-101.sh (case C/F/G have no checks).
 
-**Notes / gaps:** State table now exists with seven actors, T01–T19, lines and explicit disagreements. Unresolved disagreements are named, not silently settled; implementation and full cell coverage remain.
+**Notes / gaps:** The table now has named actors, source lines and explicit unresolved cells; reviewer additions extend it. Missing: executable reset/byte/pointer cases resolving each disagreement and promoted in-tree guest proof, not prose alone.
 
 ### AC-365-02: `tools/last-good-scripts-test` has one case per table cell and passes. The previous commit fails the cases for the cells this work changed.
 **Source:** #365, body checkbox 2.
@@ -1083,7 +1083,7 @@
 
 **Evidence:** raofflineproxy/package.mk:19–20; current freshness log PINNED, 13 commits behind (new read); rc-accept.txt still cites prior D-RA-044 bump, not an acceptance of the new caching model divergence.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Freshness reports RAOfflineProxy13 commits behind, while rc-accept still cites the older bump. Missing: current pin/refresh disposition and candidate freshness exit0 with RECORD citation; whole freshness currently exits2 for dmidecode.
 
 ### AC-361-02: On a refresh: every patch applies or is dropped with its reason in the recipe's comment; `last-good-scripts-test`'s proxy sections and `tools/ra-offline-test` on guest d pass on the built image; the whole-library scan's behaviour (D-RA-012) is stated against the budget.
 **Source:** #361, body checkbox 2.
@@ -1101,7 +1101,7 @@
 
 **Evidence:** packages/web/libsoup/package.mk:5–6; freshness.log PINNED 3.6.6 versus 3.8.0; rc-accept.txt has no libsoup row.
 
-**Notes / gaps:** Implementation or historical evidence exists at the cited surface, but the complete stated criterion is not independently proven for the final combined candidate. Keep this existing work open; the release route in 04 names the missing proof.
+**Notes / gaps:** Recipe pins libsoup3.6.6 versus available3.8.0; rc-accept has no libsoup row. Missing: explicit keep/bump disposition and candidate freshness exit0 with the accepted reason in RECORD.
 
 ### AC-362-02: When bumped: WebKitGTK rebuilt against 3.8, the sign-in window's frames on guest d (a Dropbox sign-in page in the touch layout, the finishing page) and `tools/signin-memory`'s peak within its bound, before any device.
 **Source:** #362, body checkbox 2.
@@ -1117,36 +1117,36 @@
 **Source:** #353 comments.
 **Verdict:** PARTIAL
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
-**Gaps:** Comment-only criterion retained for traceability. State/follow/set-aside code and pair source read; full reversal sweep, real-provider/runtime interruption and final-candidate proof are not all complete.
+**Notes / gaps:** Historical root readers are intentional (cloud_migrate_layout:65). Missing: a complete reversal sweep distinguishing current-root wording from compatibility/history across rules, docs and issues; no wholesale old-name deletion is justified.
 
 ### AC-353-C02: `cloud_migrate_layout --state` looks for every superseded default's folder in the cloud, not only the configured one: a device configured for `/GAMES` whose cloud holds `/ROCKNIX/Saves` with files reads `STATE=superseded-with-files` with `SOURCE=/ROCKNIX/Saves`, and the move dialog, not the creation, is offered (the Nova's real case: its conf names `/GAMES`, its saves sit in `/ROCKNIX/Saves`); a sandbox check in `tools/last-good-scripts-test` section aa fails against the verb as first written.
 
 **Source:** #353 comments.
 **Verdict:** PARTIAL
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
-**Gaps:** Comment-only criterion retained for traceability. State/follow/set-aside code and pair source read; full reversal sweep, real-provider/runtime interruption and final-candidate proof are not all complete.
+**Notes / gaps:** Host suite :13295–13297 exercises GAMES-empty/ROCKNIX-populated source selection. Missing in this review: retained old-verb negative-control output for this exact case and the whole-boot variant where startup can populate GAMES first (T11).
 
 ### AC-353-C03: `--follow` refuses to re-point a device whose old folder still holds files the new folder lacks: it reads `superseded-with-files` and the move is offered instead; the `tools/cloud-round-trip` move case seeds a save into the old folder after the move and shows the second device offered, not followed, with the save intact.
 
 **Source:** #353 comments.
 **Verdict:** PARTIAL
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
-**Gaps:** Comment-only criterion retained for traceability. State/follow/set-aside code and pair source read; full reversal sweep, real-provider/runtime interruption and final-candidate proof are not all complete.
+**Notes / gaps:** Fresh pair step5n proves a late save is merged after refusal to follow on run101. Missing: the named round-trip/UI offer proof on the final candidate and the settings-only late-writer sibling (G-02).
 
 ### AC-353-C04: `Saves-replaced` (the set-aside of conflict losers beside the saves folder) moves with the saves, or the notes say it stays under the old name -- the maintainer's call, asked in the futro's report.
 
 **Source:** #353 comments.
 **Verdict:** PARTIAL
 **Evidence:** cloud_migrate_layout:749–908,473–622; cloud_scan:153–185; ES GuiMenu.cpp:5308–5433; pair rerun 42/0; last-good-scripts-test sections aa/ab/ad.
-**Gaps:** Comment-only criterion retained for traceability. State/follow/set-aside code and pair source read; full reversal sweep, real-provider/runtime interruption and final-candidate proof are not all complete.
+**Notes / gaps:** cloud_migrate_layout:1229–1235 moves the shelf; the owner direction is implemented, not pending. Missing: the final candidate shelf round-trip and release-note statement of that behavior.
 
 ## Forward audit summary
 
 | Verdict | Count |
 | --- | --- |
 | PASS | 20 |
-| PARTIAL | 58 |
-| FAIL | 18 |
+| PARTIAL | 56 |
+| FAIL | 20 |
 | SKIP | 13 |
 | UNTESTABLE | 14 |
 
@@ -1172,3 +1172,11 @@ Branch A, topology and shadow-arm questions have later register dispositions;
 retaining their old prose does not reopen them. The criterion list above is the
 literal pre-reconciliation snapshot; issue edits from this review are recorded
 separately, not silently substituted into that evidence.
+
+## Refutation follow-up
+
+Fable A-7 correctly identified generic PARTIAL explanations. Every one of the58
+original PARTIAL entries now names its own observed part and missing artifact.
+G-13 changes AC-349-04 and AC-350-05 to FAIL for the normal writer-shaped
+archive path. Literal criterion text stays as captured; reviewer input packets
+remain byte-unchanged. Counts now20 PASS,56 PARTIAL,20 FAIL,13 SKIP,14 UNTESTABLE.
