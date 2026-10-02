@@ -19,7 +19,7 @@ Another run of the existing general VM suites alone cannot close these gaps.
 | EmulationStation | `97523542963dcc72e9ea51cfbcd26b735ff28c1f`; cloud ordering and displayed identity changes implemented and pushed. |
 | Splash | `7450aa8180ae66684814dd460f31eb502b2abf61`; wordmark source and native render checks exist. |
 | Build container | Selected `ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39`; consumption by the cold build is unproven. |
-| Host regression suite | Pre-refresh receipt: 1,367 harness PASS, 0 FAIL, 0 SKIPPED; includes 72 focused cloud checks and the 23-test subset-award suite. Predates the libsoup/proxy refresh; not image evidence. |
+| Host regression suite | Pre-refresh receipt: 1,367 harness PASS, 0 FAIL, 0 SKIPPED, plus 72 focused cloud-case PASS lines and the 23-test subset-award result. Predates the libsoup/proxy refresh; not image evidence. |
 | Independent initial audit | #375/#382 completed. Verified Fable 5.1/xhigh blind and refutation passes found five product issues. Closing the audit did not close those issues. |
 | Latest VM artifact | Run 101 is the older unbranded input set. No cold RASTERATOPS build or 0.0.1 candidate exists. No build/VM job intentionally running at review. |
 | Source preflight | Exit 2: package freshness cannot answer; bug gate fails. Used `--no-fetch --allow-unchecked device-facts`: cached refs and unchecked physical facts are explicit limitations. |

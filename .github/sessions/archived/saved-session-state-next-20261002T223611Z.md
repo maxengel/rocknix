@@ -14,8 +14,8 @@ not RC-ready.** No combined branded 0.0.1 image exists. Keep 0.0.1 as working
 version; the owner's optional 1.0.0 suggestion did not authorize a rename.
 Do not restart the initial audit or treat its completion as product acceptance.
 
-> Saved: 2026-10-02T22:36:11Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261002T223611Z.md.
+> Saved: 2026-10-02T22:28:33Z. Branch: feature/conflict-resolution.
+> Previous detailed checkpoint: .github/sessions/archived/saved-session-state-next-20261002T222833Z.md.
 
 ## Authorization and worktrees
 
@@ -76,7 +76,7 @@ Do not restart the initial audit or treat its completion as product acceptance.
 ## Previously completed implementation and current evidence
 
 - Cloud/archive/card/order/default-fixture fixes implemented. Final host suite
-  1367 harness PASS/0 FAIL/0 SKIP, plus72 focused cloud cases and23 award
+  1367 harness PASS/0 FAIL/0 SKIP, including72 focused cloud cases and23 award
   parity tests: docs/qa-logs/2026-10-02-candidate-preflight/full-host-suite.log.
   It predates the latest source refresh. Five audit product findings
   #376/#377/#379/#380/#381 stay open for candidate evidence.
@@ -108,29 +108,6 @@ Do not restart the initial audit or treat its completion as product acceptance.
   do not use it for the new manifest-bound publication contract.
 
 ## Next steps, in order
-
-First editing entrypoints (read the scoped rules before touching them):
-
-- #356/#365: `projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout`
-  (`fleet_made`, `write_marker`, apply tier publication), `cloud_setup` (seed
-  marker writer); tests in `tools/rasteratops-cloud-layout-test`, guest proof
-  in `tools/rasteratops-vm-cloud-epic`. Add new assertions before fixing source;
-  `--ref fcd0f20c9a` supplies the pre-fix production scripts to the new tests.
-  Example focused retry baseline, after extending T23's assertions:
-  `tools/rasteratops-cloud-layout-test --case T23 --ref fcd0f20c9a --output /tmp/rasteratops-356-before`.
-  Repeat without `--ref` into a distinct after directory. Its selected rclone
-  must be the image's1.75.1 (the runner prints it), not host1.60.
-- #320: in the ES cloud-epic checkout, production `es-core/src/SystemConf.cpp`
-  and `es-core/src/utils/AtomicFileUtil.{h,cpp}`; deterministic cases in
-  `es-app/tests/unit/SystemConfTests.cpp`, target `es-conf-tests`.
-  This host has g++ but no CMake. From that checkout, the verified standalone
-  compile command (the same source/include inputs as the CMake target) is:
-  `g++ -std=c++17 -pthread -Ies-app/tests/unit/fakes -Ies-core/src -Iexternal es-app/tests/unit/SystemConfTests.cpp es-core/src/SystemConf.cpp es-core/src/utils/AtomicFileUtil.cpp -o /tmp/rasteratops-320-tests`;
-  run `/tmp/rasteratops-320-tests`. The review compiled the existing target
-  to check this entrypoint; #320's new deterministic interleaving cases and
-  failing-before/passing-after evidence remain required. If using CMake in
-  the build environment instead, its configure also needs an explicit
-  RAPIDJSON_INCLUDE_DIR (host headers are absent; the warm build has them).
 
 1. Finish state/recovery correctness under #356/#365/#320: supported marker
    versions, numbered steps/journal, failure at tier/marker publication,
@@ -167,12 +144,6 @@ First editing entrypoints (read the scoped rules before touching them):
    Supported device matrix is in docs/rasteratops/support-matrix.md.
 
 ## Jobs, artifacts and remaining cautions
-
-Fresh-agent proof: `docs/qa-logs/2026-10-02-readiness/handoff-proof.md`.
-It recovered the correct next work and verified the key code/receipt claims;
-the entrypoints above incorporate its feedback. #385 is the completed review;
-#383 remains active delivery. The kickoff futro already exists at
-`docs/futros/2026-10-02-rc-remediation.md`; read it as historical kickoff state.
 
 No build, VM or source test is intentionally running at this checkpoint.
 Readiness diagnostics are finished. No distribution push or publication is
