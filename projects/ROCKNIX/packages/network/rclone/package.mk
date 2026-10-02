@@ -72,9 +72,16 @@ makeinstall_target() {
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   cp cloud_saves_root ${INSTALL}/usr/bin/
   cp cloud_capture ${INSTALL}/usr/bin/
+  # cloud_log_scrub: once per device, masks the credentials earlier builds
+  # wrote into cloud_sync.log and the interface's es_log*.txt (the audit of
+  # the fix round, PL-014); run at boot by autostart/102-cloud-saves.
+  cp cloud_log_scrub ${INSTALL}/usr/bin/
   # cloud_net_ready: what EmulationStation's startup sync asks before it runs
   # the restore/backup pair -- is the network up, and has it stayed up (#103).
   cp cloud_net_ready ${INSTALL}/usr/bin/
+  # cloud_scan: the restore flow's scan page runs it first and offers only
+  # what it found (D-CLOUD-156, fork #350); reads only, no lock.
+  cp cloud_scan ${INSTALL}/usr/bin/
   # No game-end event hook. EmulationStation runs the save sync itself now
   # (FileData::launchGame), so it can show the result on the progress card
   # instead of backgrounding the work into /dev/null where nobody could tell

@@ -100,22 +100,47 @@ have_filter() {
 
 # Every regular file under a directory, through the filter, in place, its
 # mtime kept (when a log was last written is evidence). A file the filter
-# cannot rewrite is removed rather than left as it was, and named. sed passes
-# bytes it does not match through untouched, and the pstore dumps are kernel
-# text, so nothing here is damaged by the pass.
-FILTERED=0; LEFT_OUT=0
+# cannot rewrite -- or whose filtered copy cannot be moved into its place --
+# is removed rather than left as it was, and named. A file that can be
+# neither filtered nor removed is raw and still there: that ends the
+# collection before any archive is written (returns non-zero). Until #307
+# PL-046 the move's status was not read, the file was counted as filtered,
+# and the raw log was archived under a summary that said it had been
+# through the filter. sed passes bytes it does not match through untouched,
+# and the pstore dumps are kernel text, so nothing here is damaged by the
+# pass. The list is taken before the pass, so no .redacting file is walked.
+FILTERED=0; LEFT_OUT=0; RAW=0
 filter_tree() {
-  local f
+  local f list
+  list=$(mktemp) || return 1
+  # The list is whole or nothing is archived: a walk that failed part-way
+  # (a full /tmp) left files off it, and those went into the archive raw
+  # (#307, the audit of the fixes, gpt G-B-07).
+  if ! find "$1" -type f -print0 > "${list}" 2>/dev/null; then
+    rm -f "${list}"
+    RAW=$((RAW + 1))
+    echo "Couldn't list every file to filter."
+    return 1
+  fi
   while IFS= read -r -d '' f; do
     if redact_credentials < "${f}" > "${f}.redacting" 2>/dev/null; then
       touch -r "${f}" "${f}.redacting" 2>/dev/null
-      mv -f "${f}.redacting" "${f}"; FILTERED=$((FILTERED + 1))
+      if mv -f "${f}.redacting" "${f}" 2>/dev/null; then
+        FILTERED=$((FILTERED + 1))
+        continue
+      fi
+    fi
+    rm -f "${f}" "${f}.redacting" 2>/dev/null
+    if [ -e "${f}" ]; then
+      RAW=$((RAW + 1))
+      echo "Couldn't filter or remove ${f#${1}/}."
     else
-      rm -f "${f}" "${f}.redacting"; LEFT_OUT=$((LEFT_OUT + 1))
+      LEFT_OUT=$((LEFT_OUT + 1))
       echo "Left out ${f#${1}/}: the credential filter couldn't rewrite it."
     fi
-  done < <(find "$1" -type f -print0)
-  return 0
+  done < "${list}"
+  rm -f "${list}"
+  [ "${RAW}" -eq 0 ]
 }
 
 snapshot() {
@@ -141,9 +166,21 @@ collect() {
     exit 1
   fi
   mkdir -p "${EVIDENCE_DIR}" || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
-  local stamp label dir out
+  # One collection at a time, and the pieces of one killed before its
+  # filter -- raw journals and logs in a .collect.* folder -- cleared by the
+  # next (#307, the audit of the fixes, claude G-B-15).
+  { exec 7<"${EVIDENCE_DIR}"; } 2>/dev/null && flock -n 7 || { echo "Another collection is running."; exit 1; }
+  rm -rf "${EVIDENCE_DIR}"/.collect.* 2>/dev/null
+  local stamp label name stage dir tmp out n
   stamp=$(date '+%Y_%m_%d-%H%M%S'); label=$(device_label)
-  dir="${EVIDENCE_DIR}/${stamp}-${label}-evidence"; out="${dir}.tar.gz"
+  name="${stamp}-${label}-evidence"
+  # A staging folder of this run's own, and an archive name nobody has yet:
+  # two collections in the same second shared one folder and one name, so
+  # one could copy a raw log into the tree the other had just filtered and
+  # was archiving, and the second archive replaced the first (#307 PL-077,
+  # the gpt seat's F-PB-03).
+  stage=$(mktemp -d "${EVIDENCE_DIR}/.collect.XXXXXX") || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
+  dir="${stage}/${name}"
   mkdir -p "${dir}/pstore" "${dir}/snapshots" "${dir}/logs" "${dir}/stamps"
 
   {
@@ -181,16 +218,32 @@ collect() {
   # Last, over everything that landed above, whatever wrote it: the filter
   # is applied to the tree, not trusted of each writer. Then the count goes
   # into the summary -- our own words and numbers, nothing that needs the pass.
-  filter_tree "${dir}"
+  if ! filter_tree "${dir}"; then
+    echo "Nothing was archived: the credential filter couldn't finish. The pieces are in ${dir}."
+    exit 1
+  fi
   printf '\ncredential filter: %s file(s) rewritten, %s left out\n' "${FILTERED}" "${LEFT_OUT}" >> "${dir}/summary.txt"
 
-  if tar -czf "${out}" -C "${EVIDENCE_DIR}" "$(basename "${dir}")" 2>/dev/null; then
-    rm -rf "${dir}"
+  # Written inside the staging folder, then linked to the first free name
+  # (ln fails when the name exists): <stamp>-<label>-evidence.tar.gz, or
+  # <stamp>-<label>-2-evidence.tar.gz and on for a second in the same
+  # second -- every name still ends in -evidence.tar.gz.
+  tmp="${stage}/out.tar.gz"; out=""
+  if tar -czf "${tmp}" -C "${stage}" "${name}" 2>/dev/null; then
+    n=1; out="${EVIDENCE_DIR}/${name}.tar.gz"
+    while ! ln "${tmp}" "${out}" 2>/dev/null; do
+      n=$((n + 1))
+      [ "${n}" -le 50 ] || { out=""; break; }
+      out="${EVIDENCE_DIR}/${stamp}-${label}-${n}-evidence.tar.gz"
+    done
+  fi
+  if [ -n "${out}" ]; then
+    rm -rf "${stage}"
     echo "Evidence collected: ${out} ($(du -h "${out}" | cut -f1))"
     echo "Every file in it has been through the credential filter (${FILTERED} rewritten, ${LEFT_OUT} left out)."
     echo "Start with summary.txt, then journal-previous-boot.txt and pstore/."
   else
-    rm -f "${out}"
+    rm -f "${tmp}"
     echo "Couldn't write the archive; the pieces are in ${dir}."
     exit 1
   fi

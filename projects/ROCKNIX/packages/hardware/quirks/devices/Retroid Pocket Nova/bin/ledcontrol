@@ -4,7 +4,29 @@
 
 . /etc/profile
 
-LED_PATH="/sys/devices/platform/"
+# Overridable so the script can be run against a fixture on a build host
+# (fork #332's first criterion); on the device it is the platform's.
+LED_PATH="${LED_PATH:-/sys/devices/platform/}"
+
+# The six LEDs' brightness, 0-255 (the colour stays in multi_intensity).
+function led_brightness_all() {
+  n=1
+  while [ "$n" -lt 5 ]; do
+    echo ${1} >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
+    echo ${1} >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
+    n=$(( n + 1 ))
+  done
+}
+
+# LED BRIGHTNESS's three words, as the other devices' scripts read them.
+function brightness_value() {
+  case ${1} in
+    max) echo 255 ;;
+    mid) echo 128 ;;
+    min) echo 32 ;;
+    *)   echo 255 ;;
+  esac
+}
 
 function led_off() {
   n=1
@@ -23,9 +45,25 @@ case ${1} in
     set_setting led.color ${1}
   ;;
   rgb)
+    # analogsticks.led is the seven numbers the stick-colour page writes
+    # (brightness, right r g b, left r g b). A device that never set it
+    # used to hand the helper nothing, which printed its usage and lit
+    # nothing -- the maintainer's "a first adjustment turns them off"
+    # (fork #332). With nothing set, white at the chosen brightness.
     LEDS_CONFIG=$(get_setting analogsticks.led)
+    if [ -z "${LEDS_CONFIG}" ]; then
+      B=$(brightness_value "$(get_setting led.brightness)")
+      LEDS_CONFIG="${B} 255 255 255 255 255 255"
+    fi
     /usr/bin/analog_sticks_ledcontrol ${LEDS_CONFIG}
     set_setting led.color ${1}
+  ;;
+  brightness)
+    # LED BRIGHTNESS (max|mid|min): the case the row called and nothing
+    # answered (fork #332). Written to the six LEDs whatever the colour
+    # case, and remembered for the next rgb with no colour set.
+    led_brightness_all "$(brightness_value "${2}")"
+    set_setting led.brightness ${2}
   ;;
   battery)
     led_off

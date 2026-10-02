@@ -23,7 +23,7 @@ cached_game_ids.txt.
 
 --- a/linux/raofflineproxy/flusher.py
 +++ b/linux/raofflineproxy/flusher.py
-@@ -2,13 +2,14 @@
+@@ -2,13 +2,14 @@ from __future__ import annotations
  
  import json
  import logging
@@ -39,7 +39,7 @@ cached_game_ids.txt.
  from .network import build_api_url, http_post
  from .rom_cache import (
      CacheGameAuthError,
-@@ -39,6 +40,11 @@
+@@ -39,6 +40,11 @@ from .utils import (
  MAX_RETRIES = 5
  GENESIS_HASH = "genesis"
  MAX_AWARD_OFFSET_SECONDS = 14 * 24 * 60 * 60
@@ -51,7 +51,7 @@ cached_game_ids.txt.
  LOGGER = logging.getLogger("raofflineproxy")
  
  
-@@ -486,6 +492,8 @@
+@@ -486,6 +492,8 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
          skipped_stale,
          pending_remaining,
      )
@@ -60,7 +60,7 @@ cached_game_ids.txt.
  
      return FlushOutcome(
          flushed=flushed,
-@@ -496,6 +504,18 @@
+@@ -496,6 +504,18 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
      )
  
  

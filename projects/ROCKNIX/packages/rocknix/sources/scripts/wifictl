@@ -19,9 +19,14 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ###     wifictl current           the network joined now; nothing and exit 1 when none,
 ###                               exit 2 when NetworkManager could not be asked
 ###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
+###     wifictl saved --ssid      the same with each profile's SSID between: <name><TAB><ssid><TAB>active|saved,
+###                               a tab or backslash inside the name or the SSID written \t or \\;
+###                               nothing and exit 1 when any of it could not be read
 ###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
-###                               second line when it was the one in use; exit 1, nothing
-###                               printed, when it is not a remembered network or the delete failed
+###                               second line when it was the one in use, and clears wifi.ssid /
+###                               wifi.key when they name it; exit 1, nothing printed, when it is
+###                               not a remembered network or the delete failed; exit 2 when
+###                               NetworkManager could not be asked
 ###     wifictl join <name>       join a saved network with the key NetworkManager holds for it
 ###                               (the picker's press on a SAVED row): prints "joined" once its
 ###                               profile is active and moves wifi.ssid / wifi.key onto it; exit 1,
@@ -63,12 +68,17 @@ wait_for_wifi() {
   [ -n "${COUNTRY}" ] && iw reg set "${COUNTRY}"
 }
 
-# lists all wifi networks
+# lists all wifi networks, each name as the network has it: terse output
+# escapes ':' and '\', so "Cafe: Guest" arrived as "Cafe\: Guest" from here
+# and as "Cafe: Guest" from current and saved, and the picker -- which
+# compares names exactly -- showed the network twice and tried to connect
+# to the escaped name (#308 claude F-WF-05). nm_unescape is defined below;
+# this runs after the whole file is read.
 list_wifi() {
   wait_for_wifi
   "${NMCLI}" -w 15 dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
   sleep 1
-  "${NMCLI}" -t -f SSID dev wifi list ifname "${WIFI_DEV}" 2>/dev/null | sed '/^$/d' | sort -u
+  "${NMCLI}" -t -f SSID dev wifi list ifname "${WIFI_DEV}" 2>/dev/null | nm_unescape | sed '/^$/d' | sort -u
 }
 
 connect_wifi() {
@@ -84,9 +94,20 @@ connect_wifi() {
   # If a keyfile profile for this SSID already exists but is incomplete (e.g. missing
   # 802-11-wireless-security.key-mgmt), NM fails connection-update with "key-mgmt: property is missing".
   # Drop the stale profile so "device wifi connect" creates a clean one.
+  # Two lines taken from ROCKNIX's own saved-network work (spycat88,
+  # b1f8464241; the merged design D-UI-118, #318): with no key given, a
+  # profile NetworkManager already holds for the name is brought up before
+  # anything is deleted and rebuilt -- the settings-driven paths (ENABLE
+  # WI-FI, the restore wizard) reach a saved network that way -- and a keyed
+  # connect stores the key in the profile explicitly (psk-flags 0), so a
+  # later join can read it.
+  if [ -z "${PSK}" ] && "${NMCLI}" -w 30 connection up id "${SSID}" ifname "${WIFI_DEV}" >/dev/null 2>&1; then
+    return 0
+  fi
   "${NMCLI}" connection delete id "${SSID}" >/dev/null 2>&1 || true
   if [ -n "${PSK}" ]; then
-    "${NMCLI}" -w 90 device wifi connect "${SSID}" password "${PSK}" ifname "${WIFI_DEV}" >/dev/null 2>&1
+    "${NMCLI}" -w 90 device wifi connect "${SSID}" password "${PSK}" ifname "${WIFI_DEV}" >/dev/null 2>&1 || return 1
+    "${NMCLI}" connection modify "${SSID}" wifi-sec.psk-flags 0 >/dev/null 2>&1 || true
   else
     "${NMCLI}" -w 90 device wifi connect "${SSID}" ifname "${WIFI_DEV}" >/dev/null 2>&1
   fi
@@ -186,6 +207,17 @@ nm_unescape() {
   sed 's/\\\(.\)/\1/g'
 }
 
+# The state saved_wifi gives a remembered network, by its whole name: the
+# name is everything before the LAST tab (the state is after it), as the
+# interface's parser reads it. awk -F'\t' compared the part before the
+# FIRST tab, so a profile whose name holds a tab -- listed as SAVED and
+# accepted by the interface -- could be neither joined nor forgotten (#308
+# claude F-WF-06, gpt F-WF-04). The name crosses through the environment,
+# not awk -v, which would read backslashes in it as escapes.
+saved_state() { # <saved_wifi rows> <name>
+  printf '%s\n' "${1}" | NAME="${2}" awk '{ n = $0; sub(/\t[^\t]*$/, "", n); if (n == ENVIRON["NAME"]) { s = $0; sub(/^.*\t/, "", s); print s } }'
+}
+
 # The SSID the device is joined to now: the one access point NetworkManager
 # marks active, from the list it already holds (no rescan). Nothing and exit
 # 1 when the device is joined to none; exit 2 when NetworkManager could not
@@ -213,6 +245,30 @@ saved_wifi() {
     }' | nm_unescape
 }
 
+# saved with each profile's SSID (--ssid): a profile's name need not be its
+# SSID (renamed, or NetworkManager's own "Home 1"), and the picker marks a
+# scanned network SAVED by its SSID (stream E2's 6caac243c, #308 F-WF-12).
+# A third column, not a change to saved's own shape, which the interface's
+# parser and join and forget read: <name><TAB><ssid><TAB>active|saved, with
+# a tab or backslash inside the name or the SSID written \t or \\ so the
+# three fields split cleanly. Buffered: an SSID that cannot be read prints
+# nothing and exits 1, never a list short of one.
+field_escape() {
+  local v="${1//\\/\\\\}"
+  printf '%s' "${v//$'\t'/\\t}"
+}
+saved_with_ssids() {
+  local rows line name state ssid out=""
+  rows=$(saved_wifi) || return 1
+  while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+    name="${line%$'\t'*}"; state="${line##*$'\t'}"
+    ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) || return 1
+    out="${out}$(field_escape "${name}")"$'\t'"$(field_escape "${ssid}")"$'\t'"${state}"$'\n'
+  done <<< "${rows}"
+  printf '%s' "${out}"
+}
+
 # Forget a remembered network: delete its profile, and say when that dropped
 # the connection. Prints "forgotten" once the profile is gone, then
 # "disconnected" on a second line when it was the one in use --
@@ -221,15 +277,51 @@ saved_wifi() {
 # remembered one in range). A name that is not a remembered wireless
 # network, a NetworkManager that cannot be asked, or a delete that fails:
 # nothing printed and exit 1, so a caller cannot read a refusal as done.
-# The name is matched whole, through the environment rather than awk -v,
-# which would read backslashes in it as escapes.
+# The name is matched whole (saved_state).
+#
+# NetworkManager not answering is exit 2, as for current and join: "could
+# not ask" is a different answer from "no such network" (#308 claude
+# F-WF-07). And a network forgotten here is forgotten in the settings too:
+# when wifi.ssid names it (by SSID, or by the profile name an older join
+# wrote), wifi.ssid and wifi.key are removed -- otherwise the paths that
+# connect from the settings (ENABLE WI-FI, the restore wizard; the WI-FI
+# KEY row until #318) rebuilt the profile the player had just forgotten, with its key,
+# which also stayed in system.cfg and travelled in the settings backup
+# (#308 claude F-WF-01, gpt F-WF-07).
 forget_wifi() {
-  local name="${1}" rows state
+  local name="${1}" rows state ssid named
   [ -n "${name}" ] || return 1
-  rows=$(saved_wifi) || return 1
-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  rows=$(saved_wifi) || return 2
+  state=$(saved_state "${rows}" "${name}")
   [ -n "${state}" ] || return 1
-  "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
+  #
+  # And the settings go first, checked, and come back if the delete then
+  # fails: a forget that deleted the profile and could not clear the
+  # settings said "forgotten" while the settings-driven paths could still
+  # rebuild it; an SSID that could not be read is not guessed at (exit 2)
+  # (#307, the audit of the fixes, gpt G-B-11).
+  #
+  # The pair is cleared, and put back, in one write each (set_settings): two
+  # set_setting calls could fail between them, and the put-back after a
+  # failed delete was not checked at all (#307, the audit of the fix round,
+  # gpt G2-B-11). A put-back that fails is said in the log, with the state
+  # it leaves.
+  local key clear=0
+  ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) || return 2
+  named=$(get_setting wifi.ssid 2>/dev/null)
+  if [ -n "${named}" ] && { [ "${named}" = "${name}" ] || [ "${named}" = "${ssid}" ]; }; then
+    clear=1
+    key=$(get_setting wifi.key 2>/dev/null)
+    if ! set_settings wifi.ssid default wifi.key default; then
+      return 1
+    fi
+  fi
+  if ! "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1; then
+    if [ "${clear}" -eq 1 ] && ! set_settings wifi.ssid "${named}" wifi.key "${key}"; then
+      logger -t wifictl "forget ${name}: its profile could not be deleted, and the Wi-Fi settings cleared for it could not be put back; wifi.ssid and wifi.key are unset while the profile remains" 2>/dev/null
+    fi
+    return 1
+  fi
   echo "forgotten"
   case "${state}" in *active*) echo "disconnected" ;; esac
   return 0
@@ -237,30 +329,76 @@ forget_wifi() {
 
 # Join a saved network by its profile, with the key NetworkManager holds --
 # the picker's press on a network the device has joined before (fork #191;
-# the maintainer's paradigm of 2026-09-15: the WI-FI SSID row is the network
+# the maintainer's paradigm of 2026-09-15: the WI-FI NETWORK row -- WI-FI SSID
+# until D-UI-071 renamed it -- is the network
 # you are on, the list behind it is what is in range, a saved one joins with
 # a press). `connect` would have deleted the profile and rebuilt it from the
-# WI-FI KEY setting, which holds the last key typed, for some other network.
+# wifi.key setting, which held the last key typed, for some other network
+# (the WI-FI KEY row that wrote it is gone since #318, D-UI-118).
 # Prints "joined" once the profile is active (at once when it already is),
 # then the settings wifi.ssid and wifi.key follow the profile, so the paths
-# that connect from the settings -- the WI-FI KEY row, the ENABLE WI-FI
-# switch, the restore wizard -- name the network the player is on; the key is
+# that connect from the settings -- the ENABLE WI-FI switch, the restore
+# wizard -- name the network the player is on; the key is
 # read from NetworkManager and never printed. pin_wifi then prefers this
 # network at the next boot and resume. A name that is not a saved wireless
 # network, or an activation that fails: nothing printed, exit 1. NetworkManager
 # not answering: exit 2, so a caller cannot read a silence as a refusal.
+# The profile active on this device's adapter, by name, unescaped. A
+# profile's ACTIVE in saved_wifi says it is up somewhere -- on any adapter.
+wifi_dev_connection() {
+  "${NMCLI}" -t -f GENERAL.CONNECTION device show "${WIFI_DEV}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | nm_unescape
+}
+
 join_wifi() {
   local name="${1}" rows state psk
   [ -n "${name}" ] || return 1
   rows=$(saved_wifi) || return 2
-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  state=$(saved_state "${rows}" "${name}")
   [ -n "${state}" ] || return 1
-  if [ "${state}" != "active" ]; then
-    "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
+  # Judged on the adapter the picker speaks for (WIFI_DEV, as current_wifi
+  # is): a profile already up on another adapter read as "active" and
+  # skipped the activation, and "joined" was said while this adapter stayed
+  # on another network (#307 PL-031). So the profile is brought up on
+  # WIFI_DEV by name, and joined is said only once WIFI_DEV reads it.
+  if [ "$(wifi_dev_connection)" != "${name}" ]; then
+    "${NMCLI}" -w 90 connection up id "${name}" ifname "${WIFI_DEV}" >/dev/null 2>&1 || return 1
+    [ "$(wifi_dev_connection)" = "${name}" ] || return 1
   fi
-  psk=$("${NMCLI}" -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null)
-  set_setting wifi.ssid "${name}"
-  set_setting wifi.key "${psk}"
+  # The key as NetworkManager holds it, byte for byte. -g is terse output,
+  # which escapes ':' and '\' in a value -- ab:cd\ef12345 came back as
+  # ab\:cd\\ef12345 on the target's nmcli (guest d, 2026-09-27) and that was
+  # stored as wifi.key -- so --escape no (#307 PL-003). Its status is read
+  # before anything is written: a read that failed is not an open network,
+  # and writing its empty answer over wifi.key cleared the key of a network
+  # the device is on (#308 claude F-WF-02). An empty key is written only
+  # when the profile has no key management -- an open network; a keyed one
+  # whose key did not come back leaves the settings as they were. Either
+  # way the device is joined, and says so.
+  #
+  # And wifi.ssid is the network's SSID, not the profile's name: the two
+  # differ for a renamed profile or one NetworkManager deduplicated ("Home
+  # 1"), and connect -- which the settings-driven paths run -- looks the
+  # SSID up in the scan, where a profile's name is not found (#308 claude
+  # F-WF-12, gpt F-WF-03).
+  local keyed ssid
+  if psk=$("${NMCLI}" --escape no -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null) \
+     && ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) \
+     && [ -n "${ssid}" ]; then
+    if [ -z "${psk}" ]; then
+      keyed=$("${NMCLI}" --escape no -g 802-11-wireless-security.key-mgmt connection show id "${name}" 2>/dev/null) || keyed="unread"
+    fi
+    if [ -z "${psk}" ] && [ -n "${keyed}" ]; then
+      logger -t wifictl "joined ${name}; its key did not come back from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+    elif ! set_settings wifi.ssid "${ssid}" wifi.key "${psk}"; then
+      # One write for the pair (set_settings): a second write failing after
+      # the first left this network's SSID with the last network's key, and
+      # nothing said so (#307, the audit of the fix round, gpt G2-B-11).
+      # The device is joined either way, and says so.
+      logger -t wifictl "joined ${name}; its Wi-Fi settings could not be saved, so they were left as they were" 2>/dev/null
+    fi
+  else
+    logger -t wifictl "joined ${name}; its key or SSID could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+  fi
   pin_wifi
   echo "joined"
   return 0
@@ -330,7 +468,11 @@ case "${1}" in
     current_wifi
     ;;
   saved)
-    saved_wifi
+    if [ "${2:-}" = "--ssid" ]; then
+      saved_with_ssids
+    else
+      saved_wifi
+    fi
     ;;
   forget)
     forget_wifi "${2}"

@@ -9,10 +9,10 @@ paths:
 Track all issues, punch lists, and TODO tracking on the **fork**, never on the upstream
 project:
 
-- **File issues on `maxengel/rocknix`** (the fork). Issues are enabled there.
+- **File issues on `rasteratops/distribution`** (the fork). Issues are enabled there.
 - **Do not file on `ROCKNIX/distribution`** (upstream). Upstream has Issues disabled, and
   tracking work belongs on the fork regardless.
-- With `gh`, always pass `--repo maxengel/rocknix` explicitly — the repo's `gh` default is
+- With `gh`, always pass `--repo rasteratops/distribution` explicitly — the repo's `gh` default is
   the upstream remote, so omitting it would target the wrong place.
 - If issues are ever unavailable, fall back to a gitignored Markdown checklist in the
   working copy rather than filing upstream.
@@ -20,7 +20,7 @@ project:
 Example:
 
 ```bash
-gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
+gh issue create --repo rasteratops/distribution --title "..." --body-file notes.md
 ```
 
 ## Structure: Milestone → Epic → Issue (established 2026-08-18)
@@ -40,6 +40,10 @@ gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
 - **Closing discipline**: deliver → close `completed` with a comment naming the
   commits/build; consolidate → close `not planned` with a comment naming where the
   scope went. Never leave a delivered issue open or close one silently.
+- **A bug is closed as completed only with its `Already written:` line** in
+  its code trace -- what the code before the fix had left on devices and in
+  their clouds, and how the fix treats it (D-WORKFLOW-050,
+  `upgrade-and-install.md`); `tools/rc-preflight` reads the closed ones too.
 
 ## Every out-of-band request gets an issue, the same session (D-QA-012)
 

@@ -1,0 +1,9 @@
+# Every image of this project runs on a handheld, and this says so to the
+# programs that ask: WebKitGTK reads CHASSIS= here (then DMI, never the device
+# tree) to decide whether it is a mobile browser, and on a desktop chassis it
+# sends a desktop user agent, so a cloud provider's sign-in pages arrive in
+# their desktop layout -- a tiny icon and small targets on a 5" panel (fork
+# #351, D-NET-016). hostnamed reads the same line, which matches what the
+# device tree already says on the boards that carry chassis-type = "handset".
+# The QA guest gets it too, so its frames are the handheld's.
+CHASSIS=handset

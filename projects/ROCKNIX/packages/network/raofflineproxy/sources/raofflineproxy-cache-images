@@ -32,8 +32,10 @@
 #   * it is resumable -- nothing marks a game done but its own files, so a
 #     run that stops at its ceiling leaves the rest for the next one.
 #
-# With --verify the files that are there are read as well as counted: the PNG
-# signature, an IEND trailer, and a plausible size. Presence is what every
+# With --verify the files that are there are read as well as counted, and a
+# PNG is put to the test a download passes (image_cache.png_problem, patch
+# 013: every chunk's CRC up to IEND, image data that inflates) behind a
+# plausible size (#308 F-RA-12). Presence is what every
 # other check in this subsystem tests, so a file that is there and wrong is
 # never looked at again -- patch 013 stops one being written from now on, and
 # this finds the ones written before it, and anything a card or a filesystem
@@ -44,10 +46,19 @@
 # next slice and the whole store comes round in a few runs. Reaching the end
 # clears the cursor and says so.
 #
-# The ceiling is time (--seconds, default 300). A run that leaves images
-# behind says how many and exits 1, the way a scan that could not finish does
-# (#186 PL-24): a partial pass is never reported as a complete one. Exit 2 is
-# a precondition this could not meet (no store, no account).
+# The ceiling is time (--seconds, default 300). An image the server does not
+# have (404, 410) is recorded absent and is not left behind (see ABSENT_FILE).
+# A run that leaves images behind says how many and exits 1, the way a scan that could not finish does
+# (#186 PL-24): a partial pass is never reported as a complete one. Exit 3 is
+# every image there but a verify sweep that did not come round the store this
+# run -- the slice a run D-RA-024 designed, named apart from a failure because
+# exit 1 is also what Python gives a helper that dies of an exception, and the
+# ctl must not read a crash as the sweep working. Exit 2 is
+# a precondition this could not meet (no store, no account). Exit 130 is a
+# SIGINT -- the helper run by hand, or by a caller that signals its group:
+# the downloads not yet started are dropped and the process ends without
+# waiting for the ones in flight (#307 PL-013). Under the ctl a cancel ends
+# it by SIGTERM through timeout instead (see __main__).
 #
 # It prints the scan page's own protocol on stdout, so the same reader can
 # follow it: ">>> doing images", ">>> total <n>", ">>> image <i>|<n>",
@@ -55,13 +66,31 @@
 # Everything else goes to stderr for the log. No value from system.cfg is
 # printed: the credentials pass through the client's resolve_credentials and
 # no further, and only paths under the media host are ever fetched.
+"""usage: raofflineproxy-cache-images [--seconds N] [--verify]
+
+Fetch the images of the achievements the offline service has cached, until
+none is missing: every image path in the cached patch, achievementsets and
+login rows whose file is not in the image cache.
+
+  --seconds N  the pass's ceiling, in seconds (default 300)
+  --verify     also put the cached images to the test a download passes,
+               a slice a run from where the last one stopped, and fetch
+               again what fails it
+
+Exit 0 when nothing is left, 1 when images were left behind, 2 when the
+store or the account could not be read, 3 when every image is there but the
+verify sweep did not come round this run, 130 when cancelled.
+"""
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from pathlib import Path
 
@@ -82,7 +111,20 @@ ROW_PREFIXES = (
 # Where --verify left off, so each run takes the next slice (#213).
 CURSOR = image_cache.IMAGE_CACHE_DIR / "verify-cursor"
 
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# The images the image server said it does not have -- 404 or 410, which
+# download_static_image calls absent (patch 016) -- one "<epoch> <path>" a
+# line. A pass does not ask for them again and they are no failure of it: a
+# badge the server never had used to fail every scan for good (#307 PL-060's
+# follow-up). A timeout, a 5xx, a refused connection or a short read is not
+# recorded: it fails the pass and is asked for next time. An entry a day old
+# is asked for once more: a badge answered 404 while a new set's images were
+# still reaching the image server comes the next day rather than a month on
+# (audit of the fixes, claude G-D-14), for one request a badge a day at most,
+# and only on a day a pass runs.
+ABSENT_FILE = image_cache.IMAGE_CACHE_DIR / "absent"
+ABSENT_RECHECK_SECONDS = 24 * 3600
+IMAGE_ABSENT = getattr(image_cache, "IMAGE_ABSENT", "absent")
+
 # Smaller than any real badge: a PNG needs a signature, an IHDR and an IEND,
 # and the smallest one RetroAchievements serves is a few hundred bytes (of a
 # 4,000-badge sample on the maintainer's device the smallest was 266).
@@ -90,7 +132,16 @@ PNG_FLOOR = 68
 
 
 def damaged(path: str) -> str | None:
-    """Why the cached file for path is not a whole image, or None if it is."""
+    """Why the cached file for path is not a whole image, or None if it is.
+
+    A .png is put to the test a download passes before it is published
+    (image_cache.png_problem, patch 013): every chunk's CRC up to IEND and
+    image data that inflates, so a file damaged inside -- written before
+    patch 013 checked anything, or by a card since -- is found and fetched
+    again, not only one cut short; and a whole PNG with bytes after its
+    IEND is whole, where a trailer test called it damaged and deleted it at
+    every pass (#308 F-RA-12, F-RA-13).
+    """
     target = image_cache.resolve_cached_static_asset(path)
     if target is None:
         return "absent"
@@ -100,15 +151,9 @@ def damaged(path: str) -> str | None:
             return None if size > 0 else "empty"
         if size < PNG_FLOOR:
             return f"tiny({size})"
-        with target.open("rb") as handle:
-            if handle.read(8) != PNG_MAGIC:
-                return "not a PNG"
-            handle.seek(-12, 2)
-            if b"IEND" not in handle.read(12):
-                return "no IEND"
+        return image_cache.png_problem(target.read_bytes())
     except OSError as exc:
         return f"unreadable ({exc})"
-    return None
 
 
 # The cursor holds a path in the same shape as the rest of this script --
@@ -130,6 +175,32 @@ def write_cursor(value: str) -> None:
             CURSOR.unlink(missing_ok=True)
     except OSError as exc:
         note(f"the verify cursor could not be written: {exc}")
+
+
+def read_absent() -> dict[str, int]:
+    """{path: when it was found absent}, the entries not yet due a recheck."""
+    found: dict[str, int] = {}
+    try:
+        text = ABSENT_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return found
+    now = int(time.time())
+    for line in text.splitlines():
+        stamp, _, path = line.partition(" ")
+        if stamp.isdigit() and path.startswith("/") and now - int(stamp) < ABSENT_RECHECK_SECONDS:
+            found[path] = int(stamp)
+    return found
+
+
+def write_absent(entries: dict[str, int]) -> None:
+    """The absent record, whole or not at all."""
+    try:
+        ABSENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ABSENT_FILE.with_name(ABSENT_FILE.name + ".tmp")
+        tmp.write_text("".join(f"{stamp} {path}\n" for path, stamp in sorted(entries.items())), encoding="utf-8")
+        os.replace(tmp, ABSENT_FILE)
+    except OSError as exc:
+        note(f"the absent record could not be written: {exc}")
 
 
 def tell(text: str) -> None:
@@ -240,10 +311,6 @@ def main() -> int:
     verify_left = 0
     if args.verify:
         try:
-            _, _, _rows = missing_paths(storage)  # warm the same read the counts use
-        except Exception:
-            pass
-        try:
             paths = sorted(all_paths(storage))
         except Exception as exc:
             note(f"the store could not be read: {exc}")
@@ -301,12 +368,19 @@ def main() -> int:
         tell("why STORE_UNREADABLE")
         return 2
 
-    note(f"{rows} cached set row(s), {total_paths} image path(s), {len(missing)} missing")
+    absent = read_absent()
+    absent_before = dict(absent)
+    known_absent = [p for p in missing if p in absent]
+    if known_absent:
+        missing = [p for p in missing if p not in absent]
+        tell(f"note ABSENT {len(known_absent)}")
+    note(f"{rows} cached set row(s), {total_paths} image path(s), {len(missing)} missing"
+         f"{f', {len(known_absent)} the image server does not have (not asked for again)' if known_absent else ''}")
     tell(f"total {len(missing)}")
     if not missing:
         tell("note NOTHING_MISSING")
         tell("done 0|0")
-        return 1 if verify_left else 0
+        return 3 if verify_left else 0
 
     deadline = budget_end
     fetched = 0
@@ -314,9 +388,16 @@ def main() -> int:
     stopped = False
 
     # The pool the proxy uses for its own images, four workers, so this asks
-    # RetroAchievements' media host no harder than a launch does.
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {}
+    # RetroAchievements' media host no harder than a launch does. Not a
+    # with-block: its exit is shutdown(wait=True), which runs every queued
+    # download to completion, so the page's CANCEL -- a KeyboardInterrupt
+    # here, from the SIGINT the interface sends the run's process group --
+    # waited for all of them, tens of thousands on a first scan, before the
+    # run could stop (#307 PL-013). A cancel drops what has not started and
+    # leaves at once (leave(), below).
+    pool = ThreadPoolExecutor(max_workers=4)
+    futures = {}
+    try:
         for path in missing:
             # extract_image_path hands back the path with its leading slash
             # ("/Badge/109361.png"), which is the shape the client's own
@@ -328,36 +409,89 @@ def main() -> int:
                 path,
                 user_agent,
             )] = path
-        for future in as_completed(futures):
-            path = futures[future]
-            done += 1
-            try:
-                future.result()
-            except Exception as exc:  # download_static_image swallows its own
-                note(f"{path}: {exc}")
-            if image_cache.resolve_cached_static_asset(path) is not None:
-                fetched += 1
-            if done % 25 == 0 or done == len(missing):
-                tell(f"image {done}|{len(missing)}")
-            if time.monotonic() > deadline:
-                stopped = True
-                # Drop what has not started; what is in flight carries its own
-                # timeout, and the next run picks up whatever did not land.
-                for pending in futures:
-                    pending.cancel()
-                break
+        # The deadline bounds the wait itself (#308 F-RA-10): as_completed
+        # with no timeout waited for the next download to finish before the
+        # deadline could be looked at, and a download that hangs holds that
+        # wait for as long as its own timeouts allow.
+        try:
+            for future in as_completed(futures, timeout=max(0.0, deadline - time.monotonic())):
+                path = futures[future]
+                done += 1
+                outcome = None
+                try:
+                    outcome = future.result()
+                except Exception as exc:  # download_static_image swallows its own
+                    note(f"{path}: {exc}")
+                if image_cache.resolve_cached_static_asset(path) is not None:
+                    fetched += 1
+                elif outcome == IMAGE_ABSENT:
+                    absent[path] = int(time.time())
+                    note(f"{path}: the image server does not have it (404 or 410); recorded absent, not asked for again")
+                elif outcome is not None:
+                    note(f"{path}: not cached ({outcome}); asked for again next pass")
+                if done % 25 == 0 or done == len(missing):
+                    tell(f"image {done}|{len(missing)}")
+                if time.monotonic() > deadline:
+                    stopped = True
+                    break
+        except FuturesTimeout:
+            stopped = True
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    # Drop what has not started. What is in flight carries its own timeout
+    # and is not waited for either (leave(), below): the next run picks up
+    # whatever did not land.
+    pool.shutdown(wait=False, cancel_futures=True)
+    running = any(not future.done() for future in futures)
 
-    left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
+    if absent != absent_before:
+        write_absent(absent)
+    # Left behind: not there and not absent -- what the next pass asks for,
+    # and what makes this one a failure.
+    left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None and p not in absent]
+    newly_absent = len(absent) - len(absent_before)
     note(
-        f"fetched {fetched}, still missing {len(left)}"
+        f"fetched {fetched}, {newly_absent} absent, still missing {len(left)}"
         f"{' (stopped at the ceiling)' if stopped else ''}"
         f"{f'; {len(damaged_found)} were damaged and re-fetched' if damaged_found else ''}"
     )
     if left:
         tell("why SOME_IMAGES_NOT_SAVED")
     tell(f"done {fetched}|{len(left)}")
-    return 1 if (left or verify_left) else 0
+    code = 1 if left else (3 if verify_left else 0)
+    if running:
+        leave(code)
+    return code
+
+
+def leave(code: int) -> None:
+    """End the process now, without waiting for downloads still running on
+    the pool's threads. Each carries its own timeout, fetches into memory and
+    writes a temp name of its own only once the whole image has arrived and
+    passed patch 013's test, then renames it (patches 009, 013), so one cut
+    short leaves nothing the next pass does not fetch."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Under the ctl this runs beneath timeout, which puts it in a process
+    # group of its own: the scan page's CANCEL -- a SIGINT to the run's group
+    # -- reaches the ctl and not this process, and the ctl's EXIT trap ends
+    # it by SIGTERM through timeout (the default action, at once). The
+    # SIGINT handling here is for the helper started any other way: by hand,
+    # or by a caller that does signal its group. A shell starts a background
+    # job with SIGINT ignored, which Python keeps, so it is taken back; a
+    # KeyboardInterrupt then drops the queued downloads and leaves without
+    # the ones in flight (#307 PL-013; the shipped path is the harness's
+    # D23, under GNU timeout -- audit of the fixes, claude G-D-03).
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        code = main()
+    except KeyboardInterrupt:
+        note("cancelled: what was not fetched is the next pass's")
+        tell("why CANCELLED")
+        leave(130)
+    sys.exit(code)

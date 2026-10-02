@@ -16,7 +16,7 @@ once. Nothing else changes; a client that does not send the header is
 served as before. Awards never take this path (they are handled first).
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
-@@ -391,6 +391,17 @@
+@@ -412,6 +412,17 @@ class ProxyRuntimeServer(ThreadingTCPServer):
              if cached_login_response is not None:
                  return cached_login_response
  

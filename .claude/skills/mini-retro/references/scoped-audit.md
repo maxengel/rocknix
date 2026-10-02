@@ -185,9 +185,9 @@ phase's diff. Each should take 30 seconds to 2 minutes.
 
 | Spot check                               | How to verify                                                                                                                                                                                                                  | What to look for                                                                                                                                                                                                                                                                                        |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ESM-not-CJS**                          | `grep -n "^const.*require(" <new .ts files>`                                                                                                                                                                                   | Any `require(` in a new or modified `.ts` file under `services/pspace-api/src/` — ESM-only codebase                                                                                                                                                                                                     |
+| **ESM-not-CJS**                          | `grep -n "^const.*require(" <new .ts files>`                                                                                                                                                                                   | Any `require(` in a new or modified `.ts` file under `services/example-api/src/` — ESM-only codebase                                                                                                                                                                                                     |
 | **postgres.camel dual-read**             | `grep -n "row\\." <new sql files>`                                                                                                                                                                                             | `row.foo_bar` without `row.foo_bar ?? row.fooBar` fallback; silent-fail pattern                                                                                                                                                                                                                         |
-| **XRI canonical form**                   | `grep -n "pspace://\|kno://" <new files>`                                                                                                                                                                                      | Non-canonical forms (bare slugs, `kno://capability/` instead of `pspace://capability/`)                                                                                                                                                                                                                 |
+| **XRI canonical form**                   | `grep -n "example://\|kno://" <new files>`                                                                                                                                                                                      | Non-canonical forms (bare slugs, `kno://capability/` instead of `example://capability/`)                                                                                                                                                                                                                 |
 | **New public APIs documented**           | Read any new exported function/type                                                                                                                                                                                            | JSDoc present; cross-references to issue; scope boundary noted                                                                                                                                                                                                                                          |
 | **Schema version lockstep**              | If a schema was bumped, grep the version string across the repo                                                                                                                                                                | Any stale pin at the old version that didn't move in the same commit                                                                                                                                                                                                                                    |
 | **Schema-rollout reality**               | If a `validation.rules.*` entry was added/edited, run the lint                                                                                                                                                                 | Any `rollout: strict` rule with non-zero baseline findings; demote or fix corpus (see #2289)                                                                                                                                                                                                            |
@@ -291,7 +291,7 @@ its scope.
 
 **CRITICAL — scope of "full test suite":** "Full" means the **actual
 project-wide test runner output** (e.g. `npx vitest run` with no
-filename arguments for pspace-api), NOT a domain-scoped subset. Do
+filename arguments for example-api), NOT a domain-scoped subset. Do
 NOT scope to "all tests for the phase's domain" — that's what got
 the M33 P3 retro (2026-04-25) to claim "897/898 passing in the full
 capability suite" while two `e2e-lifecycle-chain.test.ts` cases were
@@ -303,7 +303,7 @@ runner.**
 **Procedure:**
 
 1. Run the **full project test suite**, no filename filters. For
-   pspace-api: `cd services/pspace-api && npx vitest run`. For other
+   example-api: `cd services/example-api && npx vitest run`. For other
    workspaces, use the equivalent project-wide invocation. Note the
    total file/test counts in the retro so future readers can verify
    scope.
@@ -575,7 +575,7 @@ update's commit sha (Outcome A) or the tracking issue number
 
 **Goal:** verify the phase **honored** the build-vs-adopt answer its
 spec / Epic recorded. The question "are we building this because we must,
-or because we can?" is doctrine §1 (pSpace-first, with an escape hatch)
+or because we can?" is doctrine §1 (platform-first, with an escape hatch)
 and development-principles' *Prefer adopt / extend / contribute before
 building from scratch*. This check closes the loop at completion: did the
 shipped work match the recorded path?

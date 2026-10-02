@@ -156,16 +156,16 @@ Before answering any of the five questions, gather:
   probes (a row of 200s) are INSUFFICIENT: the E253 login work burned
   4 debugging loops on endpoints that each answered 200 but rejected
   each other's artifacts (discovery advertised endpoints whose tokens
-  userinfo refused — pspace#3281). The futro's probe plan MUST include
+  userinfo refused — an external issue #3281). The futro's probe plan MUST include
   at least one END-TO-END transaction across the paired endpoints
   (e.g. mint a token via the discovery doc's token endpoint, then
   spend it at the paired verification endpoint), not per-endpoint
   200s alone. If the full transaction cannot run pre-execution, name
   that explicitly as an accepted unknown in question 2.
 - **Platform-substrate probe mandate** (scaffold#246; Birdwork BS-5) —
-  any substrate precondition that names a possibility.space API, route, MCP
+  any substrate precondition that names the external platform's API, route, MCP
   surface, or platform verb MUST cite a fresh transcript from
-  `node scripts/pspace-probe.mjs verb <path> <METHOD> --api <api-name>`
+  `node scripts/<the platform probe> verb <path> <METHOD> --api <api-name>`
   (the helper can derive a candidate name for tenant routes, but an explicit
   catalog name is stronger). The probe must use the **exact verb** the design
   depends on. The manifest is API-advertisement-only. The MCP phase proves only
@@ -246,12 +246,12 @@ unverified substrate assumption is the highest-frequency cause of
 "sub-issues that decompose cleanly but cannot execute." See
 blindspot-register § "Substrate-precondition assumption inherited
 from issue body" for the canonical instance (Epic #2647 / S1 #2648).
-For possibility.space surfaces, generic existence evidence is insufficient:
+For the external platform's surfaces, generic existence evidence is insufficient:
 cite the verb-matched, multi-surface probe transcript required above.
 
 **Build-vs-adopt re-validation sub-question (when applicable).** If the
 spec or Epic governing this work carries a `## Build-vs-Adopt` answer (or
-the question is live under doctrine §1 pSpace-first + development-
+the question is live under doctrine §1 platform-first + development-
 principles' *Prefer adopt / extend / contribute before building from
 scratch*), re-validate it against current reality. Standards move: a
 Build answer from six months ago may be an Adopt today, and an Adopt
@@ -362,7 +362,7 @@ beat hand-waving.
 | ❌ Vague                             | ✓ Specific                                                                                                                                                                    |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "We need to think about concurrency" | "Known unknown: does `pg_advisory_xact_lock` release if the connection is killed mid-txn? (investigation: read postgres docs + write a probe test)"                           |
-| "Similar to what we did before"      | "Pattern: matches the pspace-api/secrets lifecycle work (commit `a3b1c`); applied FNV hashing + sorted lock order there too"                                                  |
+| "Similar to what we did before"      | "Pattern: matches the example-api/secrets lifecycle work (commit `a3b1c`); applied FNV hashing + sorted lock order there too"                                                  |
 | "Might be tricky"                    | "Blindspot check: we systematically underestimate migration work (register entry #2); this touches installed_capabilities + external_capability_endpoints — factor 1.5× time" |
 
 ### Step 4 — Write the artifact(s)

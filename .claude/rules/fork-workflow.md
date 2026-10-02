@@ -6,7 +6,7 @@ paths:
 
 # Fork workflow & merging up to upstream
 
-This is a fork (`origin` = `maxengel/rocknix`) of `upstream` = `ROCKNIX/distribution`.
+This is a fork (`origin` = `rasteratops/distribution`) of `upstream` = `ROCKNIX/distribution`.
 The goal: keep personal artifacts in the fork, but open **clean** upstream PRs that contain
 only the feature work.
 
@@ -30,7 +30,7 @@ in `.githooks/pre-push` are the same list; change one and change the other.
 - **Agent context** — `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.githooks/`,
   `.github/sessions/`, `.github/workflows/fork-*`
 - **Personal writing** — `docs/`, `plans/`
-- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`, `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test`, `tools/wait-lock-test`, `tools/last-good-scripts-test`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/cloud-census`, `tools/emulator-exit-test`, `tools/vm-qa`, `tools/time-to-play`, `tools/vocabulary-check`, `tools/register-check`, `tools/rules-check`, `tools/box-check`, `tools/release-catalog`, `tools/device-act`, `tools/ra-offline-test`, `tools/qa-accounts`, `tools/vm-walks/`, `tools/fork-worktree`, `tools/fork-package-freshness`, `tools/vm-upgrade-rehearsal`, `tools/frame-diff`, `tools/archaeology`, `tools/work-log-index`, `tools/ceremony-check`, `tools/es-syntax-check`, `tools/png-blackout`, `tools/fork-newdrive`, `tools/es-untranslated`, `tools/font-stems`, `tools/signin-memory`, `tools/es-menu-map-check`, `tools/ra-candidate-games`, `tools/retroarch-wrapper-test`, `tools/build-preflight`, `tools/watch-job`, `tools/council/` (the council Facilitator, #70). One entry per tool, the same entries as `PERSONAL_PATTERNS`; the 2026-09-12 audit found the prose three short
+- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`, `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test`, `tools/wait-lock-test`, `tools/last-good-scripts-test`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/cloud-pair-migration`, `tools/cloud-census`, `tools/emulator-exit-test`, `tools/vm-qa`, `tools/time-to-play`, `tools/vocabulary-check`, `tools/forbidden-terms-check`, `tools/register-check`, `tools/rules-check`, `tools/box-check`, `tools/release-catalog`, `tools/rc-preflight`, `tools/device-act`, `tools/ra-offline-test`, `tools/qa-accounts`, `tools/vm-walks/`, `tools/fork-worktree`, `tools/fork-package-freshness`, `tools/vm-upgrade-rehearsal`, `tools/frame-diff`, `tools/archaeology`, `tools/work-log-index`, `tools/ceremony-check`, `tools/es-syntax-check`, `tools/png-blackout`, `tools/fork-newdrive`, `tools/es-untranslated`, `tools/font-stems`, `tools/signin-memory`, `tools/es-menu-map-check`, `tools/ra-candidate-games`, `tools/retroarch-wrapper-test`, `tools/build-preflight`, `tools/watch-job`, `tools/pr-stack-check`, `tools/prose-check`, `tools/council/` (the council runner), and the council toolchain at scaffold's own paths (`scripts/council-*`, `scripts/lint-council-*`, `scripts/build-council-prompt.ts`, `scripts/write-step-seal.ts`, `scripts/verify-{pins,chain,seals}.ts`, `scripts/check-stale-blob-drift.ts`, `scripts/setup-council-mistral-tokenizer.mjs`, `scripts/forge-write-status.mjs`, `scripts/owner-queue-lint.mjs`, `scripts/lib/council-*`, `scripts/lib/verifier-pins.ts`, `scripts/__tests__/`, `seed/`, `verifier-pins.json`, `council-seat-efforts.json`; #70, D-WORKFLOW-088). One entry per tool, the same entries as `PERSONAL_PATTERNS`; the 2026-09-12 audit found the prose three short
 - **Council artifacts** — `research/`
 - **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
   `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,
@@ -93,7 +93,34 @@ with **no spaces before the colon** (`rclone - cloud-sync: …` and `SM8250 - li
 styles FAIL). Also enforced: title ≤ 72 chars, blank line between title and body, body
 lines ≤ 72 chars, and no merge commits in the PR.
 
-## Safety net: pre-push guard
+## Safety net: pre-push guard, and the pre-commit scan
+
+Three hooks share one library, `.githooks/guard-lib`, and two lists.
+`.githooks/pre-commit` refuses a commit that would add a credential-shaped
+line (the patterns in `.githooks/secret-patterns`), because the push guard
+reads history and a line that reaches history costs a rewrite to remove
+(2026-09-28, #307). `.githooks/commit-msg` reads the message the same way.
+The second list is a **wordlist the fork must not carry anywhere** -- tree,
+commit messages, tracker -- and it lives **outside every tree**, at
+`~/.config/rocknix/forbidden-terms` (mode 0600; the fork CI reads the
+repository secret `FORBIDDEN_PATTERNS` instead), because a list of the words a
+tree must not hold would itself hold them. It is not reproduced, quoted or
+described in anything the fork carries, the maintainer's request included
+(#312, D-WORKFLOW-061): a refusal names the file and the line, never the word.
+`tools/forbidden-terms-check` reads a whole tree (or `--stdin`) against it.
+The runner half is `.github/workflows/fork-wordlist.yml`: every push of every
+branch, the tree and the pushed messages, red without the secret.
+
+Every scan fails closed: a list that cannot be read, a pattern that does not
+compile, a grep that dies, a diff or a message that cannot be read each
+refuses. A line is judged after its label, so a file's *name* is never a
+credential, and no path is exempt -- an audit packet that carries a
+credential-shaped line is redacted in the packet. `.githooks/hooks-test` is
+the guards' own proof, with a stand-in list and a run-time fixture; run it
+after any change here, and the ES fork's `.githooks/pre-push-test` after a
+change there. The hooks run in every worktree because the hooks path is
+absolute (below); a machine without the wordlist file cannot commit until it
+has one, which is the point.
 
 `.githooks/pre-push` blocks pushing any `pr/*` branch that still differs from `upstream/next`
 in a personal path (e.g. you forgot to rebase). Enable it once per clone — the setting is

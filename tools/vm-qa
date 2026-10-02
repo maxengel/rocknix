@@ -25,6 +25,7 @@
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
 #   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
+#   quoting     tests/credential-quoting.py  -- every command built from a typed credential reaches the shell quoted (#198), on the host (ES_SRC)
 #   menumap     tools/es-menu-map-check      -- docs/es-menu-map.md still describes the menus the image ships (D-UI-039), on the host (ES_SRC)
 #   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
 #               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
@@ -58,7 +59,7 @@ IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
 # to be a second, hand-typed list here -- and menumap, added to SUITES on
 # 2026-09-19, never ran because this copy was not updated. One list.
 ONLY=""
-SUITES="scripts lifetime wrapper vocabulary register french menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
+SUITES="scripts lifetime wrapper vocabulary register french quoting menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
 [ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
@@ -119,7 +120,12 @@ BUILD=$(SSH 'sed -n "s/^BUILD_ID=//p" /etc/os-release' 2>/dev/null | tr -d '"' |
 OUT="${ROCKNIX_ARTIFACTS:-/workspace/artifacts}/rocknix-images/qa-${BUILD}-${BACKEND}-${GUEST}-$(date +%Y%m%d-%H%M)"
 mkdir -p "$OUT/walks"
 REPORT="$OUT/report.md"
-{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
+# The guest's display, read from its QEMU's own command line (#291): hardware GL through virgl on a host
+# render node, or the software path. The renderer the guest's Mesa then reports is read at the end, from
+# the launch log the exit suite leaves, so a guest that fell back to softpipe says so on its report.
+case "$GUEST" in a) PIDF=/tmp/rocknix-qemu.pid ;; b) PIDF=/tmp/rocknix-qemu-b.pid ;; *) PIDF=/tmp/rocknix-qemu-$GUEST.pid ;; esac
+DISPLAY_MODE=$(ps -o args= -p "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null | grep -o -E 'egl-headless,rendernode=[^ ]+' | sed 's/^egl-headless,rendernode=/GL through virgl on /'); DISPLAY_MODE=${DISPLAY_MODE:-software rendering (no GL display)}
+{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}, display: $DISPLAY_MODE"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
 FAILS=0
 SKIPS=0  # a suite that could not run (rc 3) is shown as such, never folded into PASS
 run_suite() {  # name, log, command...
@@ -132,7 +138,13 @@ run_suite() {  # name, log, command...
   printf '| %s | %s | %ds | `%s` |\n' "$name" "$res" "$dt" "$(basename "$log")" >> "$REPORT"
   echo "$name: $res in ${dt}s"
 }
-case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
+# The scripts harness carries cancel checks that send SIGINT to a run; a
+# background job (this runner under setsid -f, or a harness waiter) has
+# SIGINT ignored at entry, which a child shell cannot undo. Python can --
+# and Python itself ignores SIGPIPE at startup, which execv keeps, so both
+# are reset (audit of the fix round PL-025); the harness prints what it got:
+# reset the disposition and exec the harness in its place (2026-09-28).
+case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); signal.signal(signal.SIGPIPE, signal.SIG_DFL); os.execv(sys.argv[1], sys.argv[1:])' "$ROOT/tools/last-good-scripts-test" ;; esac
 # EmulationStation's page-lifetime check (#144): the wizard's page-replacement
 # callbacks compiled under AddressSanitizer against small doubles, on the
 # host, in seconds. It had not compiled for a day and nothing ran it, so
@@ -161,6 +173,9 @@ case ",$ONLY," in *,wrapper,*) run_suite wrapper "$OUT/wrapper.log" "$ROOT/tools
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
 # Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
 case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac
+# Every command built from a credential a player types reaches the shell quoted (fork #198):
+# the check reads the ES source the french suite reads.
+case ",$ONLY," in *,quoting,*) run_suite quoting "$OUT/quoting.log" python3 "${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}/tests/credential-quoting.py" "${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" ;; esac
 # The menu map still describes what ships (D-UI-039): tools/es-menu-map-check reads the
 # screens in the ES commit the package pins and fails on one the map neither maps nor
 # declares under "## Not mapped". The rule predates the check by a month, and 30 screens
@@ -266,12 +281,45 @@ fresh_suite() {
 case ",$ONLY," in *,fresh,*) run_suite fresh "$OUT/fresh.log" fresh_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
+# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
+# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
+# first, puts the guest's rclone.conf back to how it found it -- on a fresh
+# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
+# while the same suite had read PASS on the image before, whose fixed-wait
+# walks passed whenever the tool ran (#125). Seed the QA remote when there is
+# none, the way seed-device does, and the folders the transfer page expects.
+ensure_remote() {
+  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
+  local conf; conf=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
+  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
+  rm -f "$conf"
+  SSH "chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; $(shipped_folders_cmd); echo \"vm-qa: seeded the QA remote \${r} (the guest had none)\"" 2>/dev/null
+}
+# The guest-side command that makes the shipped saves and backups folders in
+# the remote: their names from cloud_sync.conf.defaults, through the backend
+# tool, never a literal here (blindspot 71). Fails closed: a missing default
+# is a loud exit, not an empty folder name.
+shipped_folders_cmd() {
+  local saves backups
+  saves=$("$ROOT/tools/cloud-test-backend" shipped-default SAVES_REMOTE) || exit 2
+  backups=$("$ROOT/tools/cloud-test-backend" shipped-default SETTINGS_REMOTE) || exit 2
+  printf 'r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}%s" >/dev/null 2>&1; rclone mkdir "${r}%s" >/dev/null 2>&1' "$saves" "$backups"
+}
 # Time to play (#135). --quick is the bounded form -- one repeat of the
 # launch, the exit sync and a game-to-game, no reboot and no host fixtures --
 # because this runs on every image and the offline and bounds cells are
 # minutes each. The full cell (--repeat 5, every condition) is run by hand
 # when a number is being proposed for a register row (D-CLOUD-116).
 case ",$ONLY," in *,time-to-play,*)
+  # Its online cells time a sync that reaches the QA cloud. In the full run
+  # an earlier suite has left a remote on guest a by now (run 29: reachable);
+  # alone (--only time-to-play) on a fresh pair there is none, and the exit
+  # sync ends at once with YOUR CLOUD STORAGE ISN'T SET UP YET (2026-09-25).
+  # tools/time-to-play now fails such a run; this keeps the suite from
+  # depending on its order.
+  ensure_remote
   run_suite time-to-play "$OUT/time-to-play.log" "$ROOT/tools/time-to-play" \
     --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" \
     --backend "$BACKEND" --out "$OUT/time-to-play" --quick --vm \
@@ -289,22 +337,6 @@ case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$R
 # why it is opt-in. Timing-bound like link (the flush within 90 s), so never
 # while an image builds here.
 case ",$ONLY," in *,ra-offline,*) run_suite ra-offline "$OUT/ra-offline.log" "$ROOT/tools/ra-offline-test" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" --serial "$SERIAL" --frames "$OUT/ra-offline-frames" ;; esac
-# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
-# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
-# first, puts the guest's rclone.conf back to how it found it -- on a fresh
-# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
-# while the same suite had read PASS on the image before, whose fixed-wait
-# walks passed whenever the tool ran (#125). Seed the QA remote when there is
-# none, the way seed-device does, and the folders the transfer page expects.
-ensure_remote() {
-  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
-  local conf; conf=$(mktemp)
-  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
-  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
-  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
-  rm -f "$conf"
-  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "walks: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
-}
 # And the transfer walks tick ROMS AND BIOS and continue to the systems page,
 # which on a device with no ROMs is the dialog NO SYSTEM ON THIS DEVICE HOLDS
 # WHAT YOU TICKED (two walks, af2db4ab09). The round-trip suite works in a
@@ -312,7 +344,9 @@ ensure_remote() {
 # pair -- so seed the same fixture the walks were written against: the
 # backend's seed-content in the cloud and seed-device's ROMs on the guest.
 # The manager walks want a game per system with a capture to show (#252): a
-# NES game with a turn recorded beside its states, a Game Boy game as it is,
+# NES game with a turn recorded beside its states (the record saying the turn
+# came from the game's own launch, or the fixed reader ignores it -- #288), a
+# Game Boy game as it is,
 # and an FBNeo game the core's own table turns. Stub ROMs, the fixture
 # pictures under tools/vm-walks/fixtures/ (a ring that is round only at the
 # right aspect, a green mark on the edge that is the game's top), and fixed
@@ -321,7 +355,7 @@ ensure_manager_fixture() {
   SSH 'test -f /storage/roms/savestates/fbn/mspacman.state.auto.png' 2>/dev/null && return 0
   local F="$ROOT/tools/vm-walks/fixtures" put
   put() { scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$1" "root@127.0.0.1:$2"; }
-  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
+  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\nfrom=checked-launch\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
   put "$F/nes-256x240-right.png" /storage/roms/savestates/nes/Bobl.state.auto.png
   put "$F/gb-160x144.png" /storage/roms/savestates/gb/Ninoid.state.auto.png
   put "$F/arcade-vertical-raw-left.png" /storage/roms/savestates/fbn/mspacman.state.auto.png
@@ -346,6 +380,11 @@ ensure_fixture() {
   scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$scr" root@127.0.0.1:/tmp/qa-seed-device.sh
   rm -f "$scr"
   SSH 'bash /tmp/qa-seed-device.sh >/dev/null 2>&1; rm -f /tmp/qa-seed-device.sh; echo "walks: seeded the content fixture (cloud seed-content, device ROMs) -- the guest had no ROMs"' 2>/dev/null
+  # The shipped saves and backups folders beside the content, since the reset
+  # took them: RESTORE FROM THE CLOUD's scan (D-CLOUD-167) reaches the options
+  # page only when the cloud has the saves folder; without it the walk ends
+  # on the offer to create one (D-CLOUD-161), which guest d's proofs cover.
+  SSH "$(shipped_folders_cmd)" 2>/dev/null
 }
 case ",$ONLY," in *,walks,*)
   ensure_fixture
@@ -429,5 +468,7 @@ if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
   # rather than beside the report's.
   { echo; sed -e 's/^## /### /' -e '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
 fi
+RENDERER=$(SSH 'grep -h -m1 "\[GL\].*Renderer:" /var/log/exec.log 2>/dev/null' 2>/dev/null | sed 's/.*Renderer: //' | tr -d '\r')
+{ echo; echo "renderer: ${RENDERER:-(no RetroArch launch log on the guest)} -- the guest's Mesa, from the launch log; display: $DISPLAY_MODE"; } >> "$REPORT"
 echo; cat "$REPORT"; echo; echo "report: $REPORT"
 [ "$FAILS" = 0 ]

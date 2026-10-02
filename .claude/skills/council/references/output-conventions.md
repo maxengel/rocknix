@@ -10,8 +10,8 @@ artifact can be traced back to the inputs that produced it.
 research/council-runs/YYYY-MM-DD-{topic}/
 ```
 
-- `YYYY-MM-DD` — UTC date of council run start (the `mcp_time_get_current_time`
-  result at Setup; do not rely on local date)
+- `YYYY-MM-DD` — UTC date of council run start from a checked clock
+  (`date -u` or a time tool). MCP availability is not a prerequisite.
 - `{topic}` — kebab-case short slug for the deliberation topic (≤ 6
   words). Derive from the problem statement; surface the chosen slug
   to the user at Setup so they can override
@@ -37,6 +37,7 @@ research/council-runs/2026-05-22-model-identity-verification-technique/
 ├── ledger.jsonl                           # H2 provenance hash chain, non-legacy runs
 ├── verification/
 │   ├── genesis.json                       # H2 externally anchored genesis manifest
+│   ├── anchor-receipt.json                # remote readback, or explicit local-only setup
 │   ├── seal-key.local                     # local HMAC key, never committed to anchor branch
 │   └── seals/
 │       ├── step1.seal.json
@@ -49,29 +50,29 @@ research/council-runs/2026-05-22-model-identity-verification-technique/
 ├── gemini-analysis.md.provenance.json
 ├── gpt-analysis.md
 ├── gpt-analysis.md.provenance.json
-├── kimi-analysis.md                       # 4-member roster and up
+├── kimi-analysis.md                       # required member
 ├── kimi-analysis.md.provenance.json
-├── mistral-analysis.md                    # 5-member roster only
-├── mistral-analysis.md.provenance.json
+├── muse-analysis.md                       # required member (the fifth seat since scaffold#915)
+├── muse-analysis.md.provenance.json
 ├── peer_reviews/
 │   ├── claude_peer_review.md              # Step 2 outputs
 │   ├── gemini_peer_review.md
 │   ├── gpt_peer_review.md
 │   ├── kimi_peer_review.md
-│   └── mistral_peer_review.md
+│   └── muse_peer_review.md
 ├── revised_approaches/
 │   ├── claude-revised_plan.md             # Step 3 outputs
 │   ├── gemini-revised_plan.md
 │   ├── gpt-revised_plan.md
 │   ├── kimi-revised_plan.md
-│   ├── mistral-revised_plan.md
+│   ├── muse-revised_plan.md
 │   └── consensus_plan.md                  # Step 4.5 output, opt-in only
 └── peer_votes/
     ├── claude_vote.md                     # Step 4 outputs
     ├── gemini_vote.md
     ├── gpt_vote.md
     ├── kimi_vote.md
-    └── mistral_vote.md
+    └── muse_vote.md
 ```
 
 Recursion rounds add `-r{N}` suffixed files in the relevant
@@ -84,67 +85,57 @@ Step 1 member invocation begins. The manifest is the inventory authority
 for completeness checks: the lint does not guess the active roster or infer
 which artifacts should exist from directory contents alone.
 
-Schema:
+Generate the complete initial inventory and recipe identity from the installed
+helpers (Node 24, repository root), then save the printed JSON as the manifest.
+Replace the run ID/topic and coordinator preference with this run's facts; do
+not replace an existing anchored manifest. No model slug or digest is copied
+from this document:
 
-```json
-{
-  "schema_version": "council-run-manifest@1.0.0",
-  "run_id": "2026-05-22-model-identity-verification-technique",
-  "created_at": "2026-05-22T15:42:18Z",
-  "topic": "model-identity-verification-technique",
-  "roster": ["claude", "gemini", "gpt", "kimi", "mistral"],
-  "provenance_contract": "council-facilitator@1.0.0",
-  "expected_outputs_per_step": {
-    "step1": [
-      {
-        "path": "claude-analysis.md",
-        "member": "claude",
-        "kind": "initial-analysis"
-      }
-    ],
-    "step2": [
-      {
-        "path": "peer_reviews/gemini_peer_review.md",
-        "member": "gemini",
-        "kind": "peer-review"
-      }
-    ],
-    "step3": [
-      {
-        "path": "revised_approaches/gpt-revised_plan.md",
-        "member": "gpt",
-        "kind": "revised-plan"
-      }
-    ],
-    "step4": [
-      {
-        "path": "peer_votes/kimi_vote.md",
-        "member": "kimi",
-        "kind": "peer-vote"
-      }
-    ],
-    "step4_5": [
-      {
-        "path": "revised_approaches/consensus_plan.md",
-        "member": "claude",
-        "kind": "consensus-integration"
-      }
-    ]
-  }
-}
+```bash
+node --input-type=module <<'JS'
+import { FACILITATOR_VERSION } from "./scripts/council-invoke.ts";
+import { MEMBER_IDS, rosterIdentity } from "./scripts/lib/council-roster.ts";
+const runId = "YYYY-MM-DD-topic";
+const rows = [
+  ["step1", "", "-analysis", "initial-analysis"],
+  ["step2", "peer_reviews/", "_peer_review", "peer-review"],
+  ["step3", "revised_approaches/", "-revised_plan", "revised-plan"],
+  ["step4", "peer_votes/", "_vote", "peer-vote"],
+];
+console.log(JSON.stringify({
+  schema_version: "council-run-manifest@1.0.0",
+  run_id: runId, created_at: new Date().toISOString(), topic: "Replace with the question",
+  roster: MEMBER_IDS, provenance_contract: FACILITATOR_VERSION,
+  roster_contract: rosterIdentity(),
+  coordinator: { harness: "codex", requested_model: "your-coordinator-preference",
+    observed_model: null, observation: "unverified", voting: false },
+  expected_outputs_per_step: Object.fromEntries(rows.map(([step, dir, suffix, kind]) =>
+    [step, MEMBER_IDS.map(member => ({ member, kind, path: `${dir}${member}${suffix}.md` }))])),
+}, null, 2));
+JS
 ```
 
 Rules:
 
-- `run_id` matches the output directory basename.
+- `run_id` matches the output directory basename for a standalone council.
+  A nested research Phase 4 run uses `<research-run>/phase-4-deliberation`
+  (or its `phase-4-deliberation-r<N>-<NNN>` replay name). Its genesis,
+  ledger and seals retain the same five-member requirements. Default lint
+  scans disclose pre-1.10.0 research runs they exclude; an explicit path
+  still runs verification and never implies a current-contract upgrade.
 - `created_at` is the UTC timestamp captured at Setup.
 - `roster` uses member short names only: `claude`, `gemini`, `gpt`,
-  `kimi`, `mistral`.
+  `kimi`, `muse` for a definitive run; a shadow arm names `grok` or `deepseek`
+  in the fifth place. Runs sealed before scaffold#915 name `mistral`.
 - `provenance_contract` declares the provenance shape the run expects.
-  New runs use `council-facilitator@1.0.0`, which requires
-  `facilitator_version` and `final.file_artifact_sha256`. Historical
-  runs may use a `legacy-*` value when they predate those fields; the
-  manifest documents that compatibility boundary explicitly.
+  New runs use the installed `FACILITATOR_VERSION` (1.6.0 for this adoption),
+  not a hard-coded old example. `roster_contract` is `rosterIdentity()` from
+  `scripts/lib/council-roster.ts`: version, digest and provider derived from
+  current Facilitator recipes. It is not a second configuration authority.
+  Historical records stay unchanged; they cannot qualify as current run proof.
+- All five installed members are required; `roster_decision` cannot waive this;
+  no installed seat is optional. An anchored run's
+  roster, coordinator and verifier pins are immutable.
 - Every `path` is relative to the run directory and resolves inside it.
 - Every declared output path implies a required provenance sibling at
   `<path>.provenance.json` (for example, `claude-analysis.md` implies
@@ -159,7 +150,36 @@ Rules:
   `revised_approaches/consensus_plan.md` output from the winning author
   or designated synthesizer, with a provenance sibling.
 - Recursion rounds append `-r{N}` to the relevant `path` values and add
-  those outputs to the same step key.
+  those outputs to the same step key. Declare complete member sets for all
+  Steps 2–4 before a new round (at most five rounds). Helpers accept
+  `--round N`; round-specific seals such as `step2-r2.seal.json` preserve
+  the previous round's seal. Step 1 does not recur.
+
+### Coordinator block (corpus 4.7.0)
+
+The manifest records who orchestrated the run, as observed — separately from
+the harness profile's preference (`SKILL.md` § Coordinator):
+
+```json
+"coordinator": {
+  "harness": "claude-code",
+  "requested_model": "claude-opus-5",
+  "observed_model": null,
+  "observation": "unverified",
+  "voting": false
+}
+```
+
+- `harness` — `claude-code` | `codex` | `copilot` | `tursi`.
+- `requested_model` — the profile's preferred coordinator model for that
+  harness, as listed in `SKILL.md` § Coordinator.
+- `observed_model` — the model the runtime itself reported, when the harness
+  exposes one; otherwise `null` with `observation: "unverified"`. Never copy
+  `requested_model` into `observed_model`: an inferred identity is the
+  substrate-collapse signature the Facilitator exists to prevent, and it is not
+  attested here either.
+- Required and checked by the shipped standalone helpers. The coordinator is
+  non-voting. Earlier run records are not amended to simulate observation.
 
 ## Filename rules
 
@@ -176,7 +196,8 @@ Rules:
 | User tie-break decision   | `peer_votes/user-decision-r{N}.md` (only when max-round cap hit) |
 | Model verification log    | `model-verification-log.md` (per-break gate results)             |
 
-Member short names: `claude`, `gemini`, `gpt`, `kimi`, `mistral`. Use
+Member short names: `claude`, `gemini`, `gpt`, `kimi`, `muse` (shadow arms:
+`grok`, `deepseek`; historical runs: `mistral`). Use
 lowercase; do not include version suffixes (`claude-4`, `kimi-26`,
 `mistral-3`) in filenames — version provenance lives in the
 `.provenance.json` sibling.
@@ -196,9 +217,14 @@ schema:
 
 ```json
 {
-  "facilitator_version": "council-facilitator@1.0.0",
+  "facilitator_version": "council-facilitator@1.6.0",
+  "roster_contract": { "version": "council-facilitator@1.6.0", "sha256": "installed-recipe-digest", "provider": "openrouter" },
+  "artifact_path": "research/council-runs/<run-id>/claude-analysis.md",
+  "output_file_sha256": "sha256",
+  "genesis_sha256": "sha256-of-anchored-genesis",
+  "prev_verdict_sha256": null,
   "member": "claude",
-  "declared_model": "anthropic/claude-fable-5 (OpenRouter, effort=max)",
+  "declared_model": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
   "substrate": "openrouter",
   "endpoint": "https://openrouter.ai/api/v1/chat/completions",
   "request": {
@@ -215,7 +241,7 @@ schema:
       "http_status": 200,
       "outcome": "success",
       "outcome_reason": "success",
-      "model_field": "anthropic/claude-5-fable-20260609",
+      "model_field": "anthropic/claude-fable-5.1-20260831",
       "content_length": 12345,
       "content_sha256": "sha256",
       "usage": {
@@ -225,12 +251,14 @@ schema:
       "tokens": {
         "prompt": 1000,
         "completion": 2000,
-        "total": 3000
+        "total": 3000,
+        "reasoning": 500
       }
     }
   ],
   "final": {
     "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
     "total_duration_ms": 1200,
     "retries_used": 0,
     "file_artifact_sha256": "sha256",
@@ -241,13 +269,21 @@ schema:
     "tokens": {
       "prompt": 1000,
       "completion": 2000,
-      "total": 3000
+      "total": 3000,
+      "reasoning": 500
     },
     "verification": {
       "result": "PASS",
       "match_kind": "semantic",
-      "declared": "anthropic/claude-fable-5 (OpenRouter, effort=max)",
-      "observed": "anthropic/claude-5-fable-20260609"
+      "declared": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+      "observed": "anthropic/claude-fable-5.1-20260831",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "xhigh",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 500
     }
   }
 }
@@ -257,6 +293,10 @@ Rules:
 
 - `attempts[].content_sha256` is the hash of the assistant content
   extracted from the provider response.
+- This is an illustrative excerpt, not a hand-authored receipt. The sidecar
+  must equal the corresponding canonical ledger entry. Model identity,
+  recipe binding, declared effort, and provider reasoning evidence are
+  independently checked; content success or a CLI exit 0 is not sufficient.
 - `final.file_artifact_sha256` is the hash of the Markdown file after
   the Facilitator writes it to disk; this is what the completeness lint
   re-validates before downstream steps consume the output.
@@ -265,7 +305,7 @@ Rules:
   `usageMetadata`; the Facilitator records either shape without
   normalizing provider-specific field names.
 - `tokens` is the Facilitator-normalized token shape:
-  `prompt`, `completion`, and `total`. If a provider response lacks
+  `prompt`, `completion`, `total`, and `reasoning` (nullable). If a provider response lacks
   usable usage metadata, the Facilitator records `tokens: null` and
   `usage_unavailable: "usage_absent"` or `"usage_unrecognized"` on
   the attempt. Successful final provenance carries the same explicit
@@ -309,6 +349,8 @@ Rules:
   that step.
 - `signature` is an HMAC over the canonical seal payload, using
   `COUNCIL_SEAL_HMAC_KEY` or `verification/seal-key.local`.
+  This is local tamper evidence, not a provider-signed attestation. The key's
+  hash is bound in genesis; the key stays private, ignored and owner-only.
 - `scripts/verify-seals.ts --strict {run_dir}` verifies seal terminal
   hashes, verdict counts, and signatures. This catches truncation of the
   final verdict that a hash chain alone cannot detect.
@@ -329,11 +371,11 @@ Schema for each section:
 
 | Member  | Substrate                 | Declared model                                           | Observed model                    | Verification mechanism      | Result | Notes |
 | ------- | ------------------------- | -------------------------------------------------------- | --------------------------------- | --------------------------- | ------ | ----- |
-| claude  | OpenRouter                | anthropic/claude-fable-5 (OpenRouter, effort=max)        | anthropic/claude-5-fable-20260609 | Response body `model` field | PASS   | —     |
-| gemini  | OpenRouter                | google/gemini-3.1-pro-preview (OpenRouter, effort=xhigh) | google/gemini-3.1-pro-preview     | Response body `model` field | PASS   | —     |
-| gpt     | OpenRouter (Azure-pinned) | openai/gpt-5.6-sol (OpenRouter via Azure, effort=max)    | openai/gpt-5.6-sol-20260709       | Response body `model` field | PASS   | —     |
-| kimi    | OpenRouter                | moonshotai/kimi-k2.6 (OpenRouter, effort=xhigh)          | moonshotai/kimi-k2.6              | Response body `model` field | PASS   | —     |
-| mistral | OpenRouter                | mistralai/mistral-large-2512 (OpenRouter)                | mistralai/mistral-large-2512      | Response body `model` field | PASS   | —     |
+| claude  | OpenRouter                 | anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)   | anthropic/claude-fable-5.1-20260831 | Response body `model` field | PASS   | —     |
+| gemini  | OpenRouter                 | google/gemini-3.8-flash (OpenRouter, effort=high)       | google/gemini-3.8-flash-20260902    | Response body `model` field | PASS   | —     |
+| gpt     | OpenRouter (OpenAI-pinned) | openai/gpt-6-astra (OpenRouter, via openai, effort=max) | openai/gpt-6-astra-20260903         | Response body `model` field | PASS   | —     |
+| kimi    | OpenRouter (provider pin)  | moonshotai/kimi-k3 (OpenRouter, effort=max)             | moonshotai/kimi-k3                  | Response body `model` field | PASS   | —     |
+| muse    | OpenRouter (Meta-pinned)   | meta/muse-spark-1.3 (OpenRouter, via meta, effort=max)  | meta/muse-spark-1.3                 | Response body `model` field | PASS   | —     |
 
 Gate outcome: **PASS** — advancing to Step {N+1}.
 ```
@@ -344,10 +386,11 @@ Field rules:
   same step number and increment `r`.
 - **r** — recursion round (`r1` for the initial pass through Steps
   2–4; `r2`, `r3`, … for tie-break rounds).
-- **Timestamp** — the `mcp_time_get_current_time` result at gate
-  evaluation, in UTC, ISO-8601 (`2026-05-22T15:42:18Z`).
-- **Substrate** — `OpenRouter` (default; `OpenRouter (Azure-pinned)` for the gpt seat), or the direct-API fallbacks `anthropic-direct`, `ai-studio`, `foundry-direct`. The substrate
-  determines which verification mechanism applies.
+- **Timestamp** — a checked clock at gate evaluation, in UTC, ISO-8601
+  (`2026-05-22T15:42:18Z`); no MCP dependency.
+- **Substrate** — `OpenRouter` for new anchored runs, with provider routing
+  taken from the installed recipe (the GPT seat is OpenAI-pinned). Older
+  direct-provider/harness entries remain historical audit material.
 - **Declared model** — first element of the member agent file's
   `model:` array (read at gate time, not at run start, to catch
   intra-run agent-file edits).
@@ -359,8 +402,8 @@ Field rules:
   used (e.g. `Cache Explorer turn N`, `OTLP log file: <path>:<line>`,
   `Response body \`model\` field`).
 - **Result** — `PASS` (declared model and observed model match
-  semantically — e.g. `"anthropic/claude-fable-5 (OpenRouter, effort=max)"` matches a response-body `model: "anthropic/claude-5-fable-20260609"`; `"openai/gpt-5.6-sol (OpenRouter via Azure, effort=max)"`
-  matches a response body `model: "openai/gpt-5.6-sol-20260709"`), `FAIL`
+  semantically — e.g. `"anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)"` matches a response-body `model: "anthropic/claude-fable-5.1-20260831"`; `"openai/gpt-6-astra (OpenRouter, via openai, effort=max)"`
+  matches a response body `model: "openai/gpt-6-astra-20260903"`), `FAIL`
   (declared and observed mismatch), or `UNVERIFIABLE` (the
   verification mechanism is unavailable in this session).
 - **Notes** — free text. Required on FAIL and UNVERIFIABLE; optional
@@ -384,17 +427,21 @@ per-step / per-member / per-attempt token counts, and derives
 
 Rules:
 
-- `run-summary.json` uses `schema_version:
-council-run-summary@1.0.0`.
+- `run-summary.json` uses `schema_version: council-run-summary@1.1.0`.
+  The command verifies complete current-contract artifacts, ledger and seals
+  before writing. `usage_scope: declared_outputs_excluding_setup_probes`
+  labels its totals, which cover declared outputs, excluding Setup probes;
+  each recursion round is separate. Custom filenames remain under the run
+  directory as `run-summary-<name>.json` / `.md`.
 - `tokens.{prompt,completion,total}` is the normalized token shape.
   Raw provider usage remains in each provenance sibling under `usage`.
-- Missing or unrecognized provider usage is recorded as
-  `usage_unavailable` with a reason (`usage_absent`,
-  `usage_unrecognized`, `provenance_missing`, or
-  `attempts_missing_or_unreadable`). It is never represented as `0`.
-- Historical runs may still produce useful summaries from raw `usage`
-  payloads even when they predate `attempts[].tokens` and
-  `final.tokens`.
+- Missing or unrecognized provider usage is recorded per attempt as
+  `usage_unavailable` with a reason (`usage_absent` or `usage_unrecognized`),
+  never as an observed `0`. Totals sum available counts; consult
+  `usage_unavailable_count` before treating them as complete accounting.
+- Historical/partial runs may be inspected separately, but this verifier
+  refuses to produce a current verified summary for them. Failed validation
+  does not overwrite an existing summary.
 
 ## README.md
 
@@ -402,7 +449,7 @@ The output directory's top-level `README.md` is written **at the end of
 the council run**, summarizing:
 
 - Problem context (one paragraph)
-- Active roster (3 vs 4) and reachability evidence
+- Active roster (3, 4, or 5) and reachability evidence
 - Round-by-round summary (r1, r2, r3, …) with vote tallies
 - **Model verification summary** — link to `model-verification-log.md`;
   total gate count; count of PASS / FAIL / UNVERIFIABLE outcomes;
@@ -412,7 +459,7 @@ the council run**, summarizing:
   total wall-clock attempt duration, and any `usage_unavailable` rows
 - Final winning plan + link to its `revised_approaches/*-revised_plan.md`
   (or `revised_approaches/*-revised_plan-r{N}.md`)
-- Link to the GitHub issue created in Step 5
+- Link to the Forge issue created or updated in Step 5
 - Any user decisions (plurality acceptance, tie-break)
 
 The README is the canonical entry point for anyone returning to the
@@ -430,3 +477,13 @@ orchestrator writes it.
   names used in filenames
 - [`model-verification.md`](model-verification.md) — defines the
   per-break gate procedure that populates the model-verification log
+
+## Shadow experiment identity
+
+A shadow arm sets `council_profile` to `grok-shadow` or `deepseek-shadow`, names
+its five actual member IDs, and carries the `experiment` block in
+[shadow experiments](shadow-experiments.md). Derive `roster_contract` from
+`rosterIdentity(repoRoot, profile)`; the definitive default has Muse in the fifth seat.
+The profile, campaign, baseline and fixed non-binding authority enter genesis.
+Each arm uses its own output directory, ledger and seals. Summaries label shadow
+results non-binding; neither a winner nor a PASS changes decision authority.

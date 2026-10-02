@@ -44,24 +44,14 @@ import sys
 RCLONE = "/usr/bin/rclone"
 LOG_FILE = "/var/log/cloud_sync.log"
 
-# OAuth backends we can complete on-device, and how.
-#   device_flow: RFC 8628 - handheld shows a URL and short code, polls for the
-#                token. Needs no listener at all.
-#   pkce_paste:  authorization code with PKCE and no redirect_uri; the provider
-#                displays the code for the player to hand back.
-# Everything else with a `token` option stays on the SSH wizard: we would be
-# guessing at its sign-in shape, and guessing wrong strands the player
-# mid-setup with no way back.
-# Every OAuth backend is drivable now. cloud_oauth wraps rclone's own
-# `authorize` machinery rather than reimplementing any provider's flow, so
-# there is nothing per-provider to support: whatever rclone can authorize,
-# the handheld can too. Probed against dropbox, drive, onedrive, box, pcloud
-# and yandex, each resolving to its own provider unchanged.
-#
-# This replaces an earlier split where three providers were "drivable" and
-# sixteen needed a computer. That distinction was about a design we did not
-# end up building.
-DRIVABLE_OAUTH = "all"
+# Every OAuth backend goes through cloud_oauth, which wraps rclone's own
+# `authorize` rather than reimplementing any provider's flow, so nothing here
+# is per-provider: the "oauth" tier is whatever rclone can authorize. (A
+# DRIVABLE_OAUTH constant and a table of device-flow and PKCE-paste backends
+# described a design that was not built; nothing read them, and they went in
+# #308, claude F-RS-14.) That a provider's authorize link resolves to the
+# provider was probed for dropbox, drive, onedrive, box, pcloud and yandex;
+# that its sign-in completes on the device is proved per provider.
 
 # rclone's backend list is not a list of cloud services. These wrap or
 # transform another remote, or are not remote at all, and offering them as
@@ -93,8 +83,13 @@ def rclone(*args, check=True):
         capture_output=True, text=True,
     )
     if check and proc.returncode != 0:
-        log("rclone %s failed (%d): %s" % (
-            " ".join(args), proc.returncode, proc.stderr.strip()[:200]))
+        # The verb and the exit code -- never the arguments, never rclone's
+        # words. `config create` carries every key=value the player typed,
+        # passwords among them, and this line put them in cloud_sync.log in
+        # the clear whenever a create failed (audit #307, gpt F-RS-04: the
+        # finding the audit refuted for cloud_oauth holds here).
+        verb = " ".join(args[:2]) if args[:1] == ("config",) else (args[0] if args else "")
+        log("rclone %s failed (%d)" % (verb, proc.returncode))
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -243,10 +238,13 @@ def cmd_choices(backend_type, field, subprovider=""):
 
 
 def existing_remotes():
-    """Configured remote names, without the trailing colon."""
+    """Configured remote names, without the trailing colon -- or None when
+    rclone could not say. A listing that failed used to read as "no remotes",
+    and cmd_create's refusal to touch an existing remote fell open exactly
+    when rclone could not be asked (#308 gpt F-RS-23)."""
     code, out, _ = rclone("listremotes", check=False)
     if code != 0:
-        return []
+        return None
     return [line.strip().rstrip(":") for line in out.splitlines() if line.strip()]
 
 
@@ -271,15 +269,25 @@ def cmd_create(name, backend_type, settings):
     match it; silently rewriting that is how someone loses access to their
     own files (see fork issue #51).
     """
-    if name in existing_remotes():
+    existing = existing_remotes()
+    if existing is None:
+        sys.stderr.write("could not read the configured remotes; not creating one\n")
+        return 2
+    if name in existing:
         sys.stderr.write(
             "remote '%s' already exists; not modifying it\n" % name)
         return 1
 
-    known = {t.get("Name") for t in load_providers()}
+    providers = load_providers()
+    known = {t.get("Name") for t in providers}
     if backend_type not in known:
         sys.stderr.write("unknown backend type: %s\n" % backend_type)
         return 1
+    # The values of this backend's password options, to be taken out of
+    # anything of rclone's this passes on (see below).
+    secret_names = {opt.get("Name") for t in providers if t.get("Name") == backend_type
+                    for opt in (t.get("Options") or []) if opt.get("IsPassword")}
+    secret_values = [value for key, value in settings if key in secret_names and value]
 
     args = ["config", "create", name, backend_type]
     for key, value in settings:
@@ -303,7 +311,14 @@ def cmd_create(name, backend_type, settings):
         % (name, backend_type, len(settings)))
     code, out, err = rclone(*args)
     if code != 0:
-        sys.stderr.write(err.strip() or "rclone config create failed\n")
+        # rclone's reason goes on to the interface, which shows it under THE
+        # CONNECTION COULDN'T BE SAVED so a mistyped key can be fixed -- with
+        # any password value it echoed taken out first (the audit of stream
+        # C, G-C-09: the log was cleaned in PL-074, this channel was not).
+        said = err.strip()
+        for value in secret_values:
+            said = said.replace(value, "<hidden>")
+        sys.stderr.write((said or "rclone config create failed") + "\n")
         return 2
 
     # rclone --non-interactive answers with a JSON blob when it still needs

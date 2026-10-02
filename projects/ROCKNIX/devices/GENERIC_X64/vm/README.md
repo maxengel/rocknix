@@ -12,7 +12,18 @@ The host acceleration differs by necessity: Linux uses KVM when available,
 while an x86_64 guest on Apple silicon uses QEMU TCG. The fixed CPU model and
 devices keep the guest-visible environment equivalent.
 
-Print or run the Linux QEMU command:
+Print or run the Linux QEMU command. `qemu-args` only prints: it touches no
+socket, vars store or disk, so it is safe beside a running guest. `run` clears
+a previous QEMU's monitor and serial sockets (a socket nobody listens on only
+-- a symlink, any other file, or a socket a running guest still answers on is
+refused, and nothing is cleared until every path has been checked) and makes
+the guest's UEFI vars store from the firmware's template when it has none,
+then starts QEMU. A vars
+store whose size is not the template's was made for another firmware build
+and is refused with its name: move it aside and the next start makes a new
+one. Both refuse a disk under the profile's
+16 GiB, and take the OVMF code image and vars template from one firmware
+directory (`--ovmf-code` with `--ovmf-vars-template` names another pair):
 
 ```bash
 projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
@@ -33,7 +44,9 @@ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
   run --headless --res 640x480 target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
 ```
 
-Generate the UTM bundle:
+Generate the UTM bundle (a qcow2 that needs another file -- a backing image,
+an external data file -- is refused: the bundle carries the one file; flatten
+it with `qemu-img convert -O qcow2` first):
 
 ```bash
 projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm utm \
@@ -75,11 +88,18 @@ ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1
 
 The `-L` tunnel carries rclone's OAuth sign-in page (guest port 53682) to the
 browser of the machine running SSH, so the full `rclone config` auto flow
-works from the host. Bridged VMs omit the injection: the guest is on the LAN
-under its own address, and the screen correctly shows it.
+works from the host. A bundle generated for Bridged (and `--net bridged` on
+Linux) omits the injection: the guest is on the LAN under its own address,
+and the screen correctly shows it. The injection is fixed when the bundle is
+made, though: a bundle switched to Bridged, or to a vmnet host network, in
+UTM's settings keeps its two `-fw_cfg` entries under QEMU > Arguments, and
+the screen keeps showing the loopback command, which does not reach the
+guest there. Remove those two entries when you switch.
 
 Manual fallback: write a full SSH command into
-`/storage/.config/cloud_setup_ssh` in the guest.
+`/storage/.config/cloud_setup_ssh` in the guest (from the serial console).
+It is kept across boots: `095-cloud-ssh` replaces or removes only the
+command it wrote itself. Delete the file to go back to the automatic one.
 
 ### Troubleshooting: bridged mode hangs forever (UTM)
 

@@ -26,7 +26,9 @@ Troubleshooting
 
 - "Connection refused" from ssh: the VM must be running, and the VM's
   network mode must be Emulated VLAN (the shipped default) - UTM does
-  not apply port forwards in other NAT modes.
+  not apply port forwards in other NAT modes. If you switch the mode,
+  also remove the two -fw_cfg entries under the VM's QEMU > Arguments;
+  ROCKNIX then shows the VM's own address instead of this command.
 - ssh warns about a changed host key after replacing the VM: run
   ssh-keygen -R "[127.0.0.1]:10022" and connect again.
 - The sign-in link never loads: make sure you connected with the full

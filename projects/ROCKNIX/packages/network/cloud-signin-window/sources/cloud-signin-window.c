@@ -7,20 +7,26 @@
  * resolves on whichever machine is running the browser. If that is the
  * player's phone, nothing is listening and they land on an error page they
  * have to copy an address out of. So the browser runs here instead, where
- * rclone's authorize listener actually is, and the player drives it from
- * their phone over VNC.
+ * rclone's authorize listener actually is, and the player drives it with the
+ * handheld's own buttons -- cloud_oauth turns them into keys -- or types into
+ * it from their phone, whose keystrokes arrive as a keyboard (cloud_oauth's
+ * RemoteKeyboard). Nothing is mirrored. (This said "over VNC", the design
+ * the keyboard replaced; #308 claude F-RS-14.)
  *
  * This is deliberately not a browser. There is no address bar, no tabs, no
  * downloads, and navigation is refused outside the provider's own host and
  * the loopback redirect -- a handheld should not become a way to browse the
  * web because we needed somebody to sign in to Dropbox.
  *
- *   cloud-signin-window <url> <allowed-host>
+ *   cloud-signin-window <url> <allowed-host> [--exit-hint TEXT]
+ *                       [--no-auto-keyboard]
  */
 
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
 #include <webkit2/webkit2.h>
 #include <string.h>
+#include <strings.h>
 
 #define OSK_ROWS 4
 #define OSK_COLS 11
@@ -64,7 +70,11 @@ typedef struct {
     GtkWidget *keys[OSK_ROWS + 1][OSK_COLS];   /* +1: the extras row */
     int row, col;
     gboolean shift;
+    gboolean symbols;
     char last_field[256];
+    /* Whether this page's field record (CLOUD_SIGNIN_FIELD_FILE) has been
+     * written; each new page starts without one. */
+    gboolean field_recorded;
 } Osk;
 
 /* Two layouts rather than a modifier: a sign-in needs capitals for an address
@@ -76,7 +86,21 @@ static const char *OSK_LOWER[OSK_ROWS] = {
 static const char *OSK_UPPER[OSK_ROWS] = {
     "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM+?/",
 };
-static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide" };
+/* The rest of printable ASCII. The two layouts above lacked
+ * = : ; ' " , < > [ ] { } \ | ` and ~, so a password holding any of them
+ * could not be typed on the handheld at all (#308 gpt F-RS-12). A third
+ * layout, reached from its own key, rather than a longer shift cycle: the
+ * letters stay one press from wherever you are. Each row is as long as the
+ * lower-case one, because the keys are built from that one and relabelled;
+ * the last row repeats the punctuation an address or a password reaches
+ * for most. */
+static const char *OSK_SYMBOLS[OSK_ROWS] = {
+    "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/", "?~`.,-_@/:",
+};
+#define OSK_TO_SYMBOLS "#+="
+#define OSK_TO_LETTERS "abc"
+static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide",
+                                    OSK_TO_SYMBOLS };
 
 /* Sized for a four-inch screen held at arm's length, and dark because it sits
  * under a page that is usually white -- a keyboard that flashes the screen
@@ -183,8 +207,17 @@ static void osk_show(Osk *osk)
 static void osk_press(Osk *osk, const char *label)
 {
     if (g_strcmp0(label, "hide") == 0)       { osk_hide(osk); return; }
-    if (g_strcmp0(label, "shift") == 0)      { osk->shift = !osk->shift;
+    if (g_strcmp0(label, "shift") == 0)      { if (osk->symbols)
+                                                   osk->symbols = FALSE;
+                                               else
+                                                   osk->shift = !osk->shift;
                                                osk_relabel(osk); return; }
+    if (g_strcmp0(label, OSK_TO_SYMBOLS) == 0
+        || g_strcmp0(label, OSK_TO_LETTERS) == 0) {
+        osk->symbols = !osk->symbols;
+        osk_relabel(osk);
+        return;
+    }
     if (g_strcmp0(label, "space") == 0)      { osk_type(osk, GDK_KEY_space); return; }
     if (g_strcmp0(label, "del") == 0)        { osk_type(osk, GDK_KEY_BackSpace); return; }
     if (g_strcmp0(label, "enter") == 0)      { osk_type(osk, GDK_KEY_Return); return; }
@@ -200,7 +233,8 @@ static void on_osk_clicked(GtkButton *button, gpointer data)
 
 static void osk_relabel(Osk *osk)
 {
-    const char **rows = osk->shift ? OSK_UPPER : OSK_LOWER;
+    const char **rows = osk->symbols ? OSK_SYMBOLS
+                      : osk->shift ? OSK_UPPER : OSK_LOWER;
     for (int r = 0; r < OSK_ROWS; r++)
         for (int c = 0; c < OSK_COLS && osk->keys[r][c]; c++) {
             const char *src = rows[r];
@@ -209,6 +243,13 @@ static void osk_relabel(Osk *osk)
             char label[2] = { src[c], 0 };
             gtk_button_set_label(GTK_BUTTON(osk->keys[r][c]), label);
         }
+    /* The layout key says where it goes: to the symbols, or back. */
+    for (int c = 0; c < OSK_COLS && osk->keys[OSK_ROWS][c]; c++) {
+        const char *now = gtk_button_get_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]));
+        if (g_strcmp0(now, OSK_TO_SYMBOLS) == 0 || g_strcmp0(now, OSK_TO_LETTERS) == 0)
+            gtk_button_set_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]),
+                                 osk->symbols ? OSK_TO_LETTERS : OSK_TO_SYMBOLS);
+    }
 }
 
 /* The selected key is drawn by us, not by GTK's focus ring, because nothing
@@ -344,9 +385,19 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
 
     if (osk && text && g_str_has_prefix(text, "text:")) {
         const char *field = text + 5;
+        /* A field on this page has the caret: say so, once per page, for
+         * the phone. Its text goes across from here -- not from the moment
+         * this window's process started, while the page was still loading
+         * and nothing could take a keystroke (the audit of the fix round,
+         * claude G2-C-01). The load of the next page takes the record away. */
+        if (!osk->field_recorded) {
+            const char *field_file = g_getenv("CLOUD_SIGNIN_FIELD_FILE");
+            if (field_file && g_file_set_contents(field_file, field, -1, NULL))
+                osk->field_recorded = TRUE;
+        }
         /* Only on a change of field. Re-raising a keyboard the player just
-         * dismissed, every two seconds, would be worse than never raising
-         * it. */
+         * dismissed, every half second (probe_tick), would be worse than
+         * never raising it. */
         if (g_strcmp0(field, osk->last_field) != 0) {
             g_strlcpy(osk->last_field, field, sizeof(osk->last_field));
             /* Not for somebody who chose to type on their phone: they asked
@@ -368,12 +419,24 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
  * Rebuilding takes a few seconds -- it reloads every resource it had
  * released -- and closing first left the player looking at a black screen
  * immediately after a sign-in that had just succeeded, which reads as a
- * crash rather than as progress. */
+ * crash rather than as progress.
+ *
+ * In the phone page's own style (cloud_oauth's STYLE: the dark card, the
+ * heading, the note), reading as a success and saying what happens next
+ * (fork #351 section 4; the approved words, D-CLOUD-164 string 13). It was
+ * one unstyled line, which the maintainer read as "a 404 page or something
+ * incredibly basic" (2026-09-30). A data: URL, so # is %23 and the page
+ * needs no file the window would have to find. */
 static const char *FINISHING_PAGE =
     "data:text/html,<meta name=viewport content='width=device-width'>"
-    "<body style='margin:0;height:100vh;display:flex;align-items:center;"
-    "justify-content:center;background:%2314171c;color:%23e8ecf2;"
-    "font:20px system-ui,sans-serif'>Finishing up&hellip;</body>";
+    "<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:20px;"
+    "background:%23111;color:%23eee;min-height:100vh;box-sizing:border-box;"
+    "display:flex;align-items:center;justify-content:center}"
+    ".card{max-width:34rem;text-align:center}"
+    "h1{font-size:1.6rem;margin:0 0 .5rem;color:%232d7}"
+    ".note{color:%23aaa;font-size:1rem}</style>"
+    "<body><div class=card><h1>Connected</h1>"
+    "<p class=note>Finishing up on your handheld&hellip;</p></div></body>";
 
 static gboolean probe_tick(gpointer data)
 {
@@ -422,9 +485,11 @@ static gboolean probe_tick(gpointer data)
         "  return 'text:' + t + '/' + ty + '/' + (a.id || a.name || '?');"
         "})();";
 
-    /* Nothing to ask while the keyboard is being driven -- and asking anyway
-     * is how this oscillates, since a page can report a different active
-     * element the moment the caret moves. */
+    /* Asked every half second, keyboard up or not. What keeps this from
+     * oscillating -- a page can report a different active element the
+     * moment the caret moves -- is on_probe acting only on a change of
+     * field, not a pause while the keyboard is driven (this said there was
+     * one; #308 claude F-RS-14). */
     webkit_web_view_evaluate_javascript(osk->view, script, -1,
                                         NULL, NULL, NULL, on_probe, osk);
     return G_SOURCE_CONTINUE;
@@ -444,8 +509,11 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     /* A way out, always. The handheld's buttons are not a keyboard -- sway
      * reports the gamepad as a tablet_pad -- so without something mapping
      * them, this window covers the screen, cannot be driven from the device
-     * and cannot be closed. cloud_oauth maps Start to Escape; this is what
-     * receives it. */
+     * and cannot be closed. Escape is what the phone's "Close page" sends,
+     * and a keyboard plugged in; the pad's Select + Start ends the window
+     * from cloud_oauth's side (GAMEPAD_QUIT -> stop_browser) and never
+     * arrives here. (This said cloud_oauth mapped Start to Escape; #308
+     * claude F-RS-14.) */
     if (event->keyval == GDK_KEY_Escape) {
         gtk_main_quit();
         return TRUE;
@@ -556,6 +624,25 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     return FALSE;
 }
 
+/* Whether an address goes in the page file. Not rclone's loopback redirect:
+ * http://127.0.0.1:53682/?state=...&code=... carries the OAuth code, a
+ * credential even once redeemed, and the file is read by another process
+ * and lives in /var/run with whatever mode the umask gives it (#308 claude
+ * F-RS-20). The phone loses nothing -- the window turns to "Finishing up"
+ * there. Plain C, host by host, so it can be tested without GTK. */
+static int page_worth_recording(const char *uri)
+{
+    const char *host = uri ? strstr(uri, "://") : NULL;
+    if (!host)
+        return 1;
+    host += 3;
+    size_t n = strcspn(host, ":/?#");
+    if (n == 9 && (strncmp(host, "127.0.0.1", 9) == 0
+                   || strncasecmp(host, "localhost", 9) == 0))
+        return 0;
+    return 1;
+}
+
 /* WebKit only routes keys to the page when the WebView itself holds GTK
  * focus. A window can be focused by the compositor -- sway reported
  * focused=true -- while the widget inside it never took focus, which looks
@@ -586,7 +673,16 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      * which is already watching this directory. */
     const char *page_file = g_getenv("CLOUD_SIGNIN_PAGE_FILE");
     const char *uri = webkit_web_view_get_uri(view);
-    if (page_file && uri) {
+    if (page_file && uri && page_worth_recording(uri)) {
+        /* A new page has nothing with the caret yet. The last page's field
+         * record goes first, so the phone never reads this page's name
+         * beside that page's caret (claude G2-C-01); the probe writes a new
+         * one when a field here has it. */
+        const char *field_file = g_getenv("CLOUD_SIGNIN_FIELD_FILE");
+        if (field_file)
+            g_remove(field_file);
+        if (data)
+            ((Osk *) data)->field_recorded = FALSE;
         GError *werr = NULL;
         if (!g_file_set_contents(page_file, uri, -1, &werr)) {
             if (werr) {
@@ -615,11 +711,17 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      * broken keyboard and cost a debugging session.
      *
      * Gives up after ten seconds so a page that genuinely has no field does
-     * not keep a timer alive for the life of the window. */
+     * not keep a timer alive for the life of the window.
+     *
+     * "Left alone" means anything but the body holding the focus. It used to
+     * mean only a text field, so a control the player had just reached -- a
+     * consent banner's Accept, with Y -- lost the focus to the first field
+     * the moment a script-rendered form appeared, and the next A submitted
+     * an empty form (#308 claude F-RS-17). */
     static const char *focus_first =
         "(function poll(n) {"
         "  var a = document.activeElement;"
-        "  if (a && ['INPUT','TEXTAREA'].indexOf(a.tagName) >= 0) return;"
+        "  if (a && a !== document.body && a !== document.documentElement) return;"
         "  var f = document.querySelector("
         "    'input[type=email],input[type=text],input[type=password],"
         "     input:not([type]),input[type=tel]');"
@@ -738,6 +840,18 @@ int main(int argc, char **argv)
         else if (!allowed_host && argv[i][0] != '-')
             allowed_host = argv[i];
     }
+
+    /* WebKitGTK 2.54 renders through its DMABuf path once GStreamer GL is
+     * built (fork #228), and on a guest with 1 GB -- the handhelds' size --
+     * that path never finished loading even example.org and left the guest
+     * unanswering, while 2.52.6 loaded it. With the DMABuf renderer off,
+     * 2.54 takes the shared-memory path 2.52.6 took: example.org loaded on
+     * the 1 GB guest with the window at 87 MB and the web process at 35 MB,
+     * and on 8 GB the three processes came to 285 MB against 666 MB with it
+     * on (2026-09-25). A sign-in page gains nothing from GPU buffers; the
+     * memory it keeps is the game's. An environment that sets the variable
+     * keeps its own value, so the other path stays one export away. */
+    g_setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1", FALSE);
 
     gtk_init(&argc, &argv);
 

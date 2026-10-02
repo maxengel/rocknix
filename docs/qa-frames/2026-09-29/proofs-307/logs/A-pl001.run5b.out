@@ -1,0 +1,18 @@
+04:51:42 === A-pl001 on guest d, BUILD_ID="8dd6765af0b6f5fd6f99a8a979c3c4b00b573771"
+04:51:42   PASS  guest d's CONTENT tier is its own folder (/QA307d/Content)
+    seed-content: QA307d/Content holds snes (shared, cloudonly, gamelist, images/), nes, BIOS
+    selection: snes 
+    deviceonly.sfc shared.sfc 04:52:45   START left the guest on the carousel (moved 47.88, help bar 0.00) -- pressing again (try 1)
+04:53:44 plan file after the preview: plan 1790657616 snes|sync|1|149999
+04:53:44   PASS  the preview wrote the plan file with a snes line (/storage/.cache/cloud_sync/content-match-plan)
+04:53:45    confirmation frame: /workspace/tmp/rocknix-session/proofs-307/frames/A-pl001-confirm.png
+04:53:46 YES: --match --apply
+04:53:53 device snes/ after: cloudonly.sfc shared.sfc 
+04:53:53    done frame: /workspace/tmp/rocknix-session/proofs-307/frames/A-pl001-done.png
+04:53:53   PASS  the apply removed deviceonly.sfc (the cloud lacks it)
+04:53:53   PASS  shared.sfc (in the cloud) stayed
+04:53:53   PASS  the apply used the plan up (the plan file is gone)
+    log: [2026-09-29 00:53:45] [INFO] [cloud_content_restore] match: applied, removed 1 files, rc=0
+    es_log: 2026-09-29 00:53:36	[2581]	INFO	ApiSystem::executeScriptLegacy -> /usr/bin/cloud_content_restore --match
+    cleanup: snes files left 0
+04:54:05 === done: 5 PASS, 0 FAIL

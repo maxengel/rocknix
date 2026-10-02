@@ -68,3 +68,14 @@ tools/council/package-lock.json
 
 # Python bytecode from tool checks
 __pycache__/
+
+# audit seat packets: a verbatim copy of a range the guards already read line
+# by line; the manifests' sha256 and the range are the record, and a packet is
+# regenerated from them (audit of the fix round PL-012)
+/docs/audits/*/seats/*.diff
+
+# council toolchain (scaffold export): private execution evidence and a run's seal key, never source-controlled
+.council-attempts/
+.council-controllers/
+.council-readings/
+research/**/verification/seal-key.local

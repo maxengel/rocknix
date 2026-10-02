@@ -141,6 +141,37 @@ Four screens still route left/right to their strips themselves
 (`GuiThemeInstaller`, `GuiBatoceraStore`, `GuiKeyMappingEditor`,
 `GuiKeyboardtopads`). They move to the same model with #63.
 
+## The cards at the link's return: saves first, then one batch (D-UI-101, D-UI-109)
+
+When the link returns with an exit sync owed, awards to send and a top-up
+due, the player sees SYNCING SAVES TO THE CLOUD first, and then the
+RetroAchievements cards together: the send card, and the top-up's card
+stacked under it. `ProxyCards::linkReturned` starts the owed sync when
+there is one and marks the batch owed; `afterSync`, called as every
+automatic sync card ends, runs the batch then -- the send probe and the
+top-up -- and with no saves owed the batch runs at once. The send card
+takes the proxy's flush stamp itself, waiting up to ten seconds for it
+once the queue is empty, so the probe at a later sync card's end does not
+report the same batch again. Two rounds got here: before #298 the send's
+end started the saves and the top-up's outcome landed after them
+(*"they should be batched"*); #298 put the saves after both, and on the
+device the proxy's stamp, written four seconds after its queue emptied,
+was found by the probe at the saves card's end and shown as a second send
+card -- RetroAchievements, saves, RetroAchievements (#305, the maintainer:
+*"sync saves first (which makes sense), and then it would do the
+RetroAchievements following that"*).
+
+**And the top-up is two things (D-RA-035, D-UI-103).** At the link's return the
+control script asks one question -- was a game played since the last attempt
+(RetroArch's history newer than the mark)? -- and runs the recently played
+pass alone when yes, with its card (RETROACHIEVEMENTS (OFFLINE) over
+`GETTING GAME N OF M READY...`, D-UI-107),
+or exits before the probe when no. New games are the index's: the hasher at
+startup and after UPDATE GAMELISTS, which ends in the full top-up with its
+card stacked under the game list update's. So a wake after a night shows
+nothing and costs a moment (the maintainer met a nine-second card there,
+#299), and the card, when it shows, is a run with something to look for.
+
 ## Spacing (house style)
 
 Values live in one place each, so a screen never makes its own decision.
@@ -180,6 +211,17 @@ Values live in one place each, so a screen never makes its own decision.
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
 
+  **One floating surface at a time (D-UI-093, 2026-09-25).** The toast and
+  the card sit in the same place, and on the RG35XX SP the OFFLINE
+  ACHIEVEMENTS HAVE BEEN SENT toast drew over the saves sync's card.
+  Maintainer: *"it's confusing to have a pop-up over a pop-up. That should
+  be something we always avoid."* So `Window` shows them in turn: a queued
+  toast is not started while a card is up, and a card created while a
+  toast is up stops the toast and puts its words back on the queue, so
+  they show after the card. Nothing is dropped; the order is the order
+  things happened. A surface that must be seen at once is the fourth
+  tier's page, not a second card.
+
   **A fourth-tier page is sat in, with CANCEL (D-UI-078, 2026-09-21).** A
   job measured in minutes gets a page that owns the screen until the job
   ends, and the only way out while it runs is CANCEL: a confirmation that
@@ -209,6 +251,25 @@ Values live in one place each, so a screen never makes its own decision.
   content installer, the OS update, the Bluetooth scan -- stay as they
   are (D-UI-079): the rule is for the lanes the fork works in, and an
   upstream surface outside them is not changed on the strength of it.
+
+  **Anything automatic that moves data over the network is shown while it
+  runs, and a launch over it asks (D-UI-095, 2026-09-26).** Maintainer:
+  *"if there's activity happening in the background around
+  RetroAchievements or save management, etc., we want to make sure we're
+  showing the user what's going on. We want to enact the right gates to
+  keep the user from proceeding without knowing what's going on."* So the
+  startup and exit syncs, the proxy's send of held awards and the ctl's
+  top-up each have a card in the third tier while they run, each stamps
+  what it said (`last-sync-<origin>`), and `FileData::launchGame` asks the
+  same shape of question over each -- the statement, one consequence, two
+  verbs with the safe one last (`es-player-text.md` § Conventions,
+  D-UI-096). A job the interface cannot stop (the proxy's own send) asks
+  PLAY NOW / KEEP WAITING; one it can asks STOP IT AND PLAY / KEEP WAITING.
+  Bookkeeping that reads the device and touches no network (the captures)
+  stays silent. `ProxyCards` is the unit for the proxy's two jobs; the
+  cards are one at a time (D-UI-093), the send card waiting for a sync
+  card and an automatic sync that reached the network asking for it as it
+  ends.
 
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a

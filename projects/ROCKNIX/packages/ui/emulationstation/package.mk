@@ -2,10 +2,10 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="370ebe416b5d33a972ee323ee2079743bcdeab87"
+PKG_VERSION="e108699ea313ecd5ec64b4310a4ea665e05ca19f"
 PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
-PKG_SITE="https://github.com/maxengel/emulationstation-next"
+PKG_SITE="https://github.com/rasteratops/emulationstation"
 PKG_URL="${PKG_SITE}.git"
 # noto-sans-cjk came from upstream 2026-09, and poppler with the PDF support
 # upstream's EmulationStation gained (e0e8b7ac33); the fork builds its own ES

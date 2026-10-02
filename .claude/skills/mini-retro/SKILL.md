@@ -228,7 +228,7 @@ Summary:
    bugfix / tooling phases. Findings → §4 adjustments (or a follow-up issue
    per development-principles' *Discovered failure = explicit work*).
 9. **Build-vs-adopt honor check (if the repo records build-vs-adopt
-   answers)** — scaffold's doctrine §1 (pSpace-first, with an escape
+   answers)** — scaffold's doctrine §1 (platform-first, with an escape
    hatch) and development-principles' *Prefer adopt / extend / contribute
    before building* are the governing rule. Did the phase honor the
    build/adopt answer its spec / Epic recorded? A spec that said **adopt**
@@ -290,7 +290,7 @@ hand-waving. Examples from well-written retros:
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | "Testing went well"          | "Drift-guard tests (`X.test.ts`) caught Y class of regressions cheaply (< 150 LoC each)"                     |
 | "Some pre-existing failures" | "`capability-agent-cards.test.ts:296` + `route-kno-sync.test.ts` broken on `main` pre-session"               |
-| "Should fix the lockfile"    | "`vite@8.0.8` pin in `services/pspace-api/package-lock.json` — file opens as issue #XXXX"                    |
+| "Should fix the lockfile"    | "`vite@8.0.8` pin in `services/example-api/package-lock.json` — file opens as issue #XXXX"                    |
 | "Good tests"                 | "23 cartesian test cases covered internal lifecycle × verdict and external status × circuit × consumer-kind" |
 
 If you find yourself writing "it went well" or "no major issues", you haven't

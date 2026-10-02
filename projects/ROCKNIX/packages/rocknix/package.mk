@@ -48,7 +48,12 @@ EOF
   fi
   # Always install the update script
   mkdir -p $INSTALL/usr/share/bootloader
-  find_file_path bootloader/update.sh && cp -av ${FOUND_PATH} ${INSTALL}/usr/share/bootloader
+  # A device without an in-place bootloader updater ships none: GENERIC_X64's
+  # copied nothing and was removed (#307 PL-073). A bare `a && b` as the
+  # function's last statement returns a's failure and fails the install.
+  if find_file_path bootloader/update.sh; then
+    cp -av ${FOUND_PATH} ${INSTALL}/usr/share/bootloader
+  fi
 }
 
 post_install() {

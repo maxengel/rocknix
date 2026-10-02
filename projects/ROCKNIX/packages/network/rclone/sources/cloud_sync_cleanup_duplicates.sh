@@ -6,7 +6,13 @@
 CONF_FILE="${1:-/storage/.config/cloud_sync.conf}"
 TMP_FILE="${CONF_FILE}.cleaned"
 
+# A value continued with a trailing backslash (RCLONEOPTS is written that
+# way) is one assignment over several lines: a repeated one is removed whole.
+# Its first line alone used to go, and the lines that continued it stayed as
+# bare lines -- a file that no longer parses, which every run after then
+# refused or fell back from (found in the audit of the fixes to #307).
 awk '
+  skip { skip = ($0 ~ /\\$/); next }
   /^[[:space:]]*#/ { print; next }
   /^[[:space:]]*$/ { print; next }
   /^[A-Za-z0-9_]+=.*$/ {
@@ -14,6 +20,8 @@ awk '
     if (!(var in seen)) {
       print
       seen[var]=1
+    } else if ($0 ~ /\\$/) {
+      skip = 1
     }
     next
   }

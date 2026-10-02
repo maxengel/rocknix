@@ -129,9 +129,20 @@ flowchart TD
 
     ALL --> HUB{{CLOUD}}
     HUB --> BR[BACKUP AND RESTORE]
-    BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>CONTINUE]
-    BR --> RE[RESTORE FROM THE CLOUD] --> TICK
-    TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system]
+    BR --> BU[BACK UP TO THE CLOUD] --> SCAN[CHECKING YOUR CLOUD<br/>GuiCloudTransfer running cloud_scan: CLOUD FOLDER · SETTINGS BACKUPS · GAME CONTENT<br/>goes on by itself when complete; TRY AGAIN · CLOSE when not, D-CLOUD-167]
+    BR --> RE[RESTORE FROM THE CLOUD] --> SCAN
+    SCAN -->|an earlier /ROCKNIX or /GAMES holds saves| MOVEQ[dialog: MOVE · KEEP USING … · NOT NOW, D-CLOUD-160]
+    MOVEQ -->|MOVE| MOVE[MOVING YOUR CLOUD FOLDER<br/>SAVES · SETTINGS BACKUPS · DISCARDED SAVES · content; COPYING… / CHECKING THE COPY…<br/>dismissed by the player, then the scan again; from the cloud folder step, the step's own next part]
+    SCAN -->|no current folder| CREATEQ[dialog: CREATE IT · CHOOSE A FOLDER · NOT NOW, D-CLOUD-161]
+    CREATEQ -->|CREATE IT| CREATE[CREATING YOUR CLOUD FOLDER<br/>then the scan again]
+    CREATEQ -->|CHOOSE A FOLDER| KB
+    SCAN --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>restore: SETTINGS offered as DEVICE, DATE, or dimmed NO SETTINGS BACKUP FROM THIS DEVICE YET, D-CLOUD-162<br/>CONTINUE]
+    TICK -->|ROMS AND BIOS or GAME CONTENT ticked, restore| CFQ{{the content folder: the one the scan found is used; none found asks CHOOSE THE FOLDER WHERE YOUR GAMES ARE?}}
+    CFQ -->|CHOOSE A FOLDER| CHOOSER[CHOOSE A CLOUD FOLDER<br/>the folders at the cloud's root, the one found first]
+    CFQ --> CSCAN[CHECKING YOUR CLOUD<br/>cloud_scan --content in the classes ticked; goes on by itself]
+    CHOOSER --> CSCAN
+    TICK -->|ROMS AND BIOS or GAME CONTENT ticked, backup| CSCAN
+    CSCAN --> PICK[systems page, from the scan's files<br/>select all · badge per system<br/>BIOS alone: SYSTEMS reads NONE · a BIOS FILES group · no SELECT ALL · the verb still waits, D-UI-116]
     TICK --> XFER[GuiCloudTransfer<br/>full-screen; live line, elapsed, outcome; stays until dismissed]
     PICK --> XFER
     XFER -.->|saves folder absent| OFFER[create-folder offer<br/><i>on dismissal</i>]
@@ -150,12 +161,15 @@ flowchart TD
     LIST -->|S3| SUB[compatible service] --> FORM
     FORM -->|OAuth providers| OAUTH[sign in on device / with phone]
     CSS --> FIN[FINISH RESTORE PROCESS<br/><i>only after a settings restore</i>]
-    CSS --> TIDY[TIDY UP YOUR CLOUD FOLDERS<br/><i>only when something to move</i>]
+    CSS --> TIDY[TIDY UP YOUR CLOUD FOLDERS<br/><i>only when the check plans a move; its line names the tiers and /Rasteratops</i>]
 
     CONN --> WHICH{{WHICH CONNECTION?<br/><i>openCloudSetup, the wizard's first step</i>}}
     WHICH --> PWPAGE[SSH PASSWORD<br/><i>cloudSetupOpenPasswordPage; device access for the setup route</i>]
-    OAUTH --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
-    FORM --> DONE
+    OAUTH --> FSTEP[CHECKING YOUR CLOUD<br/>the cloud folder step, cloud_scan --folder, D-CLOUD-170<br/>an earlier folder holding saves asks MOVE · KEEP USING … · NOT NOW; a scan that fails goes on]
+    FORM --> FSTEP
+    FSTEP -->|an earlier /ROCKNIX or /GAMES holds saves| MOVEQ
+    FSTEP --> SEED[SETTING UP YOUR CLOUD FOLDERS<br/><i>the seeding, where the answer put the folder</i>]
+    SEED --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
 ```
 
 **Dialogs the cloud raises on its own.** A restore against a cloud whose saves
@@ -169,6 +183,36 @@ card did, and the fresh handheld's route saw nothing. BACK UP / RESTORE
 on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
 FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
+
+**Since the cloud epic (#354; D-CLOUD-166/167, 2026-10-01).** The startup and
+exit syncs raise no folder question: with no saves folder in the cloud the card
+reads SKIPPED - YOUR CLOUD FOLDER ISN'T SET UP YET with SET IT UP: GAME
+SETTINGS > MANAGE CLOUD STORAGE, and the row under SYNC SAVES DURING STARTUP
+says the same. The question is asked where the player is: on the scan page
+that opens BACK UP TO THE CLOUD and RESTORE FROM THE CLOUD (the move of an
+earlier /ROCKNIX or /GAMES folder, or the offer to create the current one,
+above), at the end of the cloud setup, and on SYNC SAVES WITH THE CLOUD's own
+card, which keeps the offer. The transfer page keeps it too, on dismissal, for
+a restore run after NOT NOW. SET IT UP NOW? is asked before the scan page, not
+at the verb.
+
+**The cloud folder step (#363; D-CLOUD-170, 2026-10-01).** No sync checks the
+folder any more; it is settled where the player first meets the cloud. At the
+end of cloud setup, before SETTING UP YOUR CLOUD FOLDERS and CLOUD SETUP
+COMPLETE, the step scans the folder alone (CHECKING YOUR CLOUD, one item) and,
+when an earlier /ROCKNIX or /GAMES holds saves, asks MOVE · KEEP USING … ·
+NOT NOW; every way out goes on to the seeding and the last page, and the CLOUD
+FOLDER row's own rebuild skips the step. At boot, on a device linked to a
+folder an earlier version made its default and not kept, the same step comes
+up once the startup sync has ended and nothing else is open -- the carousel or
+a game list, no menu, no game -- at every boot until the folder is moved,
+kept, followed or created; there an empty earlier folder is offered CREATE IT ·
+CHOOSE A FOLDER · NOT NOW as on a restore. Offline at boot it asks FINISH CLOUD
+SETUP / YOU'RE NOT ONLINE. CONNECT TO FINISH SETTING UP YOUR CLOUD FOLDER. with
+CONNECT TO WI-FI (the WI-FI NETWORKS picker; a network joined runs the step
+again) and NOT NOW. One setup page at a time: after a settings restore FINISH
+RESTORE PROCESS comes first, its FINISH goes on to the step, and its LATER puts
+both off to the next boot. Not in kid or kiosk mode.
 
 **Since RC-11, and since D-UI-078 (#187, #192, #241).** A transfer started from BACK UP TO THE CLOUD, RESTORE FROM THE CLOUD or MATCH runs on a page that owns the screen until it ends; the one way out while it runs is CANCEL, which asks first and names what cancelling means (`WHAT'S ALREADY IN PLACE STAYS. THE NEXT BACKUP OR RESTORE FINISHES WHAT THIS ONE DIDN'T.`), then stops the run and ends the page on `SKIPPED - YOU CANCELLED IT`. (For a week in RC-11 the page could be left with B and the row that launched it followed the run; D-UI-078 reversed that on 2026-09-21 -- "we should only allow things to run in the background when they're fast" -- and this paragraph described the reversed design until audit #258 PL-006.) After the run ends and its page is dismissed, the row that launched it reads `LAST <date> - COMPLETED` (or `COULDN'T FINISH` / `SKIPPED - ...`) until the outcome page has been seen once, then goes back to its one-line description (D-UI-070); the other two rows dim while one is current. Launching a game while a sync runs asks -- the sentence naming it, then STOP IT AND PLAY or KEEP WAITING (D-CLOUD-129 for the sync the player started, since RC-12 build 4; D-CLOUD-130 for the automatic startup and after-a-game syncs, since build 7; until then the first were refused and the second cancelled without asking); the same question guards a transfer that is current, which with the page sat in is not a state a press can reach. The startup card's first step reads `CHECKING THE CONNECTION...` when the interface sees a link and `WAITING FOR A NETWORK, UP TO 60 SECONDS...` when it does not; `SKIPPED - YOU'RE NOT ONLINE` follows the wait as before.
 
@@ -211,14 +255,17 @@ were the connection.
 flowchart TD
     NET[NETWORK SETTINGS] --> SSID[WI-FI NETWORK  <i>the network the device is on . NOT CONNECTED . COULDN'T CHECK</i>]
     SSID -->|A| PICK{{WI-FI NETWORKS: the networks in range, the joined one first<br/>Home Wi-Fi  CONNECTED . Cafe: Guest  SAVED . Library<br/>REFRESH . INPUT MANUALLY . BACK}}
-    PICK -->|A on SAVED| JOIN[CONNECTING TO WI-FI -- wifictl join, the key NetworkManager holds;<br/>toast CONNECTED TO name; the page rebuilt]
+    PICK -->|A on SAVED| OPT[name IS SAVED.<br/>CONNECT WITH ITS SAVED KEY, OR FORGET IT?<br/>CONNECT . FORGET . CANCEL -- D-UI-118]
+    OPT -->|CONNECT| JOIN[CONNECTING TO WI-FI -- wifictl join, the key NetworkManager holds;<br/>toast CONNECTED TO name; the page rebuilt]
+    OPT -->|FORGET| ASK
+    PICK -->|A on CONNECTED| JOIN
     PICK -->|A on another| KEY[WI-FI KEY -- the on-screen keyboard, empty for an open network]
     KEY --> CONN[CONNECTING TO WI-FI -- wifictl connect, a new profile;<br/>toast CONNECTED TO name; the page rebuilt]
     JOIN -.->|refused| ERR3[COULDN'T CONNECT TO name. IF ITS KEY HAS CHANGED, FORGET IT UNDER MANAGE SAVED NETWORKS AND JOIN IT AGAIN WITH THE NEW KEY.]
     CONN -.->|refused| ERR4[COULDN'T CONNECT TO name. CHECK THE KEY AND TRY AGAIN.]
     NET --> MN[MANAGE SAVED NETWORKS]
     MN --> PAGE{{MANAGE SAVED NETWORKS}}
-    PAGE --> ROWS[SAVED NETWORKS: one row per profile, the name as NetworkManager has it;<br/>IN USE beside the one the device is on; NO SAVED NETWORKS when there are none]
+    PAGE --> ROWS[SAVED NETWORKS: one row per profile, the name as NetworkManager has it;<br/>CONNECTED beside the one the device is on (was IN USE until #308 F-WF-11: the picker, the toast and the forget dialog all say connected); NO SAVED NETWORKS when there are none]
     ROWS -->|A| ASK[FORGET name?<br/>YOU'RE CONNECTED TO IT NOW, SO YOU'LL BE DISCONNECTED. -- when in use<br/>THIS DEVICE WON'T JOIN IT AGAIN ON ITS OWN.<br/>YES . NO]
     ASK -->|YES| DONE[page rebuilt from NetworkManager; toast: name : FORGOTTEN<br/>or name : FORGOTTEN, AND YOU'RE DISCONNECTED]
     ASK -.->|delete refused| ERR[COULDN'T FORGET name. TRY AGAIN.]
@@ -235,26 +282,35 @@ flowchart TD
   setting `wifi.ssid` still exists and follows the player's choice (the
   picker's connect writes it; `wifictl join` moves it onto the joined
   network from the profile, key included, never printed) so the paths that
-  connect from the settings -- the WI-FI KEY row, the ENABLE WI-FI switch,
-  the restore wizard -- name the network the player is on. No line under the
-  label: build 1's `CONNECTED TO <other>` line existed only because the
-  value was the setting.
+  connect from the settings -- the ENABLE WI-FI switch, the restore wizard
+  -- name the network the player is on. No line under the label: build 1's
+  `CONNECTED TO <other>` line existed only because the value was the
+  setting. **No WI-FI KEY row** since D-UI-118 (2026-09-29, taken from
+  ROCKNIX's own saved-Wi-Fi work): a key field with no network beside it
+  asked "which network's key?"; the two places a key is typed are the
+  picker's WI-FI KEY page, per network, and the restore wizard's WI-FI
+  PASSWORD page.
 - **The picker (WI-FI NETWORKS)** lists the networks in range (`wifictl
   list`, a rescan behind the spinner), the joined one first and marked
   CONNECTED, the ones NetworkManager holds a profile for marked SAVED
   (`WifiText::pickerRows`, unit-tested); a saved network out of range is not
   a row (D-UI-064) -- this list is what can be joined from here. A on a
-  saved row joins it with the key NetworkManager holds (`wifictl join`:
+  saved row opens CONNECT / FORGET / CANCEL (D-UI-118, the second choice
+  taken from ROCKNIX's own work; CONNECT first, back lands on CANCEL):
+  CONNECT joins it with the key NetworkManager holds (`wifictl join`:
   `nmcli connection up`, then the settings follow, then `pin` prefers it at
-  the next boot and resume); A on any other row asks for the key (the
+  the next boot and resume), FORGET runs the manage page's own confirmation
+  and reader (one function, `GuiMenu::forgetWifiNetworkWithConfirmation`)
+  and rebuilds the picker; A on the connected row joins it again at once
+  (the press confirms or repairs); A on any other row asks for the key (the
   on-screen keyboard; START accepts, empty for an open network) and
   connects at once (`wifictl connect`, a new profile); INPUT MANUALLY takes
   a hidden network's name the same way. On success a toast CONNECTED TO
   <name> and the page is rebuilt so every row reads the connection back;
   failures are dialogs naming the network. Before this, picking a network
   the device had joined before ran `wifictl connect` with whatever key sat
-  in the WI-FI KEY row, which deletes the saved profile and rebuilds it with
-  that key.
+  in the WI-FI KEY row (a row that no longer exists), which deletes the
+  saved profile and rebuilds it with that key.
 - **MANAGE SAVED NETWORKS** (D-UI-062: "saved" is the maintainer's word and
   `wifictl`'s, and the page, its group and its dialogs use no other) sits
   with the Wi-Fi rows (Wi-Fi on, not LOCAL PLAY MODE). Its page lists
@@ -307,9 +363,15 @@ WRONG until it learns the word, audit #186 PL-24) and `cached_game_ids.txt`
 SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
 (no account, switch off) COULDN'T FINISH with the reason on line 4. The
 automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
-device comes online, bounded to one attempt per half hour) has no surface of
-its own: its result, when it added games or could not finish, is the same
-line under the row, with WHEN YOU CAME ONLINE in place of the date (D-UI-032).
+device comes online, bounded to one attempt per half hour) had no surface of
+its own until 2026-09-26 (#293, D-UI-095): now a card while it has work --
+RETROACHIEVEMENTS (OFFLINE) over GETTING GAME N OF M READY..., then COMPLETED
+and N MORE GAMES ARE READY. or EVERYTHING'S UP TO DATE., or COULDN'T FINISH
+with the ctl's why (D-UI-107) -- and a launch over it asks YOUR OFFLINE
+ACHIEVEMENTS ARE BEING UPDATED. / IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME
+YOU'RE CONNECTED. with STOP IT AND PLAY / KEEP WAITING. Its result is still the
+same line under the row, with WHEN YOU CAME ONLINE in place of the date
+(D-UI-032).
 
 Since the RC-5 round (#184 notes 3b/5b, D-RA-013) the scan and the top-up
 follow the interface's own game index: where a system's games carry a
@@ -330,12 +392,22 @@ upstream's. The stamp gains `indexed=<n>`, which the page passes over.
 **Elsewhere, cloud-adjacent.** `SYSTEM SETTINGS > SYSTEM MANAGEMENT AND RESET`:
 DATA MANAGEMENT (back up / restore settings to this device), EMULATOR
 MANAGEMENT and SYSTEM MANAGEMENT (the resets) run headless behind a spinner and
-end in an outcome dialog (D-UI-037). `SCRAPER > OPTIONS` carries DEVELOPER ID /
-DEVELOPER PASSWORD beside the account (#64). The startup sync is a card at
+end in an outcome dialog (D-UI-037). `SCRAPER > ACCOUNTS` carries DEVELOPER ID /
+DEVELOPER PASSWORD beside the account (#64; the map said OPTIONS until
+2026-09-29, `GuiScraperStart::loadAccountsPage` says ACCOUNTS). The startup sync is a card at
 boot; the exit sync a card after a game; both end on the card (D-UI-028, with
 `COMPLETED WITH GAPS` removed by D-UI-030 -- a run passes or fails). A launch
 cancels either **in what ships today** (D-CLOUD-076); **D-CLOUD-109 replaces
-that** with a bounded wait, so this line changes when #22/#135 land.
+that** with a bounded wait, so this line changes when #22/#135 land. Since
+2026-09-26 (#292, D-RA-030) the link's return has cards of its own: SENDING
+OFFLINE ACHIEVEMENTS... with the count, ending OFFLINE ACHIEVEMENTS HAVE BEEN
+SENT (or COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING), when the proxy
+holds awards or has just sent some; then SYNCING SAVES TO THE CLOUD when the
+last exit sync was skipped for no network. A launch over the send asks
+OFFLINE ACHIEVEMENTS ARE BEING SENT. / IT'LL BE A MOMENT. with PLAY NOW / KEEP
+WAITING (the send is the proxy's and goes on behind the game). The exit card
+no longer says anything about achievements. Each card stamps what it said
+(`last-sync-link`, beside `last-sync-exit` and `last-sync-startup`).
 
 Anything measured in minutes runs in `GuiCloudTransfer`, not a card
 (`es-native-ui.md`, the fourth *surface* tier -- not one of the four data

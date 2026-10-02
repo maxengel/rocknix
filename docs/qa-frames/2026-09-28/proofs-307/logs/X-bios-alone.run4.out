@@ -1,0 +1,29 @@
+00:33:18 === X-bios-alone on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+00:33:18   PASS  guest d's CONTENT tier is its own folder (/QA307d/Content)
+00:33:18 -- fixture: every ROM file aside, one BIOS file
+files left under roms (not bios): 2
+    list: bios
+00:33:19 -- the page's remembered ticks: ROMS AND BIOS on, the rest off (cloudsync.pick.backup.*, SystemConf)
+    ticks: cloudsync.pick.backup.saves=0
+    ticks: cloudsync.pick.backup.content=1
+    ticks: cloudsync.pick.backup.media=0
+    ticks: cloudsync.pick.backup.settings=0
+    files left under roms (not bios) after the reboot: 2
+    bios 
+00:34:26 -- the walk: START > GAME SETTINGS > MANAGE CLOUD STORAGE (keys) > BACK UP TO THE CLOUD > CONTINUE (the recorded walks)
+00:34:26     signed in to RetroAchievements (MAIN MENU opens on its row): 1
+00:34:44     hub: /workspace/tmp/rocknix-session/proofs-307/frames/X-bios-alone-hub.png (read it: the CLOUD hub, BACK UP TO THE CLOUD focused)
+00:34:52     back-up-page: captured /workspace/tmp/rocknix-session/proofs-307/frames/X-bios-alone-walk/01-back-up-page.png
+00:35:20     continue-to-systems: captured /workspace/tmp/rocknix-session/proofs-307/frames/X-bios-alone-walk/01-stuck-after-down.png
+00:35:20   PASS  the systems page frame taken (/workspace/tmp/rocknix-session/proofs-307/frames/X-bios-alone-systems-page.png; read it: SYSTEMS ON THIS DEVICE reads NONE, a BIOS FILES group, BACK and BACK UP)
+00:35:20 -- the verb: BACK UP (up from the rows to the button bar's BACK, right to the verb, x; the page has BACK and the verb only)
+    es_log: 
+00:35:35   FAIL  no --set-systems line after the press
+00:35:46     cloud_sync.log: <no content backup line after the press>
+00:35:46     selection file (content-systems): <none>
+00:35:46   FAIL  no BIOS content-backup line after the press, or the selection file does not read bios alone ('')
+00:35:49 -- fixture back
+    roms back: Ninoid-1790636751-d.gb
+    roms back: Ninoid-1790636813-e.gb
+    roms back: Ninoid.gb
+00:35:50 === done: 2 PASS, 2 FAIL

@@ -93,7 +93,7 @@ facts about what happened — those are work-log material.
 A decision that generalises gets both: a row here, and a rule where the practice
 belongs.
 
-(Adapted from `decision-register.instructions.md` in the scaffold estate,
-<https://forge.possibility.space/scaffold/scaffold>. Their ADR tier is dropped —
+(Adapted from `decision-register.instructions.md` in an external instruction estate.
+Their ADR tier is dropped —
 this project has no `docs/architecture/adr/`, and a decision big enough to want
 one can carry its reasoning in the row.)

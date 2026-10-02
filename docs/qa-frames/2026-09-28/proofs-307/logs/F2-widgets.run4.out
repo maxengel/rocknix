@@ -1,0 +1,48 @@
+00:30:58 === F2-widgets on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+00:30:58 reboot to the carousel (the interface was restarted at 05:16 by the harness's own execute_kill with no game up)
+00:31:34   PASS  the kill helper is on the rebooted guest
+00:31:34 the guest's menu_widget_scale_factor: 0.400000 (the image ships 0.400000)
+00:31:34 -- scale 0.400000
+00:32:37   FAIL  scale 0.400000 try 1: RetroArch up after POST /launch (200)
+grep: /var/log/exec.log: No such file or directory
+    
+00:32:48   (game_exit: no RetroArch running, nothing sent)
+00:32:56   PASS  scale 0.400000 try 1: RetroArch gone after execute_kill
+00:32:56   FAIL  scale 0.400000: the surface was the panel (Using resolution 640x480)
+00:32:56   FAIL  scale 0.400000: font regular names xmb/monochrome/font.ttf
+00:32:56   FAIL  scale 0.400000: font regular took no sharp-size table
+00:32:56   FAIL  scale 0.400000: font bold names xmb/monochrome/font.ttf
+00:32:56   FAIL  scale 0.400000: font bold took no sharp-size table
+00:32:56   FAIL  scale 0.400000: font msg_queue names xmb/monochrome/font.ttf
+00:32:56   widget setups in this launch: 0
+00:32:56   FAIL  scale 0.400000: drawn regular , bold , msg_queue  (expected 9/9/13)
+00:32:56   FAIL  scale 0.400000: a msg_queue place line with the small and full boxes and the pitch
+00:32:56 -- scale 1.000000
+00:32:58   PASS  scale 1.000000 try 1: RetroArch up after POST /launch (200)
+    [INFO] [GL] Detecting screen resolution: 640x480.
+    [INFO] [GL] Using resolution 640x480.
+    [INFO] [Widgets] font regular: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 17.43 px, floor 9, no sharp-size table for this face, drawn 17 px
+    [INFO] [Widgets] font bold: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 17.43 px, floor 9, no sharp-size table for this face, drawn 17 px
+    [INFO] [Widgets] font msg_queue: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 10.89 px, floor 13, no sharp-size step, drawn 13 px
+    [INFO] [Widgets] msg_queue place: line height 19.00, small box 36 px (pitch 37), full box 72 px (pitch 73), left 12, under the bottom box 12
+    [INFO] [Widgets] font regular: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 7.65 px, floor 9, no sharp-size table for this face, drawn 9 px
+    [INFO] [Widgets] font bold: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 7.65 px, floor 9, no sharp-size table for this face, drawn 9 px
+    [INFO] [Widgets] font msg_queue: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 4.78 px, floor 13, no sharp-size step, drawn 13 px
+    [INFO] [Widgets] msg_queue place: line height 19.00, small box 36 px (pitch 37), full box 72 px (pitch 73), left 13, under the bottom box 13
+    [INFO] [Widgets] font regular: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 17.43 px, floor 9, no sharp-size table for this face, drawn 17 px
+    [INFO] [Widgets] font bold: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 17.43 px, floor 9, no sharp-size table for this face, drawn 17 px
+    [INFO] [Widgets] font msg_queue: /usr/share/retroarch-assets/xmb/monochrome/font.ttf, computed 10.89 px, floor 13, no sharp-size step, drawn 13 px
+    [INFO] [Widgets] msg_queue place: line height 19.00, small box 36 px (pitch 37), full box 72 px (pitch 73), left 12, under the bottom box 12
+00:33:18   PASS  scale 1.000000 try 1: RetroArch gone after execute_kill
+00:33:18   PASS  scale 1.000000: the surface was the panel (Using resolution 640x480)
+00:33:18   PASS  scale 1.000000: font regular names xmb/monochrome/font.ttf
+00:33:18   PASS  scale 1.000000: font regular took no sharp-size table
+00:33:18   PASS  scale 1.000000: font bold names xmb/monochrome/font.ttf
+00:33:18   PASS  scale 1.000000: font bold took no sharp-size table
+00:33:18   PASS  scale 1.000000: font msg_queue names xmb/monochrome/font.ttf
+00:33:18   widget setups in this launch: 3
+00:33:18   FAIL  scale 1.000000: drawn regular 17 9, bold 17 9, msg_queue 13 (expected 17/17/13)
+00:33:18   PASS  scale 1.000000: a msg_queue place line with the small and full boxes and the pitch
+menu_widget_scale_factor = "0.400000"
+menu_widget_scale_factor_windowed = "1.000000"
+00:33:18 === done: 11 PASS, 10 FAIL

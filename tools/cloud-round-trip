@@ -720,12 +720,22 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     arch_before = dev.sha(archive)
     backend("reset")
     # As the settings tier runs it (backuptool backup && cloud_backup --yes --system-only).
-    dev.run("cloud_backup --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sb, out_sb = run_rc(dev, "cloud_backup --yes --system-only")
     listing = backend("ls")
     uploaded_archive = ARCHIVE_NAME in listing
     failures += not check(uploaded_archive,
                           "the settings backup archive reached the cloud",
                           "the archive was not uploaded")
+    # And the run says so: its exit and its own last line are the settings
+    # phase's outcome, not the skipped saves phase's (audit #307 PL-028,
+    # whose 9-beside-a-failure case is tools/last-good-scripts-test A6).
+    # Read by the vocabulary gate's own reader (colour, protocol markers,
+    # rclone's lines and rules off), not a filter of its own (the audit of
+    # the fixes, claude G-A-04).
+    last_sb = last_player_line(out_sb)
+    failures += not check(rc_sb == 0 and last_sb == "Completed.",
+                          "the settings backup exited 0 and ended on Completed.",
+                          f"the settings backup exited {rc_sb}, last line {last_sb or '(none)'!r}")
 
     # It must land under this device's own folder. A single shared filename is
     # what let the second device to run replace the first device's archive,
@@ -741,8 +751,10 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
             "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
     mark = log_mark(dev)
-    dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sr, _ = run_rc(dev, "cloud_restore --yes --system-only")
     if uploaded_archive:
+        failures += not check(rc_sr == 0, "the settings restore exited 0",
+                              f"the settings restore exited {rc_sr}")
         arch_after = dev.sha(archive)
         failures += not check(arch_after is not None and arch_after == arch_before,
                               "the archive came back byte-identical",
@@ -1107,7 +1119,7 @@ echo "${saw:-0}/${all:-0}"
                           "the migration check calls the chosen sibling layout current",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"rm -f {shlex.quote(f'{bk_dir}/{bk_name}')}; "
-            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or rpath('ROCKNIX/Saves'))} >/dev/null 2>&1; "
+            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or rpath(backend("shipped-default", "SAVES_REMOTE").strip()))} >/dev/null 2>&1; "
             f"rclone purge {shlex.quote(remote_name + rpath('QA-Custom'))} >/dev/null 2>&1 || true", check=False)
     for k, v in prev.items():
         if v:
@@ -1201,6 +1213,38 @@ echo "${saw:-0}/${all:-0}"
                           f"only {len(csame)}/{len(CONTENT_FIXTURES)} matched")
 
     dev.run(f"rm -rf {shlex.quote(croot)}")
+
+    # --all is the journey's first restore (main.cpp's first-device prompt).
+    # It restored ROMs/ as one unit and never BIOS, and said "Restored
+    # everything." (audit #307 PL-012). Every system the cloud holds and
+    # BIOS, each a unit of its own. The BIOS file is the harness's own, by
+    # a name nobody's BIOS folder carries, and it is removed afterwards; the
+    # endpoint is reset first, so the cloud holds only the fixture.
+    step("--all restores every system and BIOS, each a unit of its own")
+    backend("reset")
+    bios_name = f"qa-bios-{os.getpid()}.bin"
+    bios_body = b"qa bios, the ROMs and BIOS tier owns this"
+    bstage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    open(os.path.join(bstage, bios_name), "wb").write(bios_body)
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/ROMs/{CONTENT_DIR}")
+    backend("put", bstage, f"{cpath}/BIOS")
+    subprocess.run(["rm", "-rf", bstage])
+    bdest = f"/storage/roms/bios/{bios_name}"
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
+    rc, out = run_rc(dev, "cloud_content_restore --all")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(rc == 0, "--all exited 0", f"--all exited {rc}: {out.strip()[-200:]!r}")
+    failures += not check(dev.sha(bdest) == sha(bios_body),
+                          "the BIOS file came down with --all",
+                          f"the BIOS file is not on the device after --all ({detail}) (#307 PL-012)")
+    aafter = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+    failures += not check(all(aafter[r] and aafter[r] == cbefore[r] for r in CONTENT_FIXTURES),
+                          f"and {CONTENT_DIR}'s {len(CONTENT_FIXTURES)} files, byte-identical",
+                          f"{CONTENT_DIR} after --all: {sum(1 for r in CONTENT_FIXTURES if aafter[r] == cbefore[r])}/{len(CONTENT_FIXTURES)} matched")
+    failures += not check(ok and "bios" in items and CONTENT_DIR in items,
+                          f"each announced as a unit, numbered across the run ({detail})",
+                          f"the units do not name the system and BIOS, or do not add up (#95): {detail}")
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
 
     # --- tier boundaries ----------------------------------------------------
     # The regression test for blindspot 21. Content sync and the saves sync
@@ -1361,6 +1405,46 @@ echo "${saw:-0}/${all:-0}"
                           "and it was the only file transferred",
                           "more than one file moved for one changed save")
 
+    step("a changed save of the same size still reaches the cloud (#315)")
+    # A battery save is the same size every time it is written. On a backend
+    # with neither hashes nor a settable modtime (WebDAV, vendor=other) rclone
+    # decides on size alone -- "Sizes identical" at -vv -- and the saves tier
+    # carries no content marker: D-CLOUD-005 guards only the settings archive
+    # (the archive's twin of this step is above). Found by X-size-same on
+    # 8196071ff5, 2026-09-28; the pair fixture A2 covers it but vm-qa does not
+    # run the pair. Expected to FAIL on webdav until #315 is fixed: the suite
+    # stays red over a known defect rather than green.
+    #
+    # Not in the same second as the upload above. The fix compares the local
+    # mtime with the backend's upload time (--update), and this backend keeps
+    # whole seconds: a same-size change written within the same second as
+    # its upload reads as equal in time and identical in size, and is not
+    # sent (measured 2026-09-29 on the host against the QA WebDAV: the same
+    # second not sent, 1.2 s later sent; vm-qa run 72 on 8dd6765af0 failed
+    # this step for exactly that reason, while X-size-same on the guest, which
+    # waits 2 s, passed). A player's next change is minutes after the last
+    # exit sync; the suite waits two seconds, as the proof does.
+    time.sleep(2)
+    dev.write(f"{root}/savestates/recent-probe.state", b"RECENT")   # six bytes again, new ones
+    dev.run("sync", check=False)
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    # The bucket path carries the remote folder; find the copy by its tail
+    # in the listing rather than guessing the prefix (run 71 read None).
+    # The live copy, never one under a -replaced folder (the audit of the
+    # fix, F-SS-06 / gpt F-SS-04): the shortest matching path outside any
+    # "-replaced/" component is the saves folder's own.
+    paths = sorted((l.split(None, 1)[1] for l in backend("ls").splitlines()
+                    if len(l.split(None, 1)) == 2 and l.split(None, 1)[1].endswith("savestates/recent-probe.state")
+                    and "-replaced/" not in l.split(None, 1)[1] and "/replaced/" not in l.split(None, 1)[1]), key=len)
+    got = backend_bytes(paths[0]) if paths else None
+    if got is None:
+        failures += not check(False, "", f"could not read the bucket's copy back (listing paths: {paths}); nothing proven")
+    else:
+        failures += not check("rc=0" in out and got == b"RECENT",
+                              "the same-size change reached the bucket as the new bytes",
+                              f"the same-size change was not sent: the bucket holds {got!r} (exit {out.strip()[-4:]}; "
+                              "#315, size-only comparison on this backend)")
+
     step("with no network the exit sync returns 69 at once and stamps nothing")
     out = dev.run(
         "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
@@ -1478,11 +1562,17 @@ echo "${saw:-0}/${all:-0}"
     # in neither the cloud nor the device: its plan is `none`.
     ghost = "ghost-never-a-system"
     dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} {ghost} >/dev/null 2>&1 || true", check=False)
+    # --apply is the second half of a check, as the page runs it: --match,
+    # the confirmation, then --match --apply, which acts on the plan the
+    # check wrote and refuses without one (audit #307 PL-001). This step
+    # used to run --apply alone, which the plan contract refuses (vm-qa run
+    # 68 on the fix build).
+    prc, pout = run_rc(dev, "cloud_content_restore --match")
     rc, out = run_rc(dev, "cloud_content_restore --match --apply")
     ok, items, detail = unit_protocol(out)
-    failures += not check(rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
+    failures += not check(prc == 0 and rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
                           f"--match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included ({detail})",
-                          f"exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
+                          f"check exit {prc}, apply exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
     failures += not check(f"Nothing to remove from {ghost}" in out,
                           "and said so for the system that already matches",
                           "no 'Nothing to remove' line for the system with nothing to do")
@@ -6093,7 +6183,13 @@ class Monitor:
             os.remove(path)
         except OSError:
             pass
-        self.cmd("screendump " + path)
+        # A GL scanout (a guest on virgl, fork #291) has no surface for the
+        # monitor's screendump; the frame comes from QEMU's VNC server then,
+        # through vm-visual-qa's grabber, as the same P6 file.
+        if getattr(self, "_vnc", None):
+            return self._vnc_screendump(path)
+        if "no surface" in (self.cmd("screendump " + path) or ""):
+            return self._vnc_screendump(path)
         for _ in range(60):
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 size = -1
@@ -6103,6 +6199,21 @@ class Monitor:
                 return True
             time.sleep(0.05)
         return False
+
+    def _vnc_screendump(self, path):
+        if getattr(self, "_vnc", None) is None:
+            m = re.search(r"Server:\s+([0-9.]+):(\d+)", self.cmd("info vnc") or "")
+            if not m:
+                return False
+            self._vnc = (m.group(1), int(m.group(2)))
+        try:
+            w, h, rgb = visual_qa().vnc_frame(self._vnc[0], self._vnc[1])
+        except (OSError, ValueError, Fail):
+            return False
+        with open(path, "wb") as fh:
+            fh.write(b"P6\n%d %d\n255\n" % (w, h))
+            fh.write(rgb)
+        return True
 
     def frame(self):
         """The framebuffer as bytes, for the walk's settle/wait-for-change

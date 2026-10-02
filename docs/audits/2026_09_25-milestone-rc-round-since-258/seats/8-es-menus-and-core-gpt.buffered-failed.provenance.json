@@ -1,0 +1,129 @@
+{
+  "artifact_path": "docs/audits/2026_09_25-milestone-rc-round-since-258/seats/8-es-menus-and-core-gpt.md",
+  "source_file_paths": [
+    "/workspace/repos/rocknix/docs/audits/2026_09_25-milestone-rc-round-since-258/seats/8-es-menus-and-core.diff",
+    "/workspace/repos/rocknix/.claude/skills/code-auditor/references/anti-patterns.md",
+    "/workspace/repos/rocknix/.claude/rules/upgrade-and-install.md",
+    "/workspace/repos/rocknix/.claude/rules/es-player-text.md",
+    "/workspace/repos/rocknix/.claude/rules/es-code-traps.md",
+    "/workspace/repos/rocknix/.claude/rules/es-ui-style-guide.md"
+  ],
+  "source_file_hashes": [
+    "1973ae5ea28609060d9b39df753f42752d850b30f2e643159d0cf01c11dcbdcd",
+    "fd825c0505ae772ca2a6651eefe642581aaa147c254fed8cf50db1f8f1bde678",
+    "de4a683f9a36f9100e6fd98be11ad84d736f370374c40f74c445a2b81eca1995",
+    "97c0816eabd3088ce94e3d45dec8042c1796afa3c295a9a8d080597ece817145",
+    "9d5d6995714c9a1287c84f0c02a92de244271a4bdad8e53d29bb61115ba51d0f",
+    "150d0ac637626d771871eab48db995d8fc46c69ed7cf786240213649d264ad02"
+  ],
+  "source_file_commits": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "read_timestamps": [
+    "2026-09-27T22:58:44Z",
+    "2026-09-27T22:58:44Z",
+    "2026-09-27T22:58:44Z",
+    "2026-09-27T22:58:44Z",
+    "2026-09-27T22:58:44Z",
+    "2026-09-27T22:58:44Z"
+  ],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "gpt",
+  "declared_model": "openai/gpt-6-astra (OpenRouter, via openai, effort=max)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-27T22:58:44.486Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "a5dadffccfeaf3dee893cfc33d092b32944e6e0e05887297cf8f81958856df4a"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-27T22:58:44.486Z",
+      "duration_ms": 615979,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "retry",
+      "outcome_reason": "response_body_error",
+      "model_field": null,
+      "finish_reason": null,
+      "content_length": 0,
+      "tokens": null,
+      "usage_unavailable": "usage_absent",
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "error_phase": "response_body",
+      "error_message": "terminated"
+    },
+    {
+      "attempt": 2,
+      "started_at": "2026-09-27T23:09:01.469Z",
+      "duration_ms": 888035,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "retry",
+      "outcome_reason": "response_body_error",
+      "model_field": null,
+      "finish_reason": null,
+      "content_length": 0,
+      "tokens": null,
+      "wait_before_ms": 1000,
+      "usage_unavailable": "usage_absent",
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "error_phase": "response_body",
+      "error_message": "terminated"
+    },
+    {
+      "attempt": 3,
+      "started_at": "2026-09-27T23:23:51.507Z",
+      "duration_ms": 320313,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "response_body_error",
+      "outcome_reason": null,
+      "model_field": null,
+      "finish_reason": null,
+      "content_length": 0,
+      "tokens": null,
+      "wait_before_ms": 2000,
+      "usage_unavailable": "usage_absent",
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "error_phase": "response_body",
+      "error_message": "terminated"
+    }
+  ],
+  "final": {
+    "outcome": "retries_exhausted_transient",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 1827336,
+    "retries_used": 2,
+    "verification": {
+      "result": "UNVERIFIABLE",
+      "match_kind": "none",
+      "declared": "openai/gpt-6-astra (OpenRouter, via openai, effort=max)",
+      "observed": null
+    },
+    "effort_verification": {
+      "result": "UNVERIFIABLE",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": null
+    }
+  }
+}

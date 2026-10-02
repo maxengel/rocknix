@@ -66,3 +66,13 @@ removed.
   File Manager keeps its icon under both, and THEME CONFIGURATION reads GAME
   ARTWORK LOGO, which is how the frames show the option was the one loaded.
   The guest's `es_settings.cfg` was put back as it was and the guest rebooted.
+
+## #239 -- the screen after RetroArch quits on its own, guest d at 640x480 on `c939df737a`
+
+`239-after-retroarch-quit-hidewindow-false-60s-c939df737a.png`: sixty seconds
+after RetroArch quit from inside itself, with the guest's default
+(`HideWindow` false on x86): the game's own menu still on the panel, RetroArch
+gone, EmulationStation alive beneath it. Luminance 86.6 at +5, +30 and +60 s.
+`239-after-retroarch-quit-hidewindow-true-60s-c939df737a.png`: the same
+launch and quit with `HideWindow=true`: the carousel back by +5 s and at +60 s
+(luminance 34.3). The frames carry no account; the clock reads the guest's.

@@ -1,0 +1,160 @@
+{
+  "artifact_path": "research/council-runs/2026-09-30-rasteratops-fork-plan/claude-analysis.md",
+  "output_file_sha256": "255b9cd022eaf203f4fd6354856bc1501b03c526b95cbd2af395db2ee7db0cc2",
+  "source_file_paths": [
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-338.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-336.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-337.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-339.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-340.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-341.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-334.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/issue-335.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/decision-register-fork-rows.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/CLAUDE.md",
+    "research/council-runs/2026-09-30-rasteratops-fork-plan/sources/LICENSE.md"
+  ],
+  "source_file_hashes": [
+    "371261538281f86d19a0deb9e637da703db5f9677e97f33bb1baa27954ccddba",
+    "7ddf924f551e044df83c7ffcc7e90237cca557cf676bc2bf16933843eabda1e2",
+    "4b9ce0ef8f414f55352a50a113790b37e60fd2e97edefc5b32f34279fa383782",
+    "c3df6520498d2d1e36e0ffb609618bd59f84c297473c5754bdfa9e6b81b0e29a",
+    "188308712ac7085575e22835c7789bd9ca41acb73312878eff7876c4735046a1",
+    "433468efd2e0f43229d20b533b496e896684725fe8862438b57b5d7d4d52db0c",
+    "cb87fd678c7a84b3533606859e1ab3325e6a60411a25fb4545e824bf6bb5ff59",
+    "7ab450e3524b52e9d52524db1077a505a202520ccb90142b67f70290bf75854e",
+    "63bdbd5aa333618c1200e205f54420735cfcfde64c4d1ad733b8a8f4daf72016",
+    "846142f891e03b01d7f4f4cfd4459e0b9ab16f4bc3b0e0d45b1f5f53191a1677",
+    "61a24be2b0bc521542d0fa0a22f3452242609fd7570d982e17712a284de79ab4"
+  ],
+  "facilitator_version": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "prev_verdict_sha256": "386311461af0c90c7163cca5bddca6e052655e860a6db56a896565266a12e402",
+  "member": "claude",
+  "declared_model": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-30T14:04:36.680Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "8474d6bb7f2c9ff61206ad1b43bd3328d56249e50b29d4b2a90bedd794c30e21"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-30T14:04:36.680Z",
+      "duration_ms": 571565,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "anthropic/claude-fable-5.1",
+      "finish_reason": "stop",
+      "content_length": 46593,
+      "tokens": {
+        "prompt": 50252,
+        "completion": 41349,
+        "total": 91601,
+        "reasoning": 23214
+      },
+      "model_identity_source": "provider_response",
+      "served_provider": "Anthropic",
+      "served_provider_observations": [
+        "Anthropic"
+      ],
+      "content_sha256": "255b9cd022eaf203f4fd6354856bc1501b03c526b95cbd2af395db2ee7db0cc2",
+      "usage": {
+        "prompt_tokens": 50252,
+        "completion_tokens": 41349,
+        "total_tokens": 91601,
+        "cost": 2.56997,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 2.56997,
+          "upstream_inference_prompt_cost": 0.50252,
+          "upstream_inference_completions_cost": 2.06745
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 23214,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "09fa4a02ab86f9d3e32f9a875c45db48da505a5dd5bcabd815054550028282f6"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 571568,
+    "retries_used": 0,
+    "file_artifact_sha256": "255b9cd022eaf203f4fd6354856bc1501b03c526b95cbd2af395db2ee7db0cc2",
+    "usage": {
+      "prompt_tokens": 50252,
+      "completion_tokens": 41349,
+      "total_tokens": 91601,
+      "cost": 2.56997,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 2.56997,
+        "upstream_inference_prompt_cost": 0.50252,
+        "upstream_inference_completions_cost": 2.06745
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 23214,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 50252,
+      "completion": 41349,
+      "total": 91601,
+      "reasoning": 23214
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+      "observed": "anthropic/claude-fable-5.1",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "xhigh",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 23214
+    },
+    "provider_verification": {
+      "result": "NOT_PINNED",
+      "declared": null,
+      "evidence": "response_provider_field",
+      "observed": "Anthropic",
+      "observed_providers": [
+        "Anthropic"
+      ]
+    }
+  },
+  "genesis_sha256": "cfbf01d9836cf3b0c5087e0c1fc6fdac90cfdfa6a90d3548d4b377116ff6c64c"
+}

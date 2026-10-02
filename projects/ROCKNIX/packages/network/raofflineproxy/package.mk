@@ -2,17 +2,23 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-20. Since the
-# previous pin (64d03d30, 2026-09-12) the Linux side gained retries on the
-# RetroAchievements reachability probe, tethered interfaces counting as
-# active, two menu fixes, darkOS 32-bit RetroArch config support, and the
-# libchdr submodule at 8e7b8bd (raofflineproxy-libchdr follows it); rcheevos
-# is unchanged and APP_VERSION still reads 1.13.0-alpha1, forty-two commits
-# past that tag (docs/ra-offline/2026_09_13-phase-1-design-note.md, fork
-# #164, #227).
-# freshness: pinned -- the RC round (#236) is frozen at this client; upstream main has moved sixteen commits (59b167c123 scopes the daily refresh to recently played games and stops cached games expiring, 095867d2c6 moves rcheevos to 1433173, storage.py changes), each of which the twelve patches and the harness's section t have to be read against; the bump is #259, after the candidate (D-WORKFLOW-024)
-PKG_VERSION="4e9bab484e4d7be30b2dbc313aae94ca2f5f742a"
-PKG_SHA256="a0a39a155154b4d0a09ae813739b3d430dab579dc67d509659966d530b3b9c6a"
+# Pinned by full commit (packages/README.md): main at 2026-09-28 (248ce5a,
+# step 0 of the release candidate; c1bd3724 of 2026-09-26 before, fork #293).
+# The 23 commits since c1bd3724 are the Android app (the stale login token's
+# 401 on award sync, #182; NetherSX2's host-override broadcast, #190; the
+# caching budget, #174), dependabot, and nightly CI. On the Linux side the
+# updater learned a nightly channel (update.py, #176/#179) -- reached only
+# from the CLI's update commands, which nothing on this image runs -- and
+# config.py stops taking the dArkOS path on spruce (#178), neither of which
+# is this image. The store, the proxy service and the cache keys are
+# unchanged; the login key was already lower-cased on Linux, which is the
+# half of #182 the Android app lacked. Both submodules are unchanged
+# (rcheevos 1433173, libchdr 8e7b8bd; D-RA-029, D-RA-037). Every patch
+# applies as it did; 008's config.py hunk header is moved eight lines to
+# where #178 left load_config. APP_VERSION still reads 1.13.0-alpha1.
+# freshness: pinned -- upstream's next four commits (93f98382bc, 2026-09-30) rewrite the Linux caching model into a 100-per-30-minutes budget with a queue, and nine of the fork's sixteen patches no longer apply to them; pinned for 0.0.1 pending the maintainer's disposition on fork #361
+PKG_VERSION="248ce5acae75113d09500cd7c6661a12fee4b93c"
+PKG_SHA256="5a430a6bc75d4d101ef983ea1c67897613387148f991daafac5a035637ec7cf5"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"
@@ -23,7 +29,13 @@ PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 # raofflineproxy-rcheevos and raofflineproxy-libchdr are the two submodules
 # the proxy's tarball leaves empty, pinned to the commits it names; make_target
 # below compiles them with the glue into libraproxy_rchash.so (fork #179).
-PKG_DEPENDS_TARGET="toolchain Python3 raofflineproxy-rcheevos raofflineproxy-libchdr"
+# And the packages whose tools the shipped scripts call (packaging-and-patches:
+# a shipped script's tools are dependencies too; #308 F-RA-23, F-RA-24): bash,
+# raofflineproxy-ctl's interpreter; busybox for flock, mkfifo, mktemp, stat,
+# logger, sed, awk, head, tail, date and sleep; coreutils for timeout (the
+# image's is coreutils', not a busybox link); grep, GNU's (the image's busybox
+# has no grep applet); systemd for systemctl.
+PKG_DEPENDS_TARGET="toolchain Python3 bash busybox coreutils grep systemd raofflineproxy-rcheevos raofflineproxy-libchdr"
 PKG_LONGDESC="RAOfflineProxy: a loopback proxy between the emulators and retroachievements.org that caches game data and queues casual awards earned without a connection, and sends them when one returns. Approved by RetroAchievements.org; casual (softcore) achievements only."
 PKG_TOOLCHAIN="manual"
 PKG_BUILD_FLAGS="+pic"

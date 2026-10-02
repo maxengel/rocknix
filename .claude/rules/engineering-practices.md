@@ -304,6 +304,19 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+**A fixture for a secret scanner is built at run time, never written as a
+literal (2026-09-28, #307).** `tools/last-good-scripts-test`'s cases for the
+credential scan and the redaction feed values that look like a private key,
+an OAuth token and a `devpassword=`; three were committed as literals by a
+fix stream, the push guard read them in history, and the unpushed range had
+to be rewritten by the maintainer before `next` could move. So a fixture is
+assembled when the case runs -- `printf '%s' 'OPENSSH PRIVATE KEY'` into a
+format string, a value passed through `$(printf ...)` -- and the file at rest
+carries no line the guard would match. `.githooks/pre-commit` (both
+repositories) now refuses such a line at commit time with the same patterns
+the push guard uses (`.githooks/secret-patterns`, one definition); a
+refusal there costs one edit, at push time it costs a rewrite.
+
 **The positive is recorded where the guard is wired (audit #258, P-02).** A
 hook line, a CI step, a suite line or a `check` in a script is committed
 with a work-log line naming the constructed failure it was seen to catch,
@@ -430,8 +443,7 @@ Afterwards, ask where it could have been caught earlier and add that guard.
 it reset the remote first and only ever tested a first upload. Eliminating the
 category is part of the fix, not follow-up work.
 
-(Adapted from `incident-response.instructions.md` in the scaffold estate —
-<https://forge.possibility.space/scaffold/scaffold>.)
+(Adapted from `incident-response.instructions.md` in an external instruction estate.)
 
 ## Never reboot, update, or power-cycle a device without asking
 
@@ -529,6 +541,27 @@ question, and is said in the report.
   nobody needed; a line it lets through with a secret in it is a transcript
   to scrub. `docs/device-testing-policy.md` § "Reading a device's output" is
   the long form. (D-QA-021.)
+
+  **Except where the line's presence is the evidence.** A `PASS`/`FAIL`
+  verdict, a suite's summary, and an action-log line all match `pass` or
+  `user` by accident, and a read that drops them reports an absence that is
+  the filter's: on 2026-09-27 the reboot's own `device-act` lines were
+  looked for three times and "missing" -- their label quoted the
+  maintainer's *"fully tested and passing build"*. For those reads, mask the
+  value and keep the line:
+
+  ```bash
+  sed -E 's/((token|key|passw[a-z]*|psk|user)[=:])[^ ]*/\1***/Ig'
+  ```
+
+  The group closes at the delimiter and the value sits outside it: the
+  example carried the value inside group 1 for two weeks (`\1***` printed it
+  back, audit of the fix round PL-013), so a masking pattern is proven on a
+  fake `key=SECRET` line first, and the proof is the absence of `SECRET` in
+  what comes out.
+
+  and keep the dropping `grep -v` for config files and `get_setting` output,
+  where the line itself is the secret.
 
 ## If the VM can test it, the VM tests it first
 

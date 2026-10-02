@@ -49,7 +49,7 @@ goes back).
 
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
-@@ -93,6 +93,11 @@
+@@ -100,6 +100,11 @@ AUTH_FAILURE_STATUSES = {401, 403}
  # the login body, so there is no field in it the proxy could say this in.
  PROXY_HEADER = ("X-RA-Proxy", "1")
  OFFLINE_LOGIN_HEADER = ("X-RA-Offline", "1")
@@ -61,7 +61,7 @@ goes back).
  
  
  def is_passthrough_client_error(path: str, status: int) -> bool:
-@@ -108,6 +113,11 @@
+@@ -115,6 +120,11 @@ def is_static_asset_request(path: str) -> bool:
      return any(clean_path.startswith(prefix) for prefix in IMAGE_PATH_PREFIXES)
  
  
@@ -73,7 +73,7 @@ goes back).
  def guess_content_type(path: Path) -> str:
      suffix = path.suffix.lower()
      if suffix == ".png":
-@@ -226,6 +236,16 @@
+@@ -233,6 +243,16 @@ def game_id_cache_miss() -> bytes:
      )
  
  
@@ -90,7 +90,7 @@ goes back).
  def _start_image_downloads(
      downloads: list[tuple[str, str]],
      user_agent: str | None,
-@@ -274,12 +294,21 @@
+@@ -281,12 +301,21 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
          body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
          headers = {key: value for key, value in self.headers.items()}
  
@@ -113,7 +113,7 @@ goes back).
          )
  
          response = self.server.process_proxy_request(
-@@ -357,6 +386,17 @@
+@@ -374,6 +403,17 @@ class ProxyRuntimeServer(ThreadingTCPServer):
                  cached_asset = resolve_cached_static_asset(path)
                  if cached_asset is not None:
                      return raw_response_bytes(200, cached_asset.read_bytes(), guess_content_type(cached_asset), "OK")
@@ -131,7 +131,7 @@ goes back).
                  if self.is_online():
                      return self._forward_static_asset(path, headers)
              return raw_response_bytes(204, b"", "application/octet-stream", "No Content")
-@@ -417,8 +457,7 @@
+@@ -438,8 +478,7 @@ class ProxyRuntimeServer(ThreadingTCPServer):
          # online (the monitor probes every fifteen seconds), every request
          # first tries upstream with a fifteen-second timeout, and a summary
          # over a few hundred games on a link that has just gone is hours.

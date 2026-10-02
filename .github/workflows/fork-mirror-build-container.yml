@@ -1,0 +1,49 @@
+# Mirror the build container under the fork's own registry (#344 P1,
+# D-WORKFLOW-119/120). Runs only by hand, on GitHub's own runner, with the
+# workflow's built-in token: no personal access token exists for this and
+# none lives on the build host. The copy preserves the manifest and its
+# digest (skopeo --preserve-digests), and the job fails if the digest it
+# reads back differs from the one it was given, so the Makefile can pin the
+# mirror by @sha256: and a build-log line can prove which bytes it ran in.
+name: fork-mirror-build-container
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Source image by digest"
+        required: true
+        default: "ghcr.io/rocknix/rocknix-build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39"
+      tag:
+        description: "Tag under ghcr.io/rasteratops/build"
+        required: true
+        default: "20260925-988c0ba5"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install skopeo
+        run: sudo apt-get update -q && sudo apt-get install -y -q skopeo
+
+      - name: Sign in to the organisation's registry with the workflow token
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Copy by digest, preserving it
+        env:
+          SRC: ${{ inputs.source }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$SRC" in *@sha256:*) ;; *) echo "source must be pinned by digest"; exit 2;; esac
+          want="${SRC##*@}"
+          skopeo copy --all --preserve-digests "docker://$SRC" "docker://ghcr.io/rasteratops/build:$TAG"
+          got="sha256:$(skopeo inspect --raw "docker://ghcr.io/rasteratops/build:$TAG" | sha256sum | cut -d' ' -f1)"
+          echo "source digest: $want"
+          echo "mirror digest: $got"
+          [ "$want" = "$got" ] || { echo "DIGEST MISMATCH: the mirror is not the source"; exit 1; }
+          echo "pin: ghcr.io/rasteratops/build@$got" | tee -a "$GITHUB_STEP_SUMMARY"

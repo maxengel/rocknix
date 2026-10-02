@@ -27,11 +27,11 @@ DEFAULT_SAVESPATH="/storage/roms"
 DEFAULT_SETTINGS_BACKUPS="/storage/roms/backup"
 
 # Saves on the cloud remote
-DEFAULT_SAVES_REMOTE="/ROCKNIX/Saves"
+DEFAULT_SAVES_REMOTE="/Rasteratops/Saves"
 
 # Settings backups on the cloud remote. Must be a sibling of SAVES_REMOTE,
 # never inside it -- a mirror of the saves folder would delete the archives.
-DEFAULT_SETTINGS_REMOTE="/ROCKNIX/Backups"
+DEFAULT_SETTINGS_REMOTE="/Rasteratops/Backups"
 
 # ROMs and BIOS files on the cloud remote, one folder per system plus "bios".
 # Previously unset, which put them at the remote root and scattered system
@@ -39,8 +39,16 @@ DEFAULT_SETTINGS_REMOTE="/ROCKNIX/Backups"
 #
 # Unlike the saves folder this key is derived for an upgrading config rather
 # than defaulted, so a device set up under an older layout keeps its ROMs
-# beside its saves. Clear it back to "" to use the remote root.
-DEFAULT_CONTENT_REMOTE="/ROCKNIX/Content"
+# beside its saves -- except a saves folder at the top level (/GAMES), which
+# has no parent to put them beside: that config gets "" (the remote root,
+# where its ROMs already were) for its owner to set. Clear it back to "" to
+# use the remote root.
+DEFAULT_CONTENT_REMOTE="/Rasteratops/Content"
+
+# A superseded cloud folder this device chose to keep when the move to the
+# current layout was offered (KEEP USING, D-CLOUD-160): the folder kept, so the
+# offer is not repeated. Empty until then.
+DEFAULT_LAYOUT_KEEP=""
 
 # Logging Options
 # --------------
@@ -56,8 +64,7 @@ DEFAULT_LOG_LEVEL="INFO"
 # drop it from the transfer (#71). To change what syncs, edit the rules file.
 DEFAULT_RCLONEOPTS="--progress \
 --log-file /var/log/cloud_sync.log \
---filter-from /storage/.config/cloud_sync-rules.txt \
---delete-excluded"
+--filter-from /storage/.config/cloud_sync-rules.txt"
 
 # Network bounds
 # --------------
@@ -90,14 +97,20 @@ DEFAULT_RCLONEOPTS="--progress \
 # One line, split on spaces by the scripts. An empty value gives these same
 # numbers, never rclone's defaults: the scripts fall back to them.
 DEFAULT_RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
-DEFAULT_RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"
-DEFAULT_SYNC_CEILING_SECONDS=20
+DEFAULT_RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"
+DEFAULT_SYNC_CEILING_SECONDS=90
 
 # Backup Options
 # -------------
 ## Backup method
-### The default is "sync", which creates a 1:1 match between the local path and remote
-### Switching to "copy" will overwrite newer files at the remote with the local version, but leave other files and folders in place
+### The default is "copy", which sends each save that differs and never deletes
+### anything in the cloud; whatever it replaces is kept for one cycle in the
+### folder beside the saves folder named <saves folder>-replaced.
+### "sync" also deletes from the cloud whatever this device does not have --
+### every other device's saves, in a folder they share. It is honoured if set
+### here; no menu offers it.
+### --delete-excluded is removed from RCLONEOPTS before every run, whatever
+### this file says, so a mirror never reaches past the rules file.
 DEFAULT_BACKUPMETHOD="copy"
 
 ## How many dated settings backups to keep in the cloud, per device

@@ -7,10 +7,14 @@
 # D-UI-051: a string the fork adds ships in English and French, written by hand into
 # locale/lang/fr/LC_MESSAGES/emulationstation2.po; a missing translation falls through
 # to English silently, which is why this exists (#152). A fork string is a `_("...")`
-# msgid in es-app/src or es-core/src that upstream batocera's catalogue does not carry;
-# the reference is the upstream base's own .po (the merge base of HEAD with the
-# upstream branch, derived each run -- audit #258 PL-022), read from git, so the list is
-# exactly what the fork added. Untranslated means the msgid is absent from the current
+# msgid in es-app/src or es-core/src that the upstream base carries neither in its
+# catalogue nor in its source; the reference is the upstream base (the merge base of
+# HEAD with the upstream branch, derived each run -- audit #258 PL-022), read from git,
+# so the list is exactly what the fork added. Its source counts as well as its .po
+# because upstream adds strings without regenerating the catalogue: after the
+# 2026-09-25 merge the fuel-gauge reset's two strings read as the fork's, and the
+# `french` suite failed on strings the fork never wrote. Upstream's untranslated
+# strings are still listed, after the summary, and do not fail the check. Untranslated means the msgid is absent from the current
 # French catalogue or has an empty msgstr. The msgid must match the source byte for
 # byte, because the build merges by msgid.
 #
@@ -119,14 +123,36 @@ def main():
         except subprocess.CalledProcessError as e:
             print("es-untranslated: cannot read the upstream catalogue at " + b + ": " + e.stderr.strip(), file=sys.stderr); return 2
         upstream_ids |= set(parse_po(up).keys())
+    # Upstream's own source at each base, for the strings its catalogue does not
+    # carry yet. Extracted with git archive, so a base that cannot be read is a
+    # check that cannot run, not an upstream with no strings.
+    import tempfile
+    upstream_src_ids = set()
+    for b in bases:
+        with tempfile.TemporaryDirectory(prefix="es-untranslated-") as tmp:
+            arc = subprocess.run(["git", "-C", a.es_src, "archive", "--format=tar", b, "es-app/src", "es-core/src"], capture_output=True)
+            if arc.returncode != 0:
+                print("es-untranslated: cannot read the upstream source at " + b + ": " + arc.stderr.decode(errors="replace").strip(), file=sys.stderr); return 2
+            if subprocess.run(["tar", "-x", "-C", tmp], input=arc.stdout).returncode != 0:
+                print("es-untranslated: cannot unpack the upstream source at " + b, file=sys.stderr); return 2
+            found = source_strings(tmp)
+            if not found:
+                print("es-untranslated: the upstream source at " + b + " has no _() strings -- not a believable base", file=sys.stderr); return 2
+            upstream_src_ids |= set(found)
     print("es-untranslated: upstream base " + ", ".join(b[:9] for b in bases) + (" (merge base of HEAD with " + a.upstream_ref + ")" if not a.upstream else " (given)"))
     src = source_strings(a.es_src)
-    fork = {k: v for k, v in src.items() if k not in upstream_ids}
+    fork = {k: v for k, v in src.items() if k not in upstream_ids and k not in upstream_src_ids}
+    upstream_untranslated = sorted((v, k) for k, v in src.items() if k in upstream_src_ids and k not in upstream_ids and not fr.get(k))
     missing = sorted(((v, k) for k, v in fork.items() if not fr.get(k)), key=lambda t: (t[0].split(":")[0], int(t[0].split(":")[1])))
     if not a.quiet:
         for where, msgid in missing:
             print(where + "\t" + msgid.replace("\n", "\\n"))
     print("es-untranslated: %d fork string(s) in the source, %d with French, %d without" % (len(fork), len(fork) - len(missing), len(missing)))
+    if upstream_untranslated:
+        print("es-untranslated: %d upstream string(s) not in upstream's catalogue and without French (upstream's, not counted):" % len(upstream_untranslated))
+        if not a.quiet:
+            for where, msgid in upstream_untranslated:
+                print("  " + where + "\t" + msgid.replace("\n", "\\n"))
     return 1 if missing else 0
 
 if __name__ == "__main__":

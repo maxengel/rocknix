@@ -1,0 +1,12 @@
+21:09:52 === X-cut-cfg on guest d, BUILD_ID="8196071ff52b59eaea0058f35faf6b9db4b5a43d"
+    planted: 0000020   =   h   a   l
+    planted: 0000024
+21:09:52   PASS  the live file now ends mid-line (no final newline)
+21:10:28   PASS  rebooted (boot id changed)
+21:10:36   PASS  system.cfg ends with a newline again
+21:10:36   PASS  the half line is gone
+21:10:36   PASS  every whole key kept (230 -> 230, hostname present)
+21:10:36   PASS  the last good copy is whole and never held the half line
+    journal: Sep 28 17:10:06 GENERIC-X64-474c system.cfg[803]: system.cfg was cut short; this write starts from its whole lines and takes the rest from system.cfg.backup
+21:10:37   PASS  the boot's journal says what it did to the cut file
+21:10:37 === done: 7 PASS, 0 FAIL

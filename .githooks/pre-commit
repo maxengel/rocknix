@@ -1,0 +1,21 @@
+#!/bin/bash
+# pre-commit: refuse a commit that would ADD a credential-shaped line -- so
+# the push guard never meets one in history (2026-09-28, #307: a fixture
+# written as a literal cost a history rewrite) -- or a word from the wordlist
+# the fork must not carry (kept outside the tree; .githooks/guard-lib says
+# where). Reads the index, not the working tree, so what is refused is exactly
+# what would be committed. The scans are guard-lib's and fail closed there.
+set -uo pipefail
+. "$(dirname "$(readlink -f "$0")")/guard-lib" || exit 1
+guard_load pre-commit || exit 1
+added="$(mktemp)" || { echo "✖ pre-commit: mktemp failed; nothing was scanned, so nothing is allowed" >&2; exit 1; }
+trap 'rm -f "${added}"' EXIT
+if ! git diff --cached -U0 --no-color --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMRT -- . ':!*.po' ':!*.pot' | guard_added_lines > "${added}"; then
+  echo "✖ pre-commit: could not read the index (git diff --cached failed); nothing was scanned, so nothing is allowed" >&2
+  exit 1
+fi
+status=0
+guard_scan pre-commit "${added}" "this commit would add a credential-shaped line" '' "${SECRET_PATTERNS}" redact || status=1
+guard_scan pre-commit "${added}" "this commit would add a listed word (the wordlist outside the tree; the file and line above)" -i "${FORBIDDEN_PATTERNS}" where || status=1
+[ "${status}" -eq 0 ] || echo "  A placeholder belongs in <angle brackets>; a scanner's fixture is built at run time (printf pieces), never written as a literal; a listed word is reworded, never exempted." >&2
+exit "${status}"

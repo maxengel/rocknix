@@ -408,7 +408,7 @@ Common risky pairs are in [`references/phases.md` § Phase 3.5 interaction table
 ## Build-vs-adopt verification (Phase 3, step 3.5.5)
 
 Verifies the **adopt / extend / contribute-before-build** discipline (doctrine
-§1 pSpace-first; development-principles "Prefer adopt / extend / contribute
+§1 platform-first; development-principles "Prefer adopt / extend / contribute
 before building"). **Applies only if the repo maintains a build-vs-adopt
 register** — scaffold does not yet, so treat this as advisory until one exists.
 The phase-tier honor check (`mini-retro` scoped-audit, if present) verifies one
@@ -498,7 +498,7 @@ Issue shape:
 - Title: `Audit: [Item Name] — [N] findings ([X] critical, [Y] high)`
 - Labels: `audit`, `punch-list`, plus relevant epic labels
 - Body from `05-punch-list.md` plus the executive summary and acceptance-criteria scorecard. Write the body to a file and pass it via `--body-file` (not heredoc).
-- **Always `--repo maxengel/rocknix`.** Issues are disabled on `ROCKNIX/distribution`, so an unqualified `gh issue create` from this checkout targets a repo that cannot accept it.
+- **Always `--repo rasteratops/distribution`.** Issues are disabled on `ROCKNIX/distribution`, so an unqualified `gh issue create` from this checkout targets a repo that cannot accept it.
 - Linked to the original milestone/issues being audited
 
 If labels don't exist, create them first (`gh label create <name> --color <hex>`).
@@ -658,9 +658,9 @@ visible instead of silent:
 
 | Input                          | Source                                | How to find                                                                                     |
 | ------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **The spec**                   | GitHub issues — there is no `docs/planning/` here | `gh issue view <n> --repo maxengel/rocknix`. Issue bodies *are* the spec; epics link their children |
+| **The spec**                   | GitHub issues — there is no `docs/planning/` here | `gh issue view <n> --repo rasteratops/distribution`. Issue bodies *are* the spec; epics link their children |
 | **The acceptance criteria**    | Issue bodies                          | The `- [ ]` checklists and any `Acceptance:` line                                               |
-| **The issues**                 | `maxengel/rocknix` (upstream has Issues disabled) | `gh issue list --repo maxengel/rocknix`                                                        |
+| **The issues**                 | `rasteratops/distribution` (upstream has Issues disabled) | `gh issue list --repo rasteratops/distribution`                                                        |
 | **The code changes**           | Git history                           | `git log`, `git diff --stat`; note the fork layout — feature branches live in `../rocknix.worktrees/` |
 | **Prior findings**             | `docs/work-logs/<yyyy_mm>-work_logs/` | Dated running record of what was done and what went wrong; the closest thing to phase retros    |
 | **Blindspot register**         | `docs/blindspot-register.md`          | Proven recurring failure modes — check the work against every entry                             |

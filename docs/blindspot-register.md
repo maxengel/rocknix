@@ -749,3 +749,433 @@ under the panel (`surface_check`); the GENERIC_X64 cfg ships 640x480 and
 mode at boot. A frame-based claim about RetroArch text before this guard
 is a claim about a scaled image.
 
+
+## 55. Blindspot 54's own guard read a line it had not tied to its launch (2026-09-25)
+
+`tools/time-to-play`'s surface check -- the guard blindspot 54 installed --
+took the last `Using resolution` line in the guest's `exec.log`, whoever had
+written it. Runs 29 and 30 on `e506fcd8e5` read `240x256` and called the
+frames scaled; the run's own first-game frame shows RetroArch drawing at the
+panel's 1280x800, with the "Loading state" notification at panel scale, and
+240x256 is not a size the Game Boy probe's 160x144 scales to. Run 31, with
+the check made to keep the lines it judged, read `1280x800` from the probe's
+own launch. Where the 240x256 line came from is still unknown; the evidence
+now travels with every verdict, so the next one will say.
+
+The shape is blindspot 50's, committed inside the guard written to prevent
+blindspot 54: a check that reads a file must first establish that the lines
+it reads are this run's. A guard is code, and is held to the rules it
+enforces.
+
+**Guard:** `tools/time-to-play`'s `surface_check` reads only the first
+`Using resolution` after the last `Loading content file` that names the ROM
+it launched, keeps those lines in the report as `evidence`, and reads no
+line at all -- which fails the run -- when the launch has not logged one.
+Proven on four constructed logs (a stale 240x256 before the probe's launch
+reads the probe's 1280x800; a launch with no surface line, or another ROM's
+launch alone, read nothing and fail).
+
+## 56. A timing run passed over a sync that had no cloud to reach (2026-09-25)
+
+`tools/vm-qa --only time-to-play` on a freshly booted pair measured the exit
+sync at 0.54 s and reported PASS. The sync had ended at once with `YOUR CLOUD
+STORAGE ISN'T SET UP YET`: the full run's earlier suites leave a QA remote on
+guest a, and a lone run has none. Its exit and game-to-game numbers timed a
+sync that did nothing, and a sync that does nothing is always inside the
+3 s budget. "Success reported over a no-op" (engineering-practices.md, audit
+#258 P-04), in the one suite whose numbers are the time-to-play metric.
+
+**Guard:** `tools/time-to-play`'s `headline_missing` fails a run whose online
+exit or game-to-game cells ran with the QA cloud unreachable (`rclone lsd
+qa-cloud:` answered no) -- fired on run 31's record, silent on run 29's --
+and `tools/vm-qa` seeds the QA remote before the time-to-play suite
+(`ensure_remote`), as it already did before the walks. Run 32: seeded,
+reachable, the exit sync `completed`, PASS.
+
+## 57. A fix that covered fewer sites than its issue named (2026-09-25)
+
+#198 said "GuiMenu.cpp's three callers build `setrootpass` with the
+password unquoted". Its fix (ES `75ca1dac2`) quoted "both" call sites -- the
+SECURITY page and the wizard's SSH PASSWORD page -- and its first checkbox
+was ticked from a proof of the quoted form at the script. The third caller,
+FINISH RESTORE PROCESS > DEVICE PASSWORD, went on splicing the password in
+bare for two days, through three cuts, until a read of the open bugs for the
+release candidate compared the pinned source with the issue's own count. A
+space cut the password; `$ ; &` or a quote were the shell's.
+
+The shape: the issue's count was the spec, and nobody counted the diff
+against it. A proof at one layer (the script receives the quoted form)
+ticked a criterion about another (every place the interface builds it).
+
+**Guard:** `tests/credential-quoting.py` in the EmulationStation tree reads
+the source for every command built from a typed credential (setrootpass,
+wifictl's connect, enable, join and forget) and fails on one not passed
+through `shellQuote` -- it named GuiMenu.cpp:7597 before ES `459fc168f` and
+passes after it -- and `tools/vm-qa` runs it as the `quoting` suite on every
+image.
+
+## 58. A link error the source contradicted, read as the code's (2026-09-25)
+
+On 2026-09-24 webkitgtk 2.54.0's final link failed on a symbol the DOM
+agent calls and the generated dispatcher lacked. It was read as a fourth
+wall in WebKit's option graph -- the configure summary even showed
+`ENABLE_VIDEO ... ON`, the guard the symbol sits behind -- and the version
+was pinned for the candidate (D-WORKFLOW-041) after a bounded spike of three
+fixes. It was ccache: ROCKNIX's cache runs with `sloppiness =
+pch_defines,time_macros` and served JavaScriptCore a precompiled header
+built under the 2026-09-20 attempts' configuration, when video was off.
+`cmakeconfig.h` said 1, the preprocessed source carried the definition, and
+only the object compiled against the cached `.gch` lacked it. A rebuild with
+`CCACHE_RECACHE=1` linked (#228, run 47).
+
+The shape: the build's own evidence contradicted the explanation (the
+feature was on; the source had the code), and the contradiction was not
+chased before a pin was paid for it. The spike's build directory was
+cleaned afterwards, which removed the only place the contradiction could be
+read.
+
+**Guard:** `.claude/rules/device-builds.md` § "A link error the source
+contradicts is the compile cache's until shown otherwise": compare the
+object with the preprocessed source, rebuild the package with
+`CCACHE_RECACHE=1` before writing a fix against the error, and expect it
+after a package's options change. No tool can detect a stale PCH from the
+outside; the rule is the guard.
+
+## 59. A memory measurement that passed on a page that never loaded (2026-09-25)
+
+`tools/signin-memory` reported PASS, and #228's 246 MB baseline for
+WebKitGTK 2.52.6 was taken from it, when the window had never shown a page:
+on a QA guest Dropbox's authorize page fails inside WebKit ("WebKit
+encountered an internal error", after libsoup's HTTP/2 warning) under 2.52.6
+and 2.54 alike, and the window sat on "Opening the sign-in page...". The
+tool passed on a window and a web process existing, and the comment that
+reported the baseline read libsoup's log chatter as the page loading. Frames
+showed the placeholder on every run until the page was changed to
+example.org. Blindspot 39's shape -- the tool judged its run by whether it
+ran, not by whether it measured -- in the tool the webkitgtk decision was to
+be made from (D-WORKFLOW-038).
+
+**Guard:** `tools/signin-memory` fails a run whose window never logs `load
+finished` ("the page never finished loading, so these numbers are a window
+on its placeholder"), defaults to a page that loads on the guest, and takes
+the allowed host from the URL. Proven 2026-09-25 on a 1 GB guest: the
+Dropbox URL FAILs, example.org PASSes.
+
+## 60. A harness fixture the harness did not own, and an issue filed on a log's last lines (2026-09-25)
+
+`tools/last-good-scripts-test` bind-mounted the busybox of whichever build
+root it found, into every sandbox, for the whole run. A GENERIC_X64 image
+step (`scripts/image`) deletes `image/system` and re-installs every package,
+so a build running beside the harness pulled that file out from under it:
+eighteen checks after section t's cancel check returned rc 1 with empty
+output at 08:10:44 UTC, twenty-five seconds after run 47's image step began.
+The log was read from its last lines, the adjacency to the cancel check was
+taken for a cause, and #272 was filed as a race in the scripts -- a cause
+no code path could produce, which the code trace of #273 showed by reading
+the ctl's traps and the harness's own writes, and then by putting the
+build's timestamps beside the run's. Blindspot 50's shape (a check that
+never asked whose file it read), committed by the harness itself, and
+blindspot 52's (a summary taken as the record) in the filing.
+
+**Guard:** the harness copies the busybox it chose into its run directory
+at start and binds the copy at a path no sandbox mounts over
+(`tools/last-good-scripts-test`, `BB_SRC` / `BB_HOST` / `BB`), refusing to
+run when the copy cannot be made. Proven 2026-09-25: with the build root's
+busybox renamed eight seconds into a run, `next`'s harness failed 140
+checks with `bwrap: Can't find source path`, the fixed one passed every
+check it had passed before. For the filing: an issue that names a cause
+names the line of evidence it rests on, and a log read for a cause is read
+with the clock beside it -- `tools/archaeology` finds the record, not a
+concurrent build's log; nothing mechanical catches this half, and that is
+said here in those words.
+
+## 61. The suite under test started as a shell background job, so the signal it tests was ignored before it began (2026-09-26)
+
+`tools/last-good-scripts-test` was launched from the harness as
+`setsid nohup bash -c '...' &` so a waiter could report its end. Its two
+scan-cancel checks failed twice, rc 0 and the scan completing, while the
+16:00 foreground run and vm-qa's run of the same file on the guest had
+passed. A POSIX shell starts an asynchronous list with SIGINT and SIGQUIT
+set to SIG_IGN, every sandboxed script inherited the disposition across
+exec, and bash cannot trap a signal ignored at entry -- so the fixture's
+own SIGINT, sent from inside the run as the 2026-09-22 lesson asked
+(memory `background-jobs-cannot-trap-sigint`), went to a process that could
+not hear it. Blindspot 22's family: a check whose failure looks exactly like
+the defect it exists to catch, and the second time the same signal rule was
+learned, one layer further out.
+
+**Guard:** the suite reads its own `SigIgn` at start and refuses to run,
+rc 2, naming the foreground and `setsid -f` (`tools/last-good-scripts-test`,
+the block before `set -u`). Proven 2026-09-26: started as `bash -c '...' &`
+it exits 2 at once with the sentence; started with `setsid -f` the third
+run passed 377 of 377 (work log, 00:05 UTC).
+
+## 62. A fix corrected the writer and left what it had already written to heal by play (2026-09-26)
+
+#280 fixed the launcher's log and the reader of it, with every ceremony
+observed: a code trace, a VM proof of three cases, a candidate built,
+staged and recorded. Its register row (D-LAUNCH-004) said, as if it were
+fine, *"a wrong record heals on that game's next exit."* The records the
+old reader had already written -- Ms. Pac-Man's `turns=3` on Dr. Mario,
+F-Zero and Aladdin -- stayed on the device and in the cloud, and the
+maintainer's first look at the SAVE STATE MANAGER after the upgrade found
+the auto saves and the achievement screenshots turned exactly as before
+(#288): nothing had exited, so nothing had healed. `upgrade-and-install.md`
+§ "Fixing forward is not enough" had said it since July -- *a fix that
+changes what we write does nothing for what is already written* -- and
+D-UI-082 had been decided for this very case a week earlier, for a capture
+with no record; a wrong record is a record, and the record won over the
+table. A rule at the *written and routed* stage of `working-principles.md`'s
+ladder, broken with the rule loaded in the session that broke it.
+
+**Guard:** `tools/rc-preflight`'s `already written` item (#289,
+D-WORKFLOW-050): every bug's code trace answers, as an `Already written:`
+line, what the code before the fix had left on devices and in their clouds
+and how the fix treats it -- read both, migrated, or nothing inherited,
+argued -- for every open bug with a trace and every bug closed as completed
+since 2026-09-26 02:45 UTC; a trace without the line is a finding and the
+tree is not a candidate. Proven 2026-09-26: `tools/rc-preflight --no-fetch
+--allow-unchecked device-facts` read `FAIL already written 1 code trace(s)
+with no "Already written" line: #288` before the line was posted, and
+`PASS already written 1 code trace(s) since 2026-09-26 ...` after (work
+log, 03:05 UTC). The fix itself is the answer's first kind: a record says
+where its turn came from, and one that does not is not trusted (D-UI-094).
+
+## 63. The options said llvmpipe, the renderer said softpipe, and nobody read the renderer for a month (2026-09-26)
+
+`projects/ROCKNIX/devices/GENERIC_X64/options` has carried *"software
+OpenGL via llvmpipe (LLVM_SUPPORT=yes)"* since the device was added on
+2026-08-21, and `config/graphic`'s `get_graphicdrivers` -- upstream's 2018
+reset of every graphics variable before the per-driver rules -- set
+`LLVM_SUPPORT="no"` before Mesa read it. So every GENERIC_X64 image was built
+with `-Dllvm=disabled` and `gallium-drivers=softpipe,svga,virgl`, and every QA
+guest rendered through Mesa's reference rasterizer: RetroArch dropped six
+frames in ten, the walks took twenty-two minutes, an injected key could fall
+between two polls (#249's misses, #278), and the virgl driver the image did
+carry was never handed a GL display. Sixty-odd vm-qa runs, four hundred
+frames a run, and RetroArch's own `[GL] Renderer: softpipe` line sat in every
+launch log unread. The options comment was taken as the behaviour: *a name is
+not a behaviour, and a summary is not the source* (`engineering-practices.md`),
+this time a configuration file's own comment about itself.
+
+**Guard:** `tools/vm-qa`'s report carries the guest's display (`display: GL
+through virgl on /dev/dri/renderD128`, from QEMU's own command line) and the
+renderer its Mesa reported (`renderer: virgl (...)`, from the launch log the
+exit suite leaves), so a guest on the software path says so on every report;
+and `generic-x64-vm --headless` defaults to hardware GL (`--gl auto`) with the
+image's Mesa carrying llvmpipe for the fallback (`config/graphic` keeps a
+device's explicit yes). Seen on 2026-09-26: guest d's report line reads virgl
+after the change where the same guest's launch log read softpipe before it
+(#291; D-QA-052).
+
+## 64. A wait was lengthened three times for an event the code had no path to produce (2026-09-27)
+
+The #299 proof's phase E waited for the interface's after-index top-up to
+run offline after a game list update, and it did not come inside 300 s.
+The wait was read as too short: the poll went to 660 s and the guest ran
+another eleven minutes, twice, before the hasher's offline path was read
+-- which throws at the hash library and never reaches the top-up. The run
+the first proof had seen at 300 s was the link's own re-index, started by
+the network thread when the link came back, and the twelve minutes before
+it were the interface thread blocked on a pooled connection with the link
+gone. Three runs and about forty minutes of guest time graded a timing
+where there was no path, and the two real defects (no stall bound on the
+fetch, no word from the hasher) waited behind the poll's length. The same
+shape as blindspot 8 (an assertion that holds because nothing had
+happened yet), turned on a wait: a wait that is lengthened is a claim that
+the event is late, and the claim was never checked against the code or
+the guest's own log, both of which were a read away.
+
+**Guard:** no tool can catch it: a proof's wait and the code's path are
+two files nothing diffs. The rule is `.claude/rules/engineering-practices.md`
+§ *A name is not a behaviour* ("name the artifact that would settle it,
+and read that"), applied to a wait: before a poll is lengthened, the
+guest's log is read for the event's cause and the code for the event's
+path, and the proof grades the event's own line (`the index ran offline`,
+from `ProxyCards::indexRanOffline`) rather than a later consequence.
+
+## 65. A proof's substitute passed where the real input failed, twice in one day (2026-09-27)
+
+Two items closed on VM proofs came back from the maintainer's
+play-testing on the RG35XX SP the same evening, and neither proof had
+been wrong about the code it ran; each had been fed a substitute for the
+input that mattered. #298's proof shims `raofflineproxy-ctl`, and the
+shim's proxy writes its flush stamp the instant its queue empties, so
+the send card always took its stamp before the saves ran; the real proxy
+stamps at *Flush complete*, four seconds later, the card let go before
+it existed, and the probe at the saves card's end showed the same batch
+again (#305). D-RA-035's proof and the script suite set the history
+path by an environment override and made "a game played" a touched file
+at `content_history_path`; RetroArch 1.22 writes its history under
+`playlists/builtin/`, the device never had the config's file, and the
+wake check read "no game played" at every link (#306). The guest's proxy
+and RetroArch are the device's, and either would have shown the truth
+had the proof used them. `vm-first.md` already says a synthetic input is
+named and keeps its checkbox partial until a real input has been seen
+once; both checkboxes were ticked as done. The tell, both times: a
+fixture that stands in for a real component's *timing* or *location*,
+not only for its data.
+
+**Guard:** `.claude/rules/vm-first.md` § A synthetic input is named and
+keeps its checkbox partial -- applied at the tick: a proof that shims a
+component names the shim in the criterion, the checkbox stays `- [ ]`
+until the real component has been seen once on the VM (the guest has the
+real proxy and the real RetroArch), and a shim that stands in for timing
+or a path is made to match the real one before it is trusted (proof-298's
+shim stamps after the real proxy's delay from this round). No tool reads
+a proof for its shims; the sentence in the criterion is the check.
+
+## 66. A verification pass keyed by finding number missed a Critical whose number the other seat had used (2026-09-28)
+
+The milestone audit's refutation pass (#307) read every Critical and
+High the two seats filed, and its bookkeeping listed which finding ids
+had a verification entry by counting mentions of the id. Two seats number
+their findings independently, so `F-CS-02` was the Claude seat's "`--all`
+restores ROMs and never BIOS" (High, verified) and the GPT seat's "content
+matching can delete N64 `.fla` saves" (Critical, never read): one mention,
+one tick, a Critical that fell through both #307 and #308. Stream A found
+it hours later because the file was its own, and fixed it (`ff2bdc65a6`).
+The same count also hid an unread High (the Claude seat's F-PB-01, the
+interface pinned to a personal repository) behind the GPT seat's F-PB-01
+(the redaction's unquoted values). The tell: two lists numbered by
+different authors, joined on the number.
+
+**Guard:** `tools/lint-audit-artifacts` counts verification entries by
+seat and number -- every Critical/High row of the findings index must have
+an entry whose parenthesis names its seat, or sit under a seat heading --
+and was seen to fire on this folder before the entries were written (seven
+seat-and-number pairs, F-CS-02 (gpt) and F-PB-01 (claude) among them) and
+to pass after (93 pairs).
+
+## 67. A credential-shaped test fixture reached history before any guard read it (2026-09-28)
+
+Eight fix streams committed in worktrees; one wrote three scanner fixtures
+-- a private-key block, an OAuth token, a `devpassword=` -- as literals in
+`tools/last-good-scripts-test`, and the EmulationStation stream wrote its
+guard's own test with a `FAKE=` value. Nothing ran at commit time. The push
+guard, which reads every line every pushed commit adds, refused both
+branches hours later, when the tip had already been cleaned and only the
+history carried the lines; the harness could not run the rewrite, and the
+maintainer had to. The tell: a guard that fires at the last step and reads
+what earlier steps produced.
+
+**Guard:** `.githooks/pre-commit` in both repositories, with the push
+guard's own patterns from `.githooks/secret-patterns`; seen to refuse a
+staged `devpassword=` literal (rc 1) and to pass a clean index, in each
+repository, before this entry was written. The rule is
+`engineering-practices.md` § Guards must fail closed, the paragraph on
+scanner fixtures.
+
+
+## 68. A verdict was confirmed, re-graded, and then carried nowhere (2026-09-28)
+
+The milestone audit of the fix round re-read every High against the source.
+G2-B-05 (gpt, B) -- an archive member outside `storage/` is extracted to `/`
+and never rolled back -- was confirmed, re-graded from High to Medium with
+its fix stated in the same entry, and then reached neither the punch list
+nor the leads table: the Highs went to items, the Mediums went through a
+triage table, and a High re-graded to Medium sat in the Highs' section
+where the triage never looked. The blind second opinion found it (S-06,
+graded High there) on a packet that carried the verdict's own text. The
+tell: a document with two paths for one kind of row, and a row that moved
+from one path to the other.
+
+**Guard:** `tools/lint-audit-artifacts` reads every `### <id>` block of
+02 § Verification whose verdict starts `**confirmed` and every triage row
+graded so, expands 05's short forms, and fails on an id that is in neither
+an item's Source Finding nor the leads table; seen to fail on the punch
+list as it stood before PL-028 (`git show cba6ae23f2~1`) and to pass with
+28 ids carried, before this entry was written. The rule is the
+code-auditor skill's Phase 5: every confirmed finding becomes an item or a
+named lead.
+
+## 69. A page test whose stubs were kinder than a browser passed a script that died at load (2026-09-29)
+
+The phone keyboard page's script declared `var up = false` for the window's
+state over the pad's hoisted `function up(e)`; every browser threw at the
+`touchend` binding before `poll()` ran, and RC1 shipped a page that read
+`Checking…` for as long as it was open with its taps dead (#330). The
+script harness had two groups that ran that very script under node, and
+both passed it for a week: their stub elements' `addEventListener` pushed
+whatever it was handed onto a list, where a browser refuses a listener
+that is not a function. The tell: a stub that accepts what the real API
+refuses passes the exact input the real API dies on, and a suite of
+thirteen greens says nothing about the one call that matters.
+
+**Guard:** the sandboxes in `tools/last-good-scripts-test` (C4 and CF5)
+throw a `TypeError` for a listener that is not a function and answer
+`fetch` with `ok` and `status`, as a browser does -- RC1's page fails 7 of
+7 there now and the fixed page passes 13 of 13; C3 loads the page's script
+under node against a stub of the same strictness and refuses a var that
+shares a function's name. The rule behind it: a stub is written from the
+real API's refusals, not from what the code under test happens to call.
+
+## 70. An upstream series shaped by the fork's process, not by the reviewers' capacity (2026-09-29)
+
+Twelve PRs went up in one hour: ten on the distribution as a stack, so the
+tenth carried ten commits; every body ending in an assistant's footer and
+written in the fork's register (bold labels, tool names, decision IDs);
+and the interface work as one PR of 200 files and 41,496 insertions with a
+review guide in place of a split. The ROCKNIX developers closed all of
+them the same afternoon -- *"how do you expect us to be able to review
+this? please can you separate the changes and use less AI to submit
+PR's"*. Every one of those shapes was chosen for the fork's convenience
+(D-WORKFLOW-066's no-artificial-split, the stack the checker built, the
+harness's own footer) and none was checked against the one question a
+reviewer asks: can a person read this in a sitting, and did a person write
+it. The tell: a submission whose form is explained by our tooling rather
+than by the reader.
+
+**Guard:** `.githooks/pre-push` refuses a `pr/*` branch with more than one
+commit past `upstream/next` or a commit message that names an assistant;
+`tools/pr-stack-check` builds every PR on the base by itself, prints each
+one's files and insertions against a ceiling the map may set, and refuses
+a description that carries an assistant, a decision ID, a fork tool, the
+plural or a template; the `release-notes` skill says what a PR body is.
+What no tool can check -- whether a reviewer can read it in a sitting --
+is the maintainer's read before anything is resubmitted (D-WORKFLOW-080).
+
+## 71. A QA fixture seeded the product's default by its literal name, and the default moved (2026-10-01)
+
+The cloud epic moved the fork's folder from /ROCKNIX to /Rasteratops
+(D-CLOUD-156) and every script, string and sandbox fixture in the product
+followed; `tools/vm-qa` went on making `ROCKNIX/Saves` and
+`ROCKNIX/Backups` in the QA cloud, `tools/cloud-test-backend` went on
+seeding content at `ROCKNIX/Content` and writing that folder into the
+guest's conf, and run 96 read fourteen suites PASS against a cloud laid
+out the way the previous build would have laid it out. The frames said
+it: the hub carried TIDY UP YOUR CLOUD FOLDERS, offering to move the
+content folder the fixture had put where no fresh device of this build
+puts it -- under a line that itself still named /ROCKNIX. The tell: a
+default copied into a fixture as a literal is a second copy of the
+default, and a second copy drifts (the two lists of `instruction-files.md`,
+blindspot 65's path a device never writes).
+
+**Guard:** `tools/cloud-test-backend shipped-default <KEY>` reads the folder
+out of `cloud_sync.conf.defaults` and exits non-zero for a key with no
+default; `vm-qa`, `seed-content`, `seed-device` and `cloud-round-trip` take
+the names from it; `tools/last-good-scripts-test` (A5) fails when a QA tool
+names a superseded default outside a comment.
+
+## 72. A comment held an invariant the code had stopped keeping, and the guard it described ended only a subshell (2026-10-01)
+
+`cloud_migrate_layout`'s `list_or_stop` ends the run when a listing fails, so
+that a cloud that cannot be read is never taken for an empty one (#307
+PL-027), and its comment says it is "never called inside $(...), so the stop
+is the script's". The epic then called `superseded_source` -- which lists
+through it -- as `source=$(superseded_source ...)` in `--state` and
+`src=$(...) || src=""` in `--apply`. Inside a command substitution the stop
+ended the subshell; the caller read the empty result as "no folder holds the
+saves", and `--state` printed `superseded-empty`, rc 0: the interface's
+CREATE IT over a cloud it could not read. The comment was read as the
+behaviour (blindspot 51's family: a claim by an author taken for an
+observation), and no case fed the lookup a listing that failed. Found by
+reading for the mixed-installation test's "provider errors not mistaken for
+absence", not by a run.
+
+**Guard:** `tools/last-good-scripts-test` (section aa) fails when any listing
+helper of `cloud_migrate_layout` (`list_or_stop`, `has_files`, `has_entries`,
+`exists`, `superseded_source`, `earlier_source`, `layout_join`) is called
+inside `$(...)`, and a case feeds `--state` and `--join` a listing under
+`/ROCKNIX` that fails and asserts they end non-zero and state nothing (both
+fail against the tool before the fix).

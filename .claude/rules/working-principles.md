@@ -98,7 +98,7 @@ unenforceable rule that claims enforcement is worse than an honest one.
 ## Not adopted
 
 - **Creation over destruction** (prefer generative work, avoid combat
-  metaphors, preserve the possibility space). It is a cultural stance for an
+  metaphors, preserve the space of options). It is a cultural stance for an
   estate that builds products; this fork's equivalent instincts are already
   covered by *preservation over deletion* and by the habit of declaring what we
   deliberately do not do — `docs/es-menu-map.md`'s `## Not mapped` section is

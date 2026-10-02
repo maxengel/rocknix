@@ -182,8 +182,11 @@ class Guest:
             return 255, ""
 
     def put(self, local, remote):
-        subprocess.run(["scp", "-q", "-P", self.port] + self._opts() + [local, self.host + ":" + remote],
-                       capture_output=True)
+        """scp's exit status: a copy that failed is said by the caller, never
+        assumed done (a missing directory on a fresh guest made the conf
+        copy fail silently, and two comparisons timed syncs to nowhere)."""
+        return subprocess.run(["scp", "-q", "-P", self.port] + self._opts() + [local, self.host + ":" + remote],
+                              capture_output=True).returncode
 
     def drop_master(self):
         subprocess.run(["ssh", "-O", "exit", "-o", "ControlPath=" + self.cp,
@@ -242,7 +245,7 @@ def ppm_size(data):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def surface_check(g, fr):
+def surface_check(g, fr, rom=None):
     """RetroArch draws at the panel's size, or the frames lie (fork #263).
 
     The GENERIC_X64 image shipped video_fullscreen_x/y = 0, and under wayland
@@ -253,13 +256,65 @@ def surface_check(g, fr):
     used; the panel is what the screendump is. A surface under the panel is
     not a pass, because nothing measured on its frames is what the device
     draws."""
-    line = g.sh("grep -o 'Using resolution [0-9]*x[0-9]*' /var/log/exec.log 2>/dev/null | tail -1", timeout=20)[1]
-    m = re.search(r"(\d+)x(\d+)", line or "")
+    # The line is this launch's or it is nothing (blindspot 50): the first
+    # "Using resolution" after the last "Loading content file" that names the
+    # ROM just launched. Runs 29 and 30 on e506fcd8e5 took the file's last
+    # "Using resolution" line whoever wrote it, and read 240x256 over frames
+    # that show RetroArch drawing at the panel's size (2026-09-25).
+    evidence = g.sh("grep -n 'Loading content file\\|Detecting screen resolution\\|Using resolution' /var/log/exec.log 2>/dev/null | tail -12; "
+                    "ls -la --time-style=+%T /var/log/exec.log 2>/dev/null; date +%T", timeout=20)[1]
+    line, seen_launch = "", rom is None
+    for raw in (evidence or "").splitlines():
+        if "Loading content file" in raw:
+            seen_launch = rom is None or rom in raw
+            line = ""
+        elif seen_launch and not line and "Using resolution" in raw:
+            line = raw
+    m = re.search(r"Using resolution (\d+)x(\d+)", line or "")
+    # The size RetroArch's own GPU screenshot comes out at IS the surface it
+    # draws into: the GL framebuffer read back at the viewport's size
+    # (video_gpu_screenshot, which --vm switches on for the run). Since fork
+    # #291 it is the first source and the log line the fallback: under a GL
+    # context "Using resolution" is written before the compositor's
+    # fullscreen resize lands -- 240x256 on a 1280x800 guest whose game frame
+    # is drawn pixel-sharp at the panel -- so it says what the surface was
+    # for a few milliseconds, not what the frames are. Three presses of the
+    # screenshot key, half a second held (#278); the file is removed so the
+    # SCREENSHOTS walks that follow do not list it.
+    shot = None
+    if g.retroarch() is not None:
+        before = (g.sh("ls /storage/roms/screenshots/ 2>/dev/null | wc -l")[1] or "").strip() or "0"
+        probe = ('f=$(ls -t /storage/roms/screenshots/*.png 2>/dev/null | head -1); '
+                 'n=$(ls /storage/roms/screenshots/ 2>/dev/null | wc -l); '
+                 'if [ "$n" -gt BEFORE ] && [ -n "$f" ]; then python3 -c \'import struct,sys; d=open(sys.argv[1],"rb").read(24); '
+                 'print("%dx%d" % struct.unpack(">II", d[16:24]))\' "$f" && rm -f "$f"; fi').replace("BEFORE", before)
+        for _ in range(3):
+            fr.mon.cmd("sendkey f8 500", settle=0.2)
+            time.sleep(1.5)
+            got = (g.sh(probe, timeout=20)[1] or "").strip()
+            if re.match(r"^\d+x\d+$", got):
+                shot = got
+                break
+    if shot:
+        sw, sh = [int(v) for v in shot.split("x")]
+    elif m:
+        sw, sh = int(m.group(1)), int(m.group(2))
+    else:
+        sw = sh = None
     panel = ppm_size(fr.rest(timeout=10))
-    out = {"surface": ("%dx%d" % (int(m.group(1)), int(m.group(2)))) if m else None,
-           "panel": ("%dx%d" % panel) if panel else None, "scaled": None}
-    if m and panel:
-        out["scaled"] = int(m.group(1)) < panel[0] or int(m.group(2)) < panel[1]
+    out = {"surface": ("%dx%d" % (sw, sh)) if sw else None,
+           "source": "RetroArch's GPU screenshot" if shot else ("the launch log's Using resolution line" if m else None),
+           "panel": ("%dx%d" % panel) if panel else None, "scaled": None,
+           "evidence": (evidence or "").splitlines()}
+    if sw and panel:
+        # The GPU screenshot is the viewport: with aspect correction it fills
+        # one of the panel's dimensions (1067x800 under 1280x800 for a 4:3
+        # game), so a surface the compositor scaled is short on BOTH. The
+        # log line names the window, which is short on either when scaled.
+        if shot:
+            out["scaled"] = sw < panel[0] and sh < panel[1]
+        else:
+            out["scaled"] = sw < panel[0] or sh < panel[1]
     return out
 
 
@@ -318,7 +373,8 @@ def ensure_rom(g, rom, workdir):
     local = os.path.join(workdir, "TTProbe.gb")
     build_gb_probe(local)
     g.sh("mkdir -p /storage/roms/gb")
-    g.put(local, GB_PROBE)
+    if g.put(local, GB_PROBE) != 0:
+        sys.exit("time-to-play: could not copy the probe ROM to the guest's " + GB_PROBE)
     return GB_PROBE, True
 
 
@@ -473,7 +529,7 @@ def measure_launch(g, fr, tag, budget=45.0, rom=ROM):
                 if ra["seen"] is None:
                     ra["seen"] = now
                     ra["pid"] = st[0]
-                if ra["ticks200"] is None and st[1] >= 200:
+                if ra["ticks200"] is None and drawing(st, ra["seen"], now):
                     ra["ticks200"] = now
             time.sleep(0.08)
 
@@ -528,7 +584,7 @@ def measure_launch(g, fr, tag, budget=45.0, rom=ROM):
         st = g.retroarch()
         if st is None:
             break
-        if st[1] >= 200:
+        if drawing(st, ra["seen"], time.monotonic()):
             ra["ticks200"] = time.monotonic()
         time.sleep(0.1)
     result["t_ticks200"] = None if ra["ticks200"] is None else round(ra["ticks200"] - t0[0], 3)
@@ -554,12 +610,29 @@ def settle_sync(g, budget=60):
     return False
 
 
+def drawing(st, seen, now):
+    """The exit cell's readiness rule: RetroArch has burnt 2 s of CPU (200
+    ticks) -- a software-rendered RetroArch's signature. On hardware GL (fork
+    #291) the process burns about five ticks a second after some thirty of
+    init, so the rule is also met at thirty ticks four seconds after the
+    process was first seen; a guest on either path answers within seconds."""
+    if st is None:
+        return False
+    if st[1] >= 200:
+        return True
+    return st[1] >= 30 and seen is not None and now - seen >= 4.0
+
+
 def wait_drawing(g, budget=60):
-    """Until RetroArch has burnt 2 s of CPU: the exit cell's readiness rule."""
+    """Until RetroArch is drawing by the rule above."""
     end = time.monotonic() + budget
+    seen = None
     while time.monotonic() < end:
         st = g.retroarch()
-        if st is not None and st[1] >= 200:
+        now = time.monotonic()
+        if st is not None and seen is None:
+            seen = now
+        if drawing(st, seen, now):
             return True
         time.sleep(0.2)
     return False
@@ -857,12 +930,20 @@ def normalise_routes(g, routes):
 
 
 def set_conf(g, text):
+    # A fresh image has no /storage/.config/rclone -- the setup wizard makes
+    # it -- so the copy is preceded by the directory, and a copy that fails
+    # stops the run: on runs 99 and 100's comparisons it failed silently,
+    # the guest had no remote, and every cell timed a sync that reached
+    # nothing (2026-10-02; vm-qa makes the directory before it seeds).
     fh = tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False)
     fh.write(text)
     fh.close()
-    g.put(fh.name, RCLONE_CONF)
-    g.sh("chmod 600 " + RCLONE_CONF)
+    g.sh("mkdir -p " + os.path.dirname(RCLONE_CONF))
+    rc = g.put(fh.name, RCLONE_CONF)
     os.remove(fh.name)
+    if rc != 0:
+        sys.exit("time-to-play: could not write the guest's %s (scp exited %d)" % (RCLONE_CONF, rc))
+    g.sh("chmod 600 " + RCLONE_CONF)
 
 
 # --------------------------------------------------------------------------
@@ -985,25 +1066,37 @@ def main():
                    [g.host + ":" + RCLONE_CONF, saved_conf], capture_output=True)
     subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
                    [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
-    # A QEMU guest has no Vulkan. Left on the image's default, RetroArch
-    # exists for a fifth of a second and never draws, the exit sync never
-    # runs, and every headline number below is a dash -- which is what the
-    # runner's first dispatch of this cell reported as a PASS (2026-09-12).
-    # The exit test has always swapped the driver for its run; so does this.
+    # A QEMU guest has no Vulkan. On the vulkan the GENERIC_X64 profile
+    # shipped until a5a03bd9fa, RetroArch exists for a fifth of a second and
+    # never draws, the exit sync never runs, and every headline number below
+    # is a dash -- which is what the runner's first dispatch of this cell
+    # reported as a PASS (2026-09-12). The profile ships gl now, and the boot
+    # quirk 092-retroarch-surface moves a cfg still on vulkan to gl while the
+    # image has no Vulkan driver; the swap stays, for a guest whose cfg says
+    # otherwise. The exit test has always swapped the driver for its run.
     saved_vd = ""
+    saved_gs = ""
     if args.vm:
         saved_vd = g.sh('grep -E "^video_driver" ' + RETROARCH_CFG)[1].strip()
         g.sh("sed -i 's/^video_driver = .*/video_driver = \"gl\"/' " + RETROARCH_CFG)
+        # The surface check reads RetroArch's GPU screenshot (surface_check):
+        # on for the run, put back after it.
+        saved_gs = g.sh('grep -E "^video_gpu_screenshot" ' + RETROARCH_CFG)[1].strip()
+        g.sh("grep -q '^video_gpu_screenshot' %s && sed -i 's/^video_gpu_screenshot = .*/video_gpu_screenshot = \"true\"/' %s || echo 'video_gpu_screenshot = \"true\"' >> %s" % (RETROARCH_CFG, RETROARCH_CFG, RETROARCH_CFG))
     fixtures = []
 
     def restore():
         for f in fixtures:
             f.down()
+        # Put back as found, and said when it could not be: a restore that
+        # fails leaves the guest on the run's settings.
         if os.path.exists(saved_conf) and os.path.getsize(saved_conf) > 0:
-            g.put(saved_conf, RCLONE_CONF)
+            if g.put(saved_conf, RCLONE_CONF) != 0:
+                print("time-to-play: could not put the guest's rclone.conf back", file=sys.stderr)
             g.sh("chmod 600 " + RCLONE_CONF)
         if os.path.exists(saved_cloud) and os.path.getsize(saved_cloud) > 0:
-            g.put(saved_cloud, CLOUD_CONF)
+            if g.put(saved_cloud, CLOUD_CONF) != 0:
+                print("time-to-play: could not put the guest's cloud_sync.conf back", file=sys.stderr)
         g.sh("ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0 2>/dev/null; "
              "ip route del blackhole 10.0.2.2/32 2>/dev/null; true")
         g.sh(". /etc/profile; set_setting cloudsaves.startup %s; set_setting cloudsaves.gameexit %s"
@@ -1012,6 +1105,12 @@ def main():
         if args.vm and saved_vd:
             g.sh("sed -i 's/^video_driver = .*/%s/' %s"
                  % (saved_vd.replace("\\", "\\\\").replace("/", "\\/").replace("&", "\\&"), RETROARCH_CFG))
+        if args.vm:
+            if saved_gs:
+                g.sh("sed -i 's/^video_gpu_screenshot = .*/%s/' %s"
+                     % (saved_gs.replace("\\", "\\\\").replace("/", "\\/").replace("&", "\\&"), RETROARCH_CFG))
+            else:
+                g.sh("sed -i '/^video_gpu_screenshot = \"true\"$/d' " + RETROARCH_CFG)
         if made["rom"]:
             g.sh("rm -f %s; rmdir /storage/roms/gb 2>/dev/null; true" % GB_PROBE)
 
@@ -1050,16 +1149,37 @@ def main():
             # /ROCKNIX/Saves on an sshd that cannot create it.
             prefix = subprocess.run([tool, "--backend", args.backend, "endpoint-prefix"],
                                     capture_output=True, text=True).stdout.strip()
-            g.sh("sed -i 's#^SAVES_REMOTE=.*#SAVES_REMOTE=\"%s/ROCKNIX/Saves\"#; "
-                 "s#^SETTINGS_REMOTE=.*#SETTINGS_REMOTE=\"%s/ROCKNIX/Backups\"#; "
-                 "s#^CONTENT_REMOTE=.*#CONTENT_REMOTE=\"%s/ROCKNIX/Content\"#' %s"
-                 % (prefix, prefix, prefix, CLOUD_CONF))
+            # The shipped folders, read from cloud_sync.conf.defaults through the
+            # backend tool, never a literal: this wrote /ROCKNIX/..., the
+            # previous default, after the default moved, so on the builds whose
+            # syncs checked an earlier folder first (until D-CLOUD-170) every
+            # measured exit sync paid that check, a cost the shipped default
+            # never pays (2026-10-01, blindspot 71's second instance).
+            def shipped(key):
+                r = subprocess.run([tool, "shipped-default", key], capture_output=True, text=True)
+                if r.returncode != 0 or not r.stdout.strip():
+                    sys.exit("time-to-play: no shipped default for %s: %s" % (key, r.stderr.strip()))
+                return r.stdout.strip()
+            g.sh("sed -i 's#^SAVES_REMOTE=.*#SAVES_REMOTE=\"%s%s\"#; "
+                 "s#^SETTINGS_REMOTE=.*#SETTINGS_REMOTE=\"%s%s\"#; "
+                 "s#^CONTENT_REMOTE=.*#CONTENT_REMOTE=\"%s%s\"#' %s"
+                 % (prefix, shipped("SAVES_REMOTE"), prefix, shipped("SETTINGS_REMOTE"),
+                    prefix, shipped("CONTENT_REMOTE"), CLOUD_CONF))
             report["remotes"] = g.sh(
                 "grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' " + CLOUD_CONF)[1]
         g.sh(". /etc/profile; set_setting cloudsaves.gameexit 1", timeout=120)
-        report["remote_reachable"] = g.sh(
-            "rclone lsd qa-cloud: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 "
-            ">/dev/null 2>&1 && echo yes || echo no", timeout=60)[1]
+        # Probed for up to a minute, for a guest whose link is still coming
+        # up; then the answer stands, and a "no" still fails the run. (The
+        # "no" that runs 99 and 100's comparisons read was a conf never
+        # written -- set_conf -- not a slow link, which this loop was first
+        # added for on a wrong reading, 2026-10-01.)
+        for _ in range(12):
+            report["remote_reachable"] = g.sh(
+                "rclone lsd qa-cloud: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 "
+                ">/dev/null 2>&1 && echo yes || echo no", timeout=60)[1]
+            if report["remote_reachable"].strip() == "yes":
+                break
+            time.sleep(5)
 
         def cycle(tag, relaunch, jitter, keep_frames=False):
             """One whole online cycle: seed, launch, play, exit."""
@@ -1071,7 +1191,7 @@ def main():
             # never "went", on any repeat.
             L, rest_ref = measure_launch(g, fr, tag + "-launch", rom=rom)
             if "surface" not in report:
-                report["surface"] = surface_check(g, fr)
+                report["surface"] = surface_check(g, fr, rom)
             L["payload_kib"] = size
             wait_drawing(g)
             E = measure_exit(g, fr, tag + "-exit", rest_ref, relaunch=relaunch,
@@ -1194,9 +1314,16 @@ def headline_missing(report):
     out = []
     surf = report.get("surface") or {}
     if surf.get("scaled"):
-        out.append("RetroArch drew into a %s surface under a %s panel: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel")))
+        out.append("RetroArch drew into a %s surface under a %s panel, by %s: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel"), surf.get("source")))
     elif report.get("cells", {}).get("launch") and surf.get("surface") is None:
         out.append("RetroArch's surface size could not be read from the guest's exec.log (#263)")
+    # The online cells time a sync that reaches a cloud. On a guest whose cloud
+    # is not set up -- a lone --only run on a fresh pair, 2026-09-25 -- the sync
+    # ends at once with YOUR CLOUD STORAGE ISN'T SET UP YET, and its stamp
+    # comes in well under the budget for having done nothing.
+    if (report.get("cells", {}).get("exit") or report.get("cells", {}).get("g2g")) and report.get("remote_reachable") != "yes":
+        out.append("the exit sync had no cloud to reach (rclone lsd qa-cloud: %s): its stamp times a sync that did nothing"
+                   % (report.get("remote_reachable") or "not checked"))
     for cell, field, what in checks:
         rows = report["cells"].get(cell) or []
         n = sum(1 for r in rows if r.get(field) is None)
@@ -1401,7 +1528,7 @@ def render(r):
              ["the handover (a black screen)", fmt(stats([x.get("t_screen_blank") for x in L])), len(L)],
              ["RetroArch existing", fmt(stats([x["t_retroarch_seen"] for x in L])), len(L)],
              ["**the game's first frame**", "**%s**" % fmt(stats([x["t_first_game_frame"] for x in L])), len(L)],
-             ["RetroArch drawing (200 CPU ticks)", fmt(stats([x["t_ticks200"] for x in L])), len(L)]]))
+             ["RetroArch drawing (200 CPU ticks, or 30 four seconds on)", fmt(stats([x["t_ticks200"] for x in L])), len(L)]]))
     if E:
         toks = {}
         for x in E:

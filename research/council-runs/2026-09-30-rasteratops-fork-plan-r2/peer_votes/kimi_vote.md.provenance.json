@@ -1,0 +1,141 @@
+{
+  "artifact_path": "research/council-runs/2026-09-30-rasteratops-fork-plan-r2/peer_votes/kimi_vote.md",
+  "output_file_sha256": "a85bb6cd16aef7f8022a0c9a3a389389eab592265247334c39f29decd251d16a",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "prev_verdict_sha256": "3128c40fdb9429816894d8090fed92aa80657a07e64ef2ff9e6737f3c6fe329f",
+  "member": "kimi",
+  "declared_model": "moonshotai/kimi-k3 (OpenRouter, via modal/sail-research/together/moonshotai, effort=max)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-30T14:55:11.834Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "c8e772ddc527609e847660fd205bec2e726b0fe34d1c0b34a28a2b15db73a0bf"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-30T14:55:11.834Z",
+      "duration_ms": 67467,
+      "max_tokens": 262144,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "moonshotai/kimi-k3",
+      "finish_reason": "stop",
+      "content_length": 5112,
+      "tokens": {
+        "prompt": 20717,
+        "completion": 5525,
+        "total": 26242,
+        "reasoning": 5361
+      },
+      "model_identity_source": "provider_response",
+      "served_provider": "Modal",
+      "served_provider_observations": [
+        "Modal"
+      ],
+      "content_sha256": "a85bb6cd16aef7f8022a0c9a3a389389eab592265247334c39f29decd251d16a",
+      "usage": {
+        "prompt_tokens": 20717,
+        "completion_tokens": 5525,
+        "total_tokens": 26242,
+        "cost": 0.145026,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.145026,
+          "upstream_inference_prompt_cost": 0.062151,
+          "upstream_inference_completions_cost": 0.082875
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5361,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "92117967691944b1e85b3d7db5e6beef2befe30eed0d0cb7ae4b96da085c692b"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 67472,
+    "retries_used": 0,
+    "file_artifact_sha256": "a85bb6cd16aef7f8022a0c9a3a389389eab592265247334c39f29decd251d16a",
+    "usage": {
+      "prompt_tokens": 20717,
+      "completion_tokens": 5525,
+      "total_tokens": 26242,
+      "cost": 0.145026,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.145026,
+        "upstream_inference_prompt_cost": 0.062151,
+        "upstream_inference_completions_cost": 0.082875
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5361,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 20717,
+      "completion": 5525,
+      "total": 26242,
+      "reasoning": 5361
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "moonshotai/kimi-k3 (OpenRouter, via modal/sail-research/together/moonshotai, effort=max)",
+      "observed": "moonshotai/kimi-k3",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 5361
+    },
+    "provider_verification": {
+      "result": "PASS",
+      "declared": [
+        "Modal",
+        "Moonshot AI",
+        "Sail Research",
+        "Together"
+      ],
+      "evidence": "response_provider_field",
+      "observed": "Modal",
+      "observed_providers": [
+        "Modal"
+      ]
+    }
+  },
+  "genesis_sha256": "4072e7351e98dbf4aa830685bc3b088dc184993487c03ba0290f8faf4eebbe07"
+}

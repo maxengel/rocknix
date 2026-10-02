@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-push guard for the maxengel/rocknix fork.
+# pre-push guard for the rasteratops/distribution fork.
 #
 # Blocks pushing a PR branch (pr/*) that carries personal fork artifacts which
 # must never reach an upstream pull request. Build clean PR branches by
@@ -21,8 +21,9 @@
 #
 # Only pushes whose DESTINATION is refs/heads/pr/* are guarded for personal
 # paths -- `git push origin feature/x:pr/x` lands on pr/x and is judged as
-# pr/x; every branch is scanned for credential-shaped lines (SECRET_PATTERNS
-# below), in every commit the push carries, not only at its tip.
+# pr/x; every branch is scanned for credential-shaped lines and for the
+# wordlist kept outside the tree (.githooks/guard-lib says where), in every
+# commit the push carries and its message, not only at its tip.
 #
 # Fails closed: a pr/* push with no upstream/next or origin/next to compare
 # against is refused, not waved through with a warning, and so is any push
@@ -90,15 +91,20 @@ PERSONAL_PATTERNS=(
   'tools/vm-visual-qa'
   'tools/vm-serial'
   'tools/vm-pair'
+  'tools/cloud-pair-migration'
   'tools/cloud-census'
   'tools/emulator-exit-test'
   'tools/vm-qa'
   'tools/time-to-play'
   'tools/vocabulary-check'
+  'tools/forbidden-terms-check'
   'tools/register-check'
   'tools/rules-check'
   'tools/box-check'
   'tools/release-catalog'
+  'tools/rc-preflight'
+  'tools/prose-check'
+  'tools/pr-stack-check'
   'tools/device-act'
   'tools/qa-accounts'
   'tools/ra-offline-test'
@@ -114,6 +120,24 @@ PERSONAL_PATTERNS=(
   'tools/png-blackout'
   'tools/fork-newdrive'
   'tools/council/'
+  # The council toolchain, scaffold's export at its own paths (.claude/skills/council/COUNCIL-BUNDLE.md)
+  'scripts/council-'
+  'scripts/lint-council-'
+  'scripts/build-council-prompt.ts'
+  'scripts/write-step-seal.ts'
+  'scripts/verify-chain.ts'
+  'scripts/verify-seals.ts'
+  'scripts/verify-pins.ts'
+  'scripts/check-stale-blob-drift.ts'
+  'scripts/setup-council-mistral-tokenizer.mjs'
+  'scripts/forge-write-status.mjs'
+  'scripts/owner-queue-lint.mjs'
+  'scripts/lib/council-'
+  'scripts/lib/verifier-pins.ts'
+  'scripts/__tests__/'
+  'seed/'
+  'verifier-pins.json'
+  'council-seat-efforts.json'
   # The council's deliberation artifacts (fork issue #70)
   'research/'
   # Copilot-era artifacts. Retired from `next`, but feature branches and
@@ -138,7 +162,8 @@ status=0
 # enough -- `export SCREENSCRAPER_DEV_LOGIN="devid=<id>&devpassword=<..>"` is
 # documentation -- so every pattern demands a real-looking value; placeholders
 # in <angle brackets> never match.
-SECRET_PATTERNS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+. "$(dirname "$(readlink -f "$0")")/guard-lib" || exit 1
+guard_load pre-push || exit 1
 
 # A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
 # only say so from a push that did reach the hook, which is the point: say it
@@ -188,44 +213,58 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  names="$(mktemp)"; added="$(mktemp)"
+  names="$(mktemp)"; added="$(mktemp)"; lines="$(mktemp)"; blob="$(mktemp)"; msgs="$(mktemp)"
+  trap 'rm -f "${names:-}" "${added:-}" "${lines:-}" "${blob:-}" "${msgs:-}"' EXIT   # an interrupted push leaves nothing behind (the audit of the fixes, claude G3-E-07)
   scan_ok=1
+  msgawk='/^commit [0-9a-f]+$/ { c = $2; n = 0; next } { n++; print c ":message:" n t $0 }'
   if [ "$whole" = 1 ]; then
     git diff --name-only --no-renames --diff-filter=AM "$empty_tree" "$local_sha" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --root --no-renames --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --root --no-renames --diff-merges=first-parent --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log --root --format='commit %h%n%B' "$local_sha" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   else
     git diff --name-only --no-renames --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --no-renames --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --no-renames --diff-merges=first-parent --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log --format='commit %h%n%B' "$range" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   fi
+  guard_added_lines < "$added" > "$lines" || scan_ok=0
   if [ "$scan_ok" != 1 ]; then
-    rm -f "$names" "$added"
-    echo "✗ pre-push: refusing to push ${pushed}: could not diff ${range:-$local_sha} to scan it for credentials." >&2
+    rm -f "$names" "$added" "$lines" "$blob" "$msgs"
+    echo "✗ pre-push: refusing to push ${pushed}: could not diff ${range:-$local_sha} to scan it." >&2
     status=1
     continue
   fi
-  leaks=''
+  # Three scans, each against both lists, each failing closed in guard-lib.
+  # (1) The files this push touches, whole at the tip: a line that reached
+  #     history before the guard existed blocks the next push that touches
+  #     its file. (2) Every line ADDED by every commit in the range, merges
+  #     against their first parent so a conflict resolution is read too. (3)
+  #     Every commit message in the range. A line is judged after its label
+  #     -- a file's NAME is not a credential: on 2026-09-25 merging upstream
+  #     brought an H616 eMMC kernel patch whose file name carried "sk-" and
+  #     twenty-odd word characters after it (ma-sk-DATA0-...), the OpenAI key
+  #     shape, and every line of the file was refused for its name; the first
+  #     cut of this comment spelled the name out and was refused too -- and no
+  #     path is exempt: the audit-packet exemption of 2026-09-28 went with
+  #     the audit of the fix round (PL-011, PL-012, PL-026).
+  hook="pre-push (${pushed})"
+  refused=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
-    [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
+    if ! git show "${local_sha}:${f}" 2>/dev/null | guard_numbered "$f" > "$blob"; then
+      echo "✖ ${hook}: ${f} could not be read at ${local_sha}; nothing was scanned, so nothing is allowed" >&2
+      refused=1
+      continue
+    fi
+    guard_scan "$hook" "$blob" "${f} carries a credential-shaped line at the pushed tip" '' "$SECRET_PATTERNS" redact || refused=1
+    guard_scan "$hook" "$blob" "${f} carries a listed word at the pushed tip (the wordlist outside the tree)" -i "$FORBIDDEN_PATTERNS" where || refused=1
   done < "$names"
-  # <commit>:<file>:<added line>, for every + line under every +++ b/<file>.
-  # The patterns are matched against the added line alone: the commit and the
-  # path come first, tab-separated, and a pattern has to match after the
-  # second tab. A file's NAME is not a credential: on 2026-09-25 merging
-  # upstream brought a kernel patch named `...mmc-mask-DATA0-when-updating-
-  # the-clock-on-H616-eMMC.patch`, its "sk-..." tail matched the OpenAI key
-  # shape, and every line of the file was refused for its name.
-  tab=$'\t'
-  hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c "\t" f "\t" $0}' "$added" \
-         | grep -E "^[^${tab}]*${tab}[^${tab}]*${tab}.*(${SECRET_PATTERNS})" \
-         | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g; s/${tab}/:/; s/${tab}/:/" | head -3 || true)"
-  [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed 's|^|  |')"$'\n'
-  rm -f "$names" "$added"
-  if [ -n "$leaks" ]; then
-    echo "✗ pre-push: refusing to push ${pushed}: it carries lines shaped like credentials:" >&2
-    printf '%s' "$leaks" >&2
-    echo "  Placeholders belong in <angle brackets>. A real value has to come out of history before this pushes." >&2
+  guard_scan "$hook" "$lines" "a commit in this push adds a credential-shaped line" '' "$SECRET_PATTERNS" redact || refused=1
+  guard_scan "$hook" "$lines" "a commit in this push adds a listed word (the wordlist outside the tree)" -i "$FORBIDDEN_PATTERNS" where || refused=1
+  guard_scan "$hook" "$msgs" "a commit message in this push carries a credential-shaped line" '' "$SECRET_PATTERNS" redact || refused=1
+  guard_scan "$hook" "$msgs" "a commit message in this push carries a listed word" -i "$FORBIDDEN_PATTERNS" where || refused=1
+  rm -f "$names" "$added" "$lines" "$blob" "$msgs"
+  if [ "$refused" = 1 ]; then
+    echo "✗ pre-push: refusing to push ${pushed}. Placeholders belong in <angle brackets>; a real value, and a listed word, have to come out of history before this pushes." >&2
     status=1
     continue
   fi
@@ -279,6 +318,29 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [ -z "$base_ref" ]; then
     echo "✗ pre-push: refusing to push ${branch}: no upstream/next or origin/next to compare a pr/* branch against." >&2
     echo "  git fetch upstream, then push again." >&2
+    status=1
+    continue
+  fi
+
+  # One commit per PR, on the base by itself (D-WORKFLOW-079, #333): the
+  # ROCKNIX developers closed a series whose tenth branch carried ten
+  # commits. A count the guard cannot read is a refusal, not a pass.
+  if ! count="$(git rev-list --count "${base_ref}..${local_sha}" 2>/dev/null)"; then
+    echo "✗ pre-push: refusing to push ${branch}: git rev-list ${base_ref}..${local_sha} failed, so the one-commit rule could not be checked." >&2
+    status=1
+    continue
+  fi
+  if [ "$count" != 1 ]; then
+    echo "✖ pre-push blocked: ${branch} carries ${count} commits past ${base_ref}; a PR branch is one commit built by content (D-WORKFLOW-079)." >&2
+    echo "  Rebuild it: git worktree add --detach ../rocknix.worktrees/pr-tmp ${base_ref} && git switch -c ${dest} && git checkout next -- <the paths> && git commit" >&2
+    status=1
+    continue
+  fi
+  # Nothing upstream-bound names an assistant (D-WORKFLOW-078, #333): the
+  # commit message is scanned here; the PR body is the drafts' scan in
+  # tools/pr-stack-check, since it is not in the tree the branch carries.
+  if git log --format=%B "${base_ref}..${local_sha}" 2>/dev/null | grep -q -i -E 'claude|anthropic|generated with|co-authored-by'; then
+    echo "✖ pre-push blocked: ${branch}'s commit message names an assistant or carries a trailer; nothing upstream-bound may (D-WORKFLOW-078)." >&2
     status=1
     continue
   fi

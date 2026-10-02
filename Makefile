@@ -119,7 +119,16 @@ package-clean:
 # For example: make docker-SM8250 will use docker to call: make SM8250
 # All variables are scoped to docker-* commands to prevent weird collisions/behavior with non-docker commands
 
-docker-%: DOCKER_IMAGE := "ghcr.io/rocknix/rocknix-build:latest"
+# The build container, pinned by digest to the fork's own mirror (#344 P1,
+# D-WORKFLOW-119/120): what `docker pull` and `docker run` consume. The digest
+# is also handed to the build as BUILDER_VERSION, so every image's
+# /etc/os-release says which container it was built in (scripts/image). The
+# fork-mirror-build-container workflow refreshes the mirror and prints the
+# digest; this line moves with it, by hand. A locally built container is
+# tagged (DOCKER_IMAGE_LOCAL), never pinned.
+docker-%: DOCKER_IMAGE_DIGEST := sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
+docker-%: DOCKER_IMAGE = ghcr.io/rasteratops/build@$(DOCKER_IMAGE_DIGEST)
+docker-%: DOCKER_IMAGE_LOCAL := ghcr.io/rasteratops/build:local
 
 # DOCKER_WORK_DIR is the directory in the Docker image - it is set to /work by default
 #   Anytime this directory changes, you must run `make clean` similarly to moving the distribution directory
@@ -156,11 +165,6 @@ docker-%: INTERACTIVE=$(shell [ -t 0 ] && echo "-it")
 # By default pass through anything after `docker-` back into `make`
 docker-%: COMMAND=make $*
 
-# Get .env file ready
-# .env carries the forwarded environment, credentials included when a build
-# has them; owner-only, and gone again once the container has exited.
-docker-%: $(shell umask 077; ./scripts/get_env > .env)
-
 # If the user issues a `make docker-shell` just start up bash as the shell to run commands
 docker-shell: COMMAND=bash
 
@@ -168,12 +172,24 @@ docker-shell: COMMAND=bash
 # The build user must also be a member of the "docker" group.
 docker-image-build:
 	$(DOCKER_CMD) buildx create --use
-	$(DOCKER_CMD) buildx build --tag $(DOCKER_IMAGE) --platform $(shell if [ "$$(uname -m)" = "aarch64" ]; then echo "linux/arm64"; else echo "linux/amd64"; fi) --load .
+	$(DOCKER_CMD) buildx build --tag $(DOCKER_IMAGE_LOCAL) --platform $(shell if [ "$$(uname -m)" = "aarch64" ]; then echo "linux/arm64"; else echo "linux/amd64"; fi) --load .
 
-# Command: pulls latest docker image from dockerhub.  This will *replace* locally built version.
+# Command: pulls the pinned build container from the fork's mirror, by digest.
 docker-image-pull:
 	$(DOCKER_CMD) pull $(DOCKER_IMAGE)
 
 # Wire up docker to call equivalent make files using % to match and $* to pass the value matched by %
+# .env carries the forwarded environment into the container, credentials
+# included when a build has them (scripts/get_env drops the rest). It is
+# written here, in the recipe, and not as a prerequisite: a $(shell) there
+# ran whenever make read this file, for any target. rm first, so an older
+# copy's mode is never reused and umask 077 makes it owner-only -- and an
+# older copy that cannot be removed stops the recipe, since umask does not
+# tighten a file that already exists (set -C refuses to write into one); the
+# trap removes it when the container exits or the recipe is interrupted, and
+# a get_env that fails starts no container.
 docker-%:
-	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND); rc=$$?; rm -f .env; exit $$rc
+	rm -f .env && [ ! -e .env ] || { echo "an older .env cannot be removed: no container started" >&2; exit 1; }; \
+	trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
+	( umask 077 && set -C && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
+	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e BUILDER_NAME=rasteratops-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)

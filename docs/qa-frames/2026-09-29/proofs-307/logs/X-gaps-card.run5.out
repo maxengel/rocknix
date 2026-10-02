@@ -1,0 +1,29 @@
+04:39:46 === X-gaps-card on guest d, BUILD_ID="8dd6765af0b6f5fd6f99a8a979c3c4b00b573771"
+04:39:46   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+04:40:35 -- fixture: 400 x 64 KiB fresh saves (25 MiB) so the exit sync has files to move for seconds
+    seeded: 400
+04:40:36     seed names: QA307-gap-1790656786-NNN.srm (unique to this run)
+04:40:48   PASS  Ninoid running (POST 200)
+04:40:52 -- the exit sync starts; cut the link on the first moved file
+04:40:53     link cut at poll 4 after 1 moved line(s)
+04:41:28     last-sync-exit (over serial): 1790656880 69 gaps YOU WENT OFFLINE PART-WAY THROUGH
+04:41:28   PASS  the exit stamp reads 69 with the gaps token (1790656880 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    log: 2026/09/29 00:41:20 ERROR : gb/QA307-gap-1790656786-369.srm: Failed to copy: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: 2026/09/29 00:41:20 ERROR : Attempt 1/1 failed with 401 errors and: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: Transferred:   	       64 KiB / 64 KiB, 100%, 3.515 KiB/s, ETA 0s
+    log: Transferred:            1 / 1, 100%
+    log: 2026/09/29 00:41:20 NOTICE: Failed to copy with 401 errors: last error was: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: [2026-09-29 00:41:20] [INFO] [cloud_backup] Script completed in 27 seconds with exit code 69
+    es_log: 
+04:41:29     (no es_log line names the sentence; read the frames under /workspace/tmp/rocknix-session/proofs-307/frames/X-gaps-card/ for the card)
+04:41:29 -- the link back: the owed sync runs (the owed set thinned to 20 files first; the automatic ceiling is 90 s)
+    seeded files left: 20
+04:41:34     last-sync-exit after the link's return: 1790656894 0 completed (the 69 stamp: 1790656880 69 gaps YOU WENT OFFLINE PART-WAY THROUGH); 'the owed saves sync starts' journal lines 0 -> 1
+04:41:34   PASS  the interface started the owed saves sync at the link's return (journal: ProxyCards: the owed saves sync starts)
+04:41:34   PASS  the owed sync ran and stamped (last-sync-exit 1790656894 0 completed)
+04:41:34   PASS  and it completed (rc 0)
+    log: Transferred:            1 / 1, 100%
+    log: [2026-09-29 00:41:20] [INFO] [cloud_backup] Script completed in 27 seconds with exit code 69
+    log: Transferred:           21 / 21, 100%
+    log: [2026-09-29 00:41:34] [INFO] [cloud_backup] Script completed in 2 seconds with exit code 0
+04:41:34 === done: 6 PASS, 0 FAIL

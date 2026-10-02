@@ -1,0 +1,1084 @@
+# ---- audit #307, stream D ----
+echo "  D. audit #307 stream D: the offline-achievements service -- the control script, its helpers, the client's patches, the unit and the emulators' cheevos scripts (#307 PL-013, 055, 057, 058, 059, 060; #308's sweep)"
+# Each fix below was written after its case, and each case was seen to FAIL
+# against the scripts from before it; to watch them fire again:
+#
+#     BASE_REF=417dcd8610 tools/last-good-scripts-test --old
+#
+# (417dcd8610 is next where stream D was cut.) The ctl's cases run in section
+# t's sandbox -- its client from the sources cache with the patches applied,
+# its shims, its virtual clock and fixture store -- and SKIP with it when the
+# pinned client's tarball is not on this machine. The helpers' cases load the
+# real helpers against the same patched client; the cheevos cases run the
+# scripts whole with the image's busybox, like section w.
+DD="${TMP}/stream-d"; mkdir -p "${DD}"
+DT_OK=0
+if declare -F tctl >/dev/null && [ -n "${CLIENT:-}" ] && [ -d "${CLIENT}/raofflineproxy" ]; then DT_OK=1; fi
+DCFG_ON='system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n'
+# A run of the ctl in the background, as the interface starts one: stdout and
+# stderr to ${DD}/bg.out and bg.err, the exit code to bg.rc when it ends.
+dbg() { # <verb...>
+    rm -f "${DD}/bg.rc"
+    ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+        --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+        --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath "${TENV[@]}" \
+        bash /repo/raofflineproxy-ctl "$@" > "${DD}/bg.out" 2> "${DD}/bg.err"; echo $? > "${DD}/bg.rc" ) &
+    DBG=$!
+}
+dnow() { date +%s.%N; }
+dsince() { awk -v a="$1" -v b="$(dnow)" 'BEGIN{printf "%.2f", b - a}'; }
+# A stand-in for raofflineproxy-cache-images beside the ctl, driven by
+# /run/images-mode: "ok" (exit 0), "fail" (the helper's own failure lines,
+# exit 1), "verify-left" (a verify slice left, no why, exit 3), "crash" (a
+# traceback and Python's exit 1, no protocol line), "cancel" (the
+# page's CANCEL: SIGINT to the ctl through the lock's pid, then a real 20 s),
+# "hang" (a real 20 s); every start is logged with its pid and a real time.
+dfake_images() {
+    cat > "${T}/repo/raofflineproxy-cache-images" <<'EOS'
+#!/bin/bash
+echo $$ > /run/images.pid
+echo "start $(date +%s.%N) budget=${FAKE_BUDGET:-none} $*" >> /run/images-calls
+trap 'echo "term $(date +%s.%N)" >> /run/images-calls; exit 143' TERM
+case "$(cat /run/images-mode 2>/dev/null || echo ok)" in
+    fail) printf '>>> doing images\n>>> total 3\n>>> why SOME_IMAGES_NOT_SAVED\n>>> done 0|3\n'; exit 1 ;;
+    verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 3 ;;
+    crash) printf '>>> doing images\n'; echo 'Traceback (most recent call last):' >&2; exit 1 ;;
+    cancel) kill -INT "$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+    hang) i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+esac
+printf '>>> doing images\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'
+exit 0
+EOS
+    chmod +x "${T}/repo/raofflineproxy-cache-images"
+}
+
+# D1. #307 PL-013 (F-RA-01, claude): the page's CANCEL during the image pass
+# ends the run inside two seconds. The helper: the interface signals the
+# whole process group, the helper gets KeyboardInterrupt inside as_completed,
+# and the pool's with-block used to wait for every queued download before the
+# process could exit. Driven here on the real raofflineproxy-cache-images,
+# against the patched client, with forty badges missing and each download a
+# one-second sleep behind four workers: SIGINT once four have started.
+# Also the helper started with SIGINT ignored (a shell's background job, as
+# the ctl now starts it).
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-images" "${DD}/raofflineproxy-cache-images"
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d1.out" 2>&1 <<'EOS'
+import os, signal, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg"; site = work / "site"
+for d in (cfg, site): d.mkdir(parents=True, exist_ok=True)
+(site / "sitecustomize.py").write_text(
+    "import os, time\n"
+    "from pathlib import Path\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "def _slow(url, path, ua, game_id=None):\n"
+    "    with open(os.environ['D_CALLS'], 'a') as f: f.write(path + '\\n')\n"
+    "    time.sleep(float(os.environ['D_EACH']))\n"
+    "_ic.download_static_image = _slow\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 5000 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9100 + i}.png"} for i in range(40)]
+import json
+st.upsert_cache(cache_keys.patch(1, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 1, "Achievements": badges}}))
+st.close()
+def run(each, seconds, ignore_int, signal_after):
+    calls = work / "calls"; calls.write_text("")
+    env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work), D_CALLS=str(calls), D_EACH=str(each))
+    pre = (lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)) if ignore_int else None
+    p = subprocess.Popen([sys.executable, helper, "--seconds", str(seconds)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=pre)
+    t0 = time.monotonic()
+    if signal_after:
+        while time.monotonic() - t0 < 10 and len(calls.read_text().split()) < signal_after:
+            time.sleep(0.05)
+        t0 = time.monotonic(); p.send_signal(signal.SIGINT)
+    try:
+        out, _ = p.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        p.kill(); out, _ = p.communicate()
+    return p.returncode, time.monotonic() - t0, len(calls.read_text().split()), out.decode(errors="replace")
+rc, took, started, out = run(1, 60, False, 4)
+print(f"{'PASS' if rc not in (0, None) and took < 2.0 and started <= 8 and '>>> why CANCELLED' in out else 'FAIL'} cancel: SIGINT with 4 of 40 downloads started -- exit {rc} after {took:.2f}s, {started} started")
+rc, took, started, out = run(1, 60, True, 4)
+print(f"{'PASS' if rc not in (0, None) and took < 2.0 and started <= 8 else 'FAIL'} ignored: SIGINT to a helper started with SIGINT ignored -- exit {rc} after {took:.2f}s, {started} started")
+EOS
+grep -q '^PASS cancel:' "${DD}/d1.out"; check $? "PL-013 cache-images: the CANCEL's SIGINT drops the queued downloads and the helper ends inside two seconds ($(sed -n 's/^PASS cancel: //p' "${DD}/d1.out"))" "PL-013 cache-images: $(grep 'cancel:' "${DD}/d1.out" || tail -3 "${DD}/d1.out" | tr '\n' '|') -- the pool drained its queue before the interrupt was honoured"
+grep -q '^PASS ignored:' "${DD}/d1.out"; check $? "PL-013 cache-images: started with SIGINT ignored (a background job), the group's SIGINT still ends it inside two seconds" "PL-013 cache-images: $(grep 'ignored:' "${DD}/d1.out" || echo 'no verdict') -- a background helper never heard the CANCEL"
+# The ctl's side: the image pass ran in the foreground, so the INT trap (and
+# disable's TERM, #308 gpt F-RA-11) waited for the helper to return. A scan
+# that cached its games reaches the image pass; the stand-in sends the
+# interface's SIGINT to the ctl and then works for a real 20 s.
+dfake_images
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo cancel > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+DT0=$(dnow); tctl scan; DEND=$(dnow); DTOOK=$(awk -v a="${DT0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || break; sleep 0.1; done
+[ "${RC}" -eq 130 ] && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 12)}' && grep -qx '>>> why CANCELLED' "${OUT}" && grep -q ' 130 scan .*why=CANCELLED$' "${TSTAMP}" && ! grep -q '^done ' "${TR}/images-calls"; check $? "PL-013 ctl: CANCEL during a scan's image pass -- exit 130, why CANCELLED, stamped, the image helper ended (the whole scan ${DTOOK}s, jobs included)" "PL-013 ctl: rc ${RC} after ${DTOOK}s; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); helper: $(tr '\n' ' ' < "${TR}/images-calls" 2>/dev/null) -- the INT trap waited for the foreground image pass"
+DI0="$(sed -n 's/^start \([0-9.]*\).*/\1/p' "${TR}/images-calls" 2>/dev/null | head -n 1)"
+[ -n "${DI0}" ] && [ -n "${DEND}" ] && awk -v a="${DI0}" -v b="${DEND}" 'BEGIN{exit !(b - a < 2)}'; check $? "PL-013 ctl: from the image pass's start to the run's exit: $(awk -v a="${DI0:-0}" -v b="${DEND:-0}" 'BEGIN{printf "%.2f", b - a}')s, inside two seconds" "PL-013 ctl: the image pass started at ${DI0:-?} and the run exited at ${DEND:-?} -- $(awk -v a="${DI0:-0}" -v b="${DEND:-0}" 'BEGIN{printf "%.2f", b - a}')s"
+! kill -0 "${IP:-1}" 2>/dev/null && flock -n "${T}/varrun/raofflineproxy-scan.lock" true; check $? "PL-013 ctl: the cancelled run's image helper (pid ${IP:-?}) is gone and the lock is free" "PL-013 ctl: image helper alive: $(kill -0 "${IP:-1}" 2>/dev/null && echo yes || echo no); lock free: $(flock -n "${T}/varrun/raofflineproxy-scan.lock" true && echo yes || echo no)"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null
+# #308 1-raoffline gpt F-RA-11: disable during a scan's image pass ends the
+# helper through the run's TERM trap within disable's own wait.
+treset; rm -f "${TR}/fast-sleep"; printf 'ok\n' > "${TR}/helper-plan"; echo hang > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+dbg scan
+for _ in $(seq 1 100); do [ -s "${TR}/images.pid" ] && break; sleep 0.1; done
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; sleep 0.3
+DT0=$(dnow); tctl disable; DRC=${RC}; DTOOK=$(dsince "${DT0}")
+GONE=0; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || { GONE=1; break; }; sleep 0.1; done
+wait "${DBG}" 2>/dev/null
+[ "${DRC}" -eq 0 ] && [ -n "${IP}" ] && [ "${GONE}" -eq 1 ] && grep -q 'scan or top-up stopped' "${ERR}" && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 5)}'; check $? "#308 gpt F-RA-11: disable during a scan's image pass -- the helper (pid ${IP:-?}) ended through the run's TERM trap, disable done in ${DTOOK}s (the scan exited $(cat "${DD}/bg.rc" 2>/dev/null))" "#308 gpt F-RA-11: disable rc ${DRC} after ${DTOOK}s; helper ${IP:-none} gone: ${GONE}; disable said: $(grep -i 'asking\|stop' "${ERR}" | tr '\n' '|' | cut -c1-200) -- the TERM waited for the foreground image pass"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/images-mode" "${TR}/helper-plan"
+printf "${DCFG_ON}" > "${TCFG}"
+else
+    echo "    SKIP  PL-013's cases: section t did not run (the pinned client is not on this machine)"
+fi
+
+# D2. #307 PL-055 (F-RA-02 gpt = F-RA-03 claude): index-pending, the promise
+# that the link's return lists the library once for an index that ran
+# offline, is kept until that listing and its games have been handled: a
+# listing that fails (an error, or the deadline), a run stopped part-way and a
+# game whose fetch failed all leave it; only a run whose indexed pass ended
+# with nothing wrong removes it. A marker that survives a failed attempt waits
+# out the half hour like any other run (it bypasses the interval only when it
+# was written after the last attempt), so a flapping link does not turn it
+# into a request storm.
+if [ "${DT_OK}" -eq 1 ]; then
+# The listing fails on demand: /run/listing-fail holds the exit code.
+grep -q 'listing-fail' "${T}/shim/python3" || sed -i 's|^if \[ "\$1" = "-" \] && \[ -s /run/listing-delay \]|if [ "$1" = "-" ] \&\& [ -s /run/listing-fail ]; then exit "$(cat /run/listing-fail)"; fi\n&|' "${T}/shim/python3"
+grep -q 'listing-fail' "${T}/shim/python3"; check $? "the python3 shim fails a listing on demand (/run/listing-fail)" "the shim edit did not take: $(grep -n 'listing' "${T}/shim/python3" | tr '\n' '|')"
+TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+dpending() { # the marker, the mark two hours old, no game played since
+    treset; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+    tctl index-offline; : > "${TR}/probe.log"; : > "${TR}/helper-jobs.log"; : > "${TLOG}"
+}
+dpending; echo 1 > "${TR}/listing-fail"
+tctl topup; rm -f "${TR}/listing-fail"
+[ "${RC}" -eq 0 ] && grep -q "index could not be read" "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending (rc ${RC})" "PL-055: rc ${RC}; marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240) -- the marker was consumed before the listing"
+dpending; echo 124 > "${TR}/listing-fail"
+tctl topup; rm -f "${TR}/listing-fail"
+[ "${RC}" -eq 1 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a listing cut by the deadline (124): TOOK_TOO_LONG, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# The same link flapping a minute later: the marker is older than the attempt
+# the failed run made, so the half hour holds -- no probe, no listing.
+# (On the virtual clock: the failed attempt a minute ago, the marker written before it.)
+touch -d "@$(( $(cat "${TR}/clock") - 60 ))" "${TMARK}"; [ -e "${TPD}/index-pending" ] && touch -d "@$(( $(cat "${TR}/clock") - 120 ))" "${TPD}/index-pending"
+: > "${TR}/probe.log"; : > "${TLOG}"
+tctl topup
+[ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && ! grep -q 'listed once' "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: the next link event inside the half hour after a failed attempt waits (no probe, no listing), the marker still there" "PL-055: rc ${RC}; probes: $(grep -c . "${TR}/probe.log"); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-200); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# Past the half hour it lists again, and a run that handled the games clears it.
+touch -d "@$(( $(cat "${TR}/clock") - 3600 ))" "${TMARK}"; : > "${TLOG}"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q 'listed once' "${TLOG}" && grep -q 'topup start: found=3 new=2' "${TLOG}" && [ ! -e "${TPD}/index-pending" ]; check $? "PL-055: past the half hour the marker's listing runs again, caches the games and removes the marker" "PL-055: rc ${RC}; log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# A game whose fetch failed in the marker's pass: SOME_GAMES_NOT_SAVED, kept.
+dpending; printf 'fail\nok\n' > "${TR}/helper-plan"
+tctl topup; rm -f "${TR}/helper-plan"
+[ "${RC}" -eq 1 ] && grep -q 'why=SOME_GAMES_NOT_SAVED$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a failed game in the marker's pass: SOME_GAMES_NOT_SAVED, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# A run stopped part-way (STOP IT AND PLAY, disable: SIGTERM to the pid in
+# the lock) keeps it too.
+dpending; rm -f "${TR}/fast-sleep"; printf 'wait 20\n' > "${TR}/helper-plan"; rm -f "${TR}/helper.pid"
+dbg topup
+for _ in $(seq 1 100); do [ -s "${TR}/helper.pid" ] && break; sleep 0.1; done; sleep 0.3
+DHP="$(cat "${TR}/helper.pid" 2>/dev/null)"
+kill -TERM "$(head -n 1 "${T}/varrun/raofflineproxy-scan.lock" 2>/dev/null)" 2>/dev/null
+for _ in $(seq 1 100); do [ -s "${DD}/bg.rc" ] && break; sleep 0.1; done
+wait "${DBG}" 2>/dev/null
+[ "$(cat "${DD}/bg.rc" 2>/dev/null)" = "143" ] && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a marker's run stopped part-way (TERM, exit 143) keeps index-pending" "PL-055: the run exited $(cat "${DD}/bg.rc" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+[ -n "${DHP}" ] && kill -9 "${DHP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/helper-plan"
+else
+    echo "    SKIP  PL-055's cases: section t did not run"
+fi
+
+# D3. #307 PL-057 (F-RA-04/05 gpt): the summary lists a game cached by a
+# launch alone -- an achievementsets row and no patch row -- from that row's
+# core set, once; and a game whose unlock row is missing or cannot be read
+# says its unlocks are unknown (null), never that nothing was earned.
+# (The store also holds the waiting awards 03b reads, and D18 runs the
+# ctl's other reads on a store the same client wrote.)
+if [ "${DT_OK}" -eq 1 ]; then
+TENV=(); printf "${DCFG_ON}" > "${TCFG}"
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+core = lambda *pairs: [{"ID": i, "Title": f"a{i}", "Points": p, "Flags": 3} for i, p in pairs]
+# 201: a launch's rows only (RetroArch asked achievementsets, never patch).
+s.upsert_cache(cache_keys.achievementsets("aaaa0201", "qa"), json.dumps({"Success": True, "GameId": 201, "Title": "Sets Only", "ImageIconUrl": "https://media.retroachievements.org/Images/000201.png",
+    "Sets": [{"Type": "bonus", "Achievements": core((3901, 50))}, {"Type": "core", "Achievements": core((3001, 5), (3002, 10)) + [{"ID": 3003, "Points": 25, "Flags": 5}]}]}))
+s.upsert_cache(cache_keys.unlocks(201, "qa"), json.dumps({"Success": True, "UserUnlocks": [3001]}))
+# 202: a patch row whose unlock row is damaged; 203: a patch row with no unlock row.
+s.upsert_cache(cache_keys.patch(202, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 202, "Title": "Bad Unlocks", "Achievements": core((3101, 5), (3102, 5))}}))
+s.upsert_cache(cache_keys.unlocks(202, "qa"), "{not json")
+s.upsert_cache(cache_keys.patch(203, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 203, "Title": "No Unlocks", "Achievements": core((3201, 5))}}))
+# 204: another account's launch rows; 102: a patch row and a sets row, listed once.
+s.upsert_cache(cache_keys.achievementsets("dddd0204", "other"), json.dumps({"Success": True, "GameId": 204, "Title": "Theirs", "Sets": [{"Type": "core", "Achievements": core((3301, 5))}]}))
+s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Title": "Bee", "ImageIcon": "/Images/000102.png", "Achievements": core((1001, 5), (1002, 10))}}))
+s.upsert_cache(cache_keys.unlocks(102, "qa"), json.dumps({"Success": True, "UserUnlocks": [1001]}))
+s.upsert_cache(cache_keys.achievementsets("bbbb", "qa"), json.dumps({"Success": True, "GameId": 102, "Title": "Bee", "Sets": [{"Type": "core", "Achievements": core((1001, 5), (1002, 10))}]}))
+# Waiting awards: 1002 earned by another account on this device, 3002 by qa.
+now = 1789400000000
+s.upsert_pending_award({"achievementId": 1002, "queryString": "/dorequest.php?r=awardachievement&u=Other&a=1002&h=0", "requestBody": "", "userAgent": "ra", "queuedAt": now})
+s.upsert_pending_award({"achievementId": 3002, "queryString": "/dorequest.php", "requestBody": "r=awardachievement&u=QA&t=x&a=3002&h=0", "userAgent": "ra", "queuedAt": now + 1000})
+s.close()
+EOS
+tctl summary; cp "${OUT}" "${DD}/summary.out"
+grep -qx '{"id":201,"title":"Sets Only","icon":"http://127.0.0.1:8080/Images/000201.png","achievements":2,"points":15,"unlocked":2,"unlockedPoints":15,"pending":1}' "${DD}/summary.out"; check $? "PL-057 summary: a game cached by a launch alone (achievementsets row, no patch row) is listed from its core set -- 2 achievements, 15 points, both unlocked (one earned, one waiting to be sent)" "PL-057 summary: rc ${RC}; no line for game 201: $(tr '\n' '|' < "${DD}/summary.out" | cut -c1-400) -- the summary read patch rows only"
+grep -q '"id":202,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out" && grep -q '"id":203,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out"; check $? "PL-057 summary: a damaged unlock row (202) and a missing one (203) read unlocked null -- unknown, not none" "PL-057 summary: $(grep -E '"id":20[23],' "${DD}/summary.out" | tr '\n' '|' | cut -c1-300) -- an unreadable unlock row read as nothing earned"
+[ "$(grep -c '"id":102,' "${DD}/summary.out")" -eq 1 ] && ! grep -q '"id":204,' "${DD}/summary.out"; check $? "PL-057 summary: a game with both rows is listed once; another account's launch rows are not listed" "PL-057 summary: 102 x$(grep -c '"id":102,' "${DD}/summary.out"), 204 x$(grep -c '"id":204,' "${DD}/summary.out")"
+else
+    echo "    SKIP  PL-057's cases: section t did not run"
+fi
+
+# D3b. #308 1-raoffline gpt F-RA-09: a waiting award is counted for the account
+# that earned it -- its request's u=, in the query or the body -- and not for
+# whoever is signed in now, in the summary and in pending-ids alike; an
+# award whose request names no account is counted as before. D3's store:
+# 1002 earned by "Other" on this device, 3002 by "QA".
+if [ "${DT_OK}" -eq 1 ]; then
+grep -qx '{"id":102,"title":"Bee","icon":"http://127.0.0.1:8080/Images/000102.png","achievements":2,"points":15,"unlocked":1,"unlockedPoints":5,"pending":0}' "${DD}/summary.out"; check $? "#308 gpt F-RA-09 summary: another account's waiting award (1002, u=Other) is not counted as this account's -- 102 reads 1 unlocked, none waiting" "#308 gpt F-RA-09: $(grep '"id":102,' "${DD}/summary.out") -- the queue was merged into whoever is signed in"
+tctl pending-ids
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "3002 1789400001" ]; check $? "#308 gpt F-RA-09 pending-ids: only this account's waiting award (3002, u=QA in the body), not the other account's 1002" "#308 gpt F-RA-09 pending-ids: rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+tctl pending
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "2" ]; check $? "pending still counts every award the queue holds for sending (2): the service sends each with its own account" "pending: rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+else
+    echo "    SKIP  #308 F-RA-09's cases: section t did not run"
+fi
+
+# D4. #307 PL-058 (F-RA-06 gpt): raofflineproxy-refresh counts a game whose
+# startsession row could not be dropped as failed -- the row carries the
+# unlocks a launch reads, so a refresh that could not remove it did not do
+# its job. The real helper, loaded against the patched client, its network
+# calls replaced (the driver also runs 04b's two cases).
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-refresh" "${DD}/raofflineproxy-refresh"
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/refresh-cfg" PYTHONPATH="${CLIENT}" python3 - "${DD}/raofflineproxy-refresh" > "${DD}/d4.out" 2>&1 <<'EOS'
+import contextlib, io, os, sys, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+spec = importlib.util.spec_from_loader("refresh_helper", importlib.machinery.SourceFileLoader("refresh_helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+helper.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
+fails = set()
+def fake_patch(gid, *a, **k):
+    if gid in fails: raise RuntimeError(f"patch request failed for {gid}")
+    return '{"PatchData":{"Title":"G%d"}}' % gid
+helper.proxy_service.refresh_game_patch = fake_patch
+helper.proxy_service.cache_unlocks = lambda *a, **k: None
+def run(args):
+    sys.argv = ["raofflineproxy-refresh"] + args
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = helper.main()
+    return rc, buf.getvalue()
+st = Storage()
+# The client lists patch rows newest first (ORDER BY cachedAt DESC), so each
+# row gets its own time: game 1 the newest, the order 1..6 whatever the clock
+# does between inserts.
+for gid in range(1, 7):
+    st.upsert_cache(cache_keys.patch(gid, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % gid, cached_at=1789400000000 - gid * 1000)
+st.upsert_cache(cache_keys.start_session(5, "qa"), '{"Success":true,"Unlocks":[1]}')
+st.close()
+# The drop fails: the store refuses the delete.
+real_delete = Storage.delete_cache
+def refusing(self, key):
+    raise OSError("disk I/O error")
+Storage.delete_cache = refusing
+rc, out = run(["--game", "5", "--seconds", "30"])
+Storage.delete_cache = real_delete
+ok = rc == 1 and "re-read 0 game(s), 1 failed" in out and ">>> done 0|1" in out
+print(("PASS" if ok else "FAIL") + f" drop: rc {rc}; " + " | ".join(l for l in out.splitlines() if "re-read" in l or l.startswith(">>> done") or "startsession" in l))
+# Three failures, never two in a row: every game is tried.
+fails.clear(); fails.update({1, 3, 5})
+rc, out = run(["--all", "--seconds", "30"])
+ok = rc == 1 and "re-read 3 game(s), 3 failed" in out and "REPEATED_FAILURES" not in out
+print(("PASS" if ok else "FAIL") + f" apart: rc {rc}; " + " | ".join(l for l in out.splitlines() if "re-read" in l and "game(s)" in l or "REPEATED" in l or "in a row" in l))
+# Three in a row: it stops.
+fails.clear(); fails.update({2, 3, 4})
+rc, out = run(["--all", "--seconds", "30"])
+ok = rc == 1 and "REPEATED_FAILURES" in out and "re-read 5/6" not in out and "re-read 6/6" not in out
+print(("PASS" if ok else "FAIL") + f" row: rc {rc}; " + " | ".join(l for l in out.splitlines() if "REPEATED" in l or "in a row" in l or l.startswith(">>> done")))
+EOS
+grep -q '^PASS drop:' "${DD}/d4.out"; check $? "PL-058 refresh: a startsession row that could not be dropped makes the game failed -- re-read 0 game(s), 1 failed, exit 1" "PL-058 refresh: $(grep 'drop:' "${DD}/d4.out" || tail -3 "${DD}/d4.out" | tr '\n' '|') -- a failed drop was reported as a game re-read"
+else
+    echo "    SKIP  PL-058's cases: section t did not run"
+fi
+
+# D4b. #308 1-raoffline claude F-RA-12 = gpt F-RA-19: raofflineproxy-refresh
+# stops after three failures in a row, as it says, not after three in all
+# (D4's driver: games 1, 3 and 5 failing, then 2, 3 and 4).
+if [ "${DT_OK}" -eq 1 ]; then
+grep -q '^PASS apart:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures never two in a row -- every game tried (3 re-read, 3 failed)" "#308 F-RA-12/19 refresh: $(grep 'apart:' "${DD}/d4.out" || echo 'no verdict') -- three failures in all were read as three in a row"
+grep -q '^PASS row:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures in a row stop the run (REPEATED_FAILURES)" "#308 F-RA-12/19 refresh: $(grep 'row:' "${DD}/d4.out" || echo 'no verdict')"
+else
+    echo "    SKIP  #308 F-RA-12/19's cases: section t did not run"
+fi
+
+# D5. #307 PL-059 (F-RA-07 gpt): the walk over unindexed folders keeps a
+# cursor between runs, so files that never cache (a ROM RetroAchievements does
+# not know is skipped, and stays uncached) cannot hold the front of the walk
+# for ever; and a walk cut at the cap says so to the page (note TRUNCATED)
+# and in the stamp (truncated=1). The cap is lowered to ten, as in t's PL-17
+# case, over thirteen files nobody can cache (gb's two and gbc's eleven): the
+# second scan reaches the ones the first did not, the thirteenth included.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"
+treset; rm -rf "${TS}/roms/gbc"; mkdir -p "${TS}/roms/gbc"; for i in $(seq -w 1 11); do printf 'GBC %s' "${i}" > "${TS}/roms/gbc/g${i}.gbc"; done
+TENV=(--setenv RA_TEST_SCAN_CAP 10)
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+: > "${TR}/helper-jobs.log"
+tctl scan; cp "${OUT}" "${DD}/scan1.out"; cp "${TR}/helper-jobs.log" "${DD}/scan1.jobs"
+[ "${RC}" -eq 0 ] && grep -qx '>>> note TRUNCATED' "${DD}/scan1.out" && grep -q ' 0 scan .* truncated=1' "${TSTAMP}"; check $? "PL-059: a walk cut at the cap tells the page (note TRUNCATED) and the stamp (truncated=1)" "PL-059: rc ${RC}; out: $(grep '^>>>' "${DD}/scan1.out" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the truncation was in the log alone"
+: > "${TR}/helper-jobs.log"
+tctl scan; cp "${TR}/helper-jobs.log" "${DD}/scan2.jobs"
+grep -qP '^H\t\t\t/storage/roms/gbc/g11.gbc$' "${DD}/scan2.jobs" && grep -qP '^H\t\t\t/storage/roms/gbc/g09.gbc$' "${DD}/scan2.jobs"; check $? "PL-059: the second scan walks on from where the first stopped -- g09, g10 and g11, none of which can be cached, are its jobs" "PL-059: second scan's jobs: $(sed 's|.*/||' "${DD}/scan2.jobs" | tr '\n' ' ') -- the same first ten files held the front of the walk"
+[ "$(sort "${DD}/scan1.jobs" "${DD}/scan2.jobs" | uniq | grep -c "^H")" -eq 13 ]; check $? "PL-059: two scans together have tried all thirteen uncacheable files" "PL-059: $(sort "${DD}/scan1.jobs" "${DD}/scan2.jobs" | uniq | grep -c "^H") distinct files over two scans"
+# Under the cap the walk comes round whole: no note, no cursor left behind.
+rm -f "${TS}"/roms/gbc/g0[1-9].gbc; : > "${TR}/helper-jobs.log"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -q 'note TRUNCATED' "${OUT}" && ! grep -q 'truncated=1' "${TSTAMP}" && [ ! -e "${TPD}/scan-cursor" ]; check $? "PL-059: a walk that fits under the cap says nothing of truncation and leaves no cursor" "PL-059: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); cursor: $(cat "${TPD}/scan-cursor" 2>/dev/null || echo none)"
+TENV=(); rm -rf "${TS}/roms/gbc"; rm -f "${TR}/helper-plan"
+else
+    echo "    SKIP  PL-059's cases: section t did not run"
+fi
+
+# D6. #307 PL-060 (F-RA-08 gpt): the image pass is part of the scan and the
+# top-up (D-RA-027: a game whose badges are missing offline reads as half
+# working), so a pass that left images behind makes the run COULDN'T FINISH
+# with its why (SOME_IMAGES_NOT_SAVED, D-UI-030) -- and a scan with no new
+# game still runs it, so pressing SCAN again repairs what the last pass left.
+# A verify slice the pass did not finish (exit 3, since 06b) is the sweep
+# working through the store a slice a run, by design (D-RA-024), not a failure.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo fail > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan cached=4 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}" && grep -qE '^>>> done 4\|' "${OUT}"; check $? "PL-060: a scan that cached its games and whose image pass left images behind ends COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED), the games still counted" "PL-060: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the image pass's failure was dropped"
+rm -f "${TR}/helper-plan" "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> note NOTHING_NEW' "${OUT}" && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && [ -s "${TR}/images-calls" ]; check $? "PL-060: a scan with nothing new still runs the image pass, and its failure is the run's (rc 1, why SOME_IMAGES_NOT_SAVED)" "PL-060: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) time(s); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200) -- the nothing-new branch exited before the pass"
+echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -qx '>>> note NOTHING_NEW' "${OUT}" && [ -s "${TR}/images-calls" ] && grep -q ' 0 scan cached=0 ' "${TSTAMP}"; check $? "PL-060: and once the pass fetches what was missing, the same scan reads COMPLETED with nothing new (rc 0)" "PL-060: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# The top-up: a failed pass is the run's too; a verify slice left is not.
+treset; touch -d '2 hours ago' "${TMARK}"; echo fail > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060: a top-up whose image pass left images behind ends rc 1, why SOME_IMAGES_NOT_SAVED" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+treset; touch -d '2 hours ago' "${TMARK}"; echo verify-left > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=2 ' "${TSTAMP}" && ! grep -q 'why=' "${TSTAMP}"; check $? "PL-060: a top-up whose verify slice did not come round the store (the helper's exit 3) finished (rc 0) -- the sweep takes several runs by design" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TR}/images-mode" "${TR}/images-calls"
+else
+    echo "    SKIP  PL-060's cases: section t did not run"
+fi
+
+# D6b. Found while fixing PL-060: the image helper said "a verify slice is
+# left" with exit 1 and no why line -- and exit 1 with no why is also what
+# Python gives a helper that dies of an uncaught exception, so a crash
+# would have read as the sweep working and the run as COMPLETED. The helper
+# now says a verify slice left with exit 3 (D-RA-024's "exits non-zero"
+# still holds), and every other failure -- a crash included -- is images
+# left behind.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; touch -d '2 hours ago' "${TMARK}"; echo crash > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "a top-up whose image helper crashed (a traceback, exit 1, no protocol line) ends rc 1, why SOME_IMAGES_NOT_SAVED -- not read as a verify slice left" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a crash read as the sweep working"
+rm -f "${TR}/images-mode"
+else
+    echo "    SKIP  the verify exit cases: section t did not run"
+fi
+# The helper itself: a verify pass that stops at its half of the budget
+# with files left to verify and nothing missing exits 3, and says so.
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d6b.out" 2>&1 <<'EOS'
+import os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg-verify"; cfg.mkdir(parents=True, exist_ok=True)
+site = work / "site-verify"; site.mkdir(exist_ok=True)
+# Every file present and whole, and verifying one takes a tenth of a second:
+# with --seconds 1 the verify half-budget ends long before the 40 are done.
+(site / "sitecustomize.py").write_text(
+    "import time\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "_real = _ic.png_problem if hasattr(_ic, 'png_problem') else None\n"
+    "def _slow(payload):\n"
+    "    time.sleep(0.1)\n"
+    "    return None\n"
+    "_ic.png_problem = _slow\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+import json, struct, zlib
+from raofflineproxy import cache_keys, image_cache
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 6000 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9200 + i}.png"} for i in range(40)]
+st.upsert_cache(cache_keys.patch(2, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 2, "Achievements": badges}}))
+st.close()
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00" * 40)) + _chunk(b"IEND", b"")
+for i in range(40):
+    f = image_cache.STATIC_DIR / "Badge" / f"{9200 + i}.png"; f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(PNG)
+env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work))
+p = subprocess.run([sys.executable, helper, "--seconds", "1", "--verify"], env=env, capture_output=True, text=True, timeout=60)
+out = p.stdout
+print(f"{'PASS' if p.returncode == 3 and '>>> note VERIFY_LEFT' in out and '>>> why' not in out else 'FAIL'} verify-left: exit {p.returncode}; {' | '.join(l for l in out.splitlines() if 'VERIFY' in l or 'why' in l)}")
+EOS
+grep -q '^PASS verify-left:' "${DD}/d6b.out"; check $? "cache-images: a verify pass that stops with files left to verify and nothing missing exits 3 with note VERIFY_LEFT, no why ($(sed -n 's/^PASS verify-left: //p' "${DD}/d6b.out"))" "cache-images: $(grep 'verify-left:' "${DD}/d6b.out" || tail -3 "${DD}/d6b.out" | tr '\n' '|')"
+fi
+
+# D7. #308 1-raoffline claude F-RA-06: the listing reads the systems the
+# interface reads. SystemData::getConfigPath takes the first of
+# es_systems_custom.cfg, the user's es_systems.cfg and the image's as the base
+# -- a custom file IS the base there too, so the seat's scenario is the
+# interface's own rule -- and then loadAdditionnalConfig merges every
+# es_systems_*.cfg in the user's folder and beside the binary into it, by
+# system name. The listing read the base alone: a system added by an
+# es_systems_<name>.cfg was never indexed, and one whose <path> the file moved
+# was looked for where it no longer is.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+ESD="${TS}/.config/emulationstation"
+treset; touch -d '2 hours ago' "${TMARK}"
+mkdir -p "${TS}/roms/snes" "${TS}/roms/nes2"
+printf 'SNES x' > "${TS}/roms/snes/x.sfc"
+printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./x.sfc</path><name>X</name><cheevosHash>ssss</cheevosHash><cheevosId>301</cheevosId></game>\n</gameList>\n' > "${TS}/roms/snes/gamelist.xml"
+# gb's folder moved by the extra file: its games are looked for in nes2.
+printf 'GB m' > "${TS}/roms/nes2/m.gb"
+printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./m.gb</path><name>M</name><cheevosHash>mmmm</cheevosHash><cheevosId>302</cheevosId></game>\n</gameList>\n' > "${TS}/roms/nes2/gamelist.xml"
+cat > "${ESD}/es_systems_extra.cfg" <<'EOS'
+<?xml version="1.0"?>
+<systemList>
+  <system><name>snes</name><fullname>SNES</fullname><path>/storage/roms/snes</path></system>
+  <system><name>gb</name><path>/storage/roms/nes2</path></system>
+</systemList>
+EOS
+: > "${TR}/helper-jobs.log"
+tctl topup --after-index
+grep -qP '^I\t301\tssss\t/storage/roms/snes/x.sfc$' "${TR}/helper-jobs.log"; check $? "#308 claude F-RA-06: a system an es_systems_<name>.cfg adds is read with the rest -- its indexed game is a job (rc ${RC})" "#308 claude F-RA-06: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240) -- the listing read the base file alone"
+grep -qP '^I\t302\tmmmm\t/storage/roms/nes2/m.gb$' "${TR}/helper-jobs.log"; check $? "#308 claude F-RA-06: a system whose <path> an es_systems_<name>.cfg moves is read at the new path" "#308 claude F-RA-06: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240)"
+rm -f "${ESD}/es_systems_extra.cfg"; rm -rf "${TS}/roms/snes" "${TS}/roms/nes2"
+else
+    echo "    SKIP  #308 F-RA-06's cases: section t did not run"
+fi
+
+# D8. #308 1-raoffline gpt F-RA-14: in an unindexed folder, a ROM is passed
+# over as cached only when its game is whole for this account -- the patch
+# row that names its path, the unlocks row, and an achievementsets row of
+# the game -- as the index's test (is_cached) already asks. A patch row alone
+# (a fetch that failed after the first write, or rows the eviction thinned
+# on an older client) used to mark the ROM done for ever.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+# h.gb: a patch row naming it and nothing else. i.gb: whole (patch, unlocks, sets).
+s.upsert_cache(cache_keys.patch(150, "qa"), '{"Success":true,"PatchData":{"ID":150}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.patch(151, "qa"), '{"Success":true,"PatchData":{"ID":151}}', source_rom_path="/gb/i.gb")
+s.upsert_cache(cache_keys.unlocks(151, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("iiii", "qa"), '{"Success":true,"GameId":151,"Sets":[]}')
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"
+tctl scan
+grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${TR}/helper-jobs.log" && ! grep -q '/storage/roms/gb/i.gb$' "${TR}/helper-jobs.log"; check $? "#308 gpt F-RA-14: a ROM whose game has a patch row and nothing else is a job again; one whose game is whole is passed over" "#308 gpt F-RA-14: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240) -- a patch path alone read as a complete cache"
+else
+    echo "    SKIP  #308 F-RA-14's case: section t did not run"
+fi
+
+# D9. #308 1-raoffline claude F-RA-10 = gpt F-RA-15: added= is the games that
+# became ready for this account during the run -- read from the store before
+# and after (a game is ready with its patch and unlocks rows) -- not the count
+# of cache operations. A game the recently played pass caches for the first
+# time is added (the client's run-smart-cache counts only games it newly
+# cached); a second dump of a game already ready is cached and is not "more
+# games" (D-UI-107's N MORE GAMES ARE READY).
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"
+# The recently played pass writes a game's rows on demand: /run/smart-rows.py
+# runs through the client before the shim prints its result.
+grep -q 'smart-rows' "${T}/shim/python3" || sed -i 's|^    "-m raofflineproxy.main run-smart-cache")$|&\n        [ -s /run/smart-rows.py ] \&\& /usr/bin/python3 /run/smart-rows.py|' "${T}/shim/python3"
+grep -q 'smart-rows' "${T}/shim/python3"; check $? "the python3 shim's recently played pass can write rows (/run/smart-rows.py)" "the shim edit did not take"
+TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; touch -d '2 hours ago' "${TMARK}"; touch "${THISTORY}"
+cat > "${TR}/smart-rows.py" <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.patch(160, "qa"), '{"Success":true,"PatchData":{"ID":160}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.unlocks(160, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("hhhh", "qa"), '{"Success":true,"GameId":160,"Sets":[]}')
+s.close()
+EOS
+echo '{"type":"result","scanned":1,"total":1,"cached":1,"skipped":0,"limit_reached":false}' > "${TR}/smart-result"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=1 .* added=1$' "${TSTAMP}"; check $? "#308 claude F-RA-10: a game the recently played pass caches for the first time is added (cached=1 added=1)" "#308 claude F-RA-10: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the recently played pass's new game was not counted as added"
+rm -f "${TR}/smart-rows.py" "${TR}/smart-result"
+# A second dump of game 102 (already ready) among the index's jobs: cached,
+# not added.
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>gggg</cheevosHash><cheevosId>102</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+treset; touch -d '2 hours ago' "${TMARK}"; : > "${TR}/helper-jobs.log"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -qP '^I\t102\tgggg\t' "${TR}/helper-jobs.log" && grep -q ' 0 topup cached=3 .* added=2$' "${TSTAMP}"; check $? "#308 gpt F-RA-15: three games cached by the index, one a second dump of a game already ready -- added=2" "#308 gpt F-RA-15: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a cache operation was counted as a new game"
+rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml"; TENV=()
+else
+    echo "    SKIP  #308 F-RA-10/15's cases: section t did not run"
+fi
+
+# D10. #308 1-raoffline gpt F-RA-13: the link's return asks whether a game was
+# played since the last attempt (D-RA-035), and a game played in PPSSPP is a
+# game played -- the pass it gates reads PPSSPP's recent list as well as
+# RetroArch's history (the client's load_content_history_paths), and PPSSPP
+# is the toggle's other emulator (D-RA-002). So ppsspp.ini, which PPSSPP
+# writes at every exit and cheevos_ppsspp.sh at every launch, is read beside
+# RetroArch's two history files, the newest winning.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+DPINI="${TS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"
+treset; rm -f "${THISTORY}" "${TS}/playlists/builtin/content_history.lpl"; mkdir -p "$(dirname "${DPINI}")"
+printf '[Recent]\nFileName0 = /storage/roms/psp/x.iso\n' > "${DPINI}"
+touch -d '2 hours ago' "${TMARK}"; touch "${DPINI}"; : > "${TR}/probe.log"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "#308 gpt F-RA-13: a game played in PPSSPP since the mark (ppsspp.ini newer, no RetroArch history) makes the link's return run the recently played pass (rc ${RC})" "#308 gpt F-RA-13: rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-120); log: $(tail -n 1 "${TLOG}" | cut -c1-200) -- PPSSPP's play was invisible to the question"
+touch -d '3 hours ago' "${DPINI}"; : > "${TR}/probe.log"; touch -d '2 hours ago' "${TMARK}"
+tctl topup
+[ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "#308 gpt F-RA-13: and with ppsspp.ini older than the mark, nothing played: skipped before the probe" "#308 gpt F-RA-13: rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-120)"
+rm -rf "${TS}/.config/ppsspp"; touch -d '3 hours ago' "${THISTORY}"
+else
+    echo "    SKIP  #308 F-RA-13's cases: section t did not run"
+fi
+
+# D11. #308 1-raoffline gpt F-RA-18: disable verifies each step before it
+# consumes what the step's recovery needs. The toggle is read back before
+# anything is stopped (a toggle that would not clear leaves the device on,
+# service and marker included, consistently); hardcore is read back before
+# the record of what it was is removed, so a disable that could not put it
+# back leaves the record for the next one. Section p's sandbox and its
+# /run/fail-set, which makes one key's write fail.
+if declare -F ctl >/dev/null && [ -n "${PCFG:-}" ]; then
+rm -f "${P}/run/fail-set" "${P}/run/fail-start"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"
+ctl enable
+echo global.retroachievements.hardcore > "${P}/run/fail-set"
+ctl disable; rm -f "${P}/run/fail-set"
+[ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "#308 gpt F-RA-18: a disable whose hardcore write fails exits 1 and keeps the record (hardcore_was=1)" "#308 gpt F-RA-18: rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}") -- the record went before the restore was verified"
+ctl disable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "#308 gpt F-RA-18: the next disable puts hardcore back to 1 from the kept record and then removes it" "#308 gpt F-RA-18: rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}") -- the player's hardcore setting was lost"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"; : > "${P}/run/systemctl.log"
+ctl enable
+echo global.retroachievements.offlineproxy > "${P}/run/fail-set"; : > "${P}/run/systemctl.log"
+ctl disable; rm -f "${P}/run/fail-set"
+[ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy)" = "1" ] && [ -e "${PMARK}" ] && ! grep -q 'systemctl stop' "${P}/run/systemctl.log" && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "#308 gpt F-RA-18: a toggle that will not clear stops nothing -- the service, the marker and the record stay, exit 1" "#308 gpt F-RA-18: rc ${RC}; toggle '$(pv global.retroachievements.offlineproxy)'; marker $([ -e "${PMARK}" ] && echo kept || echo gone); systemctl: $(tr '\n' '|' < "${P}/run/systemctl.log")"
+ctl disable
+else
+    echo "    SKIP  #308 F-RA-18's cases: section p did not run"
+fi
+
+# D12a. #308 1-raoffline claude F-RA-20: the unit's start limit sits in
+# [Unit], as StartLimitIntervalSec= and StartLimitBurst=, where systemd has
+# read it since 230 (in [Service] it is the old spelling, accepted for
+# compatibility with a deprecation line in the journal).
+UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
+src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
+awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=60$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec=60 and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service]" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+
+# D12b. #308 1-raoffline gpt F-RA-26: the unit is started when the proxy is
+# listening, not when its process has forked. Type=simple made `systemctl
+# start` (and so enable, which sets the routing toggle after it) and the
+# Before= on the interface return the moment Python began importing;
+# ExecStartPost now waits, bounded, for 127.0.0.1:8080 to be in LISTEN,
+# through the ctl's `listening` verb, which reads /proc/net/tcp{,6}
+# (RAOFFLINEPROXY_PROC_NET here) and runs no tool.
+UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
+src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
+awk '/^\[/{s=$0} s=="[Service]" && /^ExecStartPost=\/usr\/bin\/raofflineproxy-ctl listening --wait [0-9]+$/{f=1} END{exit !f}' "${DD}/raofflineproxy.service"; check $? "#308 gpt F-RA-26 unit: ExecStartPost waits for the listener (raofflineproxy-ctl listening --wait N)" "#308 gpt F-RA-26 unit: no readiness wait: $(grep -n '^Type=\|^ExecStart' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+if [ "${DT_OK}" -eq 1 ]; then
+DPN="${TS}/procnet"; mkdir -p "${DPN}"
+dproc() { # <tcp line or empty> <tcp6 line or empty>
+    printf '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n%s' "${1:+   0: $1 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 100 0 0 10 0
+}" > "${DPN}/tcp"
+    printf '  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n%s' "${2:+   0: $2 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0000000000000000 100 0 0 10 0
+}" > "${DPN}/tcp6"
+}
+TENV=(--setenv RAOFFLINEPROXY_PROC_NET /storage/procnet)
+dproc 0100007F:1F90 ""; tctl listening; DL1=${RC}
+dproc 00000000:1F90 ""; tctl listening; DL2=${RC}
+dproc "" 00000000000000000000000001000000:1F90; tctl listening; DL3=${RC}
+dproc 0100007F:1F91 ""; tctl listening; DL4=${RC}
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 0100007F:9C40 01 00000000:00000000\n' > "${DPN}/tcp"; : > "${DPN}/tcp6"; tctl listening; DL5=${RC}
+[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL3}" -eq 0 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and [::1]:8080 in LISTEN read as listening; another port, or 8080 only as a connection's end, do not" "#308 gpt F-RA-26 listening: rc ${DL1}/${DL2}/${DL3} (want 0/0/0), ${DL4}/${DL5} (want 1/1)"
+dproc "" ""; : > "${TR}/sleep.log"
+tctl listening --wait 5
+[ "${RC}" -eq 1 ] && [ "$(grep -c . "${TR}/sleep.log")" -eq 4 ]; check $? "#308 gpt F-RA-26 listening --wait 5 with nothing listening: five looks a second apart, then exit 1" "#308 gpt F-RA-26: rc ${RC}; sleeps: $(tr '\n' ',' < "${TR}/sleep.log")"
+rm -f "${TR}/fast-sleep"; dproc "" ""
+( sleep 1.5; dproc 0100007F:1F90 "" ) &
+DT0=$(dnow); tctl listening --wait 10; DTOOK=$(dsince "${DT0}"); wait
+[ "${RC}" -eq 0 ] && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 5)}'; check $? "#308 gpt F-RA-26 listening --wait 10: the listener that appears after 1.5 s is seen, exit 0 after ${DTOOK}s" "#308 gpt F-RA-26: rc ${RC} after ${DTOOK}s"
+touch "${TR}/fast-sleep"; TENV=(); rm -rf "${DPN}"
+else
+    echo "    SKIP  #308 F-RA-26's listening cases: section t did not run"
+fi
+
+# D13a. #308 1-raoffline gpt F-RA-27 (patch 008): only a JSON true opts in to
+# the automatic log upload -- "false", 1 and "yes" do not -- on the patched
+# tree section t built.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13a-cfg" PYTHONPATH="${CLIENT}" python3 -  > "${DD}/d13a.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 008 / F-RA-27
+uploads = []
+saved = proxy_service.log_uploader.report_storage_corruption
+proxy_service.log_uploader.report_storage_corruption = lambda incident: uploads.append(incident) or "up-1"
+try:
+    got = {}
+    for label, value in (("string false", "false"), ("number 1", 1), ("string yes", "yes"), ("true", True)):
+        (Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]) / "storage_corruption.json").write_text(json.dumps({"detected_at": 1, "quarantined_path": "x", "reason": "r", "size_bytes": 1, "lost_pending_awards": None, "reported": False, "upload_id": None, "notified": False}))
+        uploads.clear()
+        proxy_service.retry_storage_corruption_report({"upload_logs": value})
+        got[label] = len(uploads)
+    verdict(got == {"string false": 0, "number 1": 0, "string yes": 0, "true": 1}, "F-RA-27 upload opt-in: only a JSON true sends the report", f"uploads by value: {got}")
+finally:
+    proxy_service.log_uploader.report_storage_corruption = saved
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13a.out"; check $? "stream D's d13a predicates ran ($(grep -c '^PASS' "${DD}/d13a.out") PASS / $(grep -c '^FAIL' "${DD}/d13a.out") FAIL)" "stream D's d13a predicates printed no verdicts: $(tail -5 "${DD}/d13a.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13a.out"
+else
+    echo "    SKIP  the d13a predicates: section t did not run"
+fi
+
+# D13b. #308 1-raoffline claude F-RA-13 (patch 013, cache-images): a PNG with
+# bytes after its IEND is a whole PNG -- published, and left alone by
+# --verify -- since the chunk walk, not the last twelve bytes, is the test;
+# and gpt F-RA-12 (cache-images): --verify applies the test a download passes,
+# CRCs and the image data included (image_cache.png_problem, patch 013), so a
+# file damaged inside before patch 013 existed is found and re-fetched.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13b-cfg" PYTHONPATH="${CLIENT}" python3 - "${DD}/raofflineproxy-cache-images" > "${DD}/d13b.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 013 / F-RA-13 and cache-images / F-RA-12
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00" * 40)) + _chunk(b"IEND", b"")
+TRAILING = PNG + b"\x00" * 16 + b"encoder note"
+bad = bytearray(zlib.compress(b"\x00\xff\x00\x00" * 40)); bad[6] ^= 0xFF
+BAD_IDAT = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", bytes(bad)) + _chunk(b"IEND", b"")
+saved_fetch = image_cache.fetch_static_asset
+try:
+    image_cache.fetch_static_asset = lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(TRAILING))}, TRAILING)
+    image_cache.download_static_image("https://media.retroachievements.org/Badge/d13-trailing.png", "/Badge/d13-trailing.png", "ua")
+    verdict((image_cache.STATIC_DIR / "Badge" / "d13-trailing.png").exists(), "F-RA-13 patch 013: a whole PNG with bytes after its IEND is published")
+finally:
+    image_cache.fetch_static_asset = saved_fetch
+spec = importlib.util.spec_from_loader("images_helper", importlib.machinery.SourceFileLoader("images_helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+badge = image_cache.STATIC_DIR / "Badge"; badge.mkdir(parents=True, exist_ok=True)
+(badge / "d13-verify-trailing.png").write_bytes(TRAILING)
+(badge / "d13-verify-good.png").write_bytes(PNG)
+(badge / "d13-verify-bad-idat.png").write_bytes(BAD_IDAT)
+(badge / "d13-verify-bad-crc.png").write_bytes(PNG[:-1] + bytes([PNG[-1] ^ 1]))
+got = {n: helper.damaged(f"/Badge/d13-verify-{n}.png") for n in ("good", "trailing", "bad-idat", "bad-crc")}
+verdict(got["trailing"] is None, "F-RA-13 --verify: a cached PNG with bytes after its IEND is whole, never deleted", f"damaged() said {got['trailing']!r}")
+verdict(got["good"] is None and got["bad-idat"] is not None and got["bad-crc"] is not None, "F-RA-12 --verify: a cached PNG whose image data or a chunk's CRC is damaged is found; a whole one is not", f"damaged(): {got}")
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13b.out"; check $? "stream D's d13b predicates ran ($(grep -c '^PASS' "${DD}/d13b.out") PASS / $(grep -c '^FAIL' "${DD}/d13b.out") FAIL)" "stream D's d13b predicates printed no verdicts: $(tail -5 "${DD}/d13b.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13b.out"
+else
+    echo "    SKIP  the d13b predicates: section t did not run"
+fi
+
+# D13c. #308 1-raoffline gpt F-RA-20 (patch 015): a host the bounded lookup
+# has just resolved is answered from that answer when the connection looks it
+# up again, so a resolver that stops answering between the two cannot hold
+# the request; and claude F-RA-11 (patch 015): the upstream forwarder's half,
+# untested before -- a lookup that fails returns the 503 network_error at
+# once and opens no connection (its urlsplit is the module's own import,
+# proxy_service.py line 14 at the pin). Then the client's own network tests.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13c-cfg" PYTHONPATH="${CLIENT}" python3 -  > "${DD}/d13c.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 015 / F-RA-20: the connection's second lookup of a host just resolved.
+real = socket._socket.getaddrinfo
+calls = []
+def resolver(host, port, family=0, type=0, proto=0, flags=0):
+    calls.append((host, port))
+    if len(calls) == 1:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.7", 0))]
+    time.sleep(5)
+    raise OSError("the resolver stopped answering")
+socket._socket.getaddrinfo = resolver
+try:
+    ok, why = network.resolve_host_bounded("dns-test.invalid", seconds=1.0)
+    result = {}
+    def connect_lookup():
+        try:
+            result["answer"] = socket.getaddrinfo("dns-test.invalid", 443, 0, socket.SOCK_STREAM)
+        except Exception as exc:
+            result["error"] = repr(exc)
+    t0 = time.monotonic(); th = threading.Thread(target=connect_lookup, daemon=True); th.start(); th.join(2.0); took = time.monotonic() - t0
+    answer = result.get("answer") or []
+    verdict(ok and not th.is_alive() and any(a[4][:2] == ("192.0.2.7", 443) and a[1] == socket.SOCK_STREAM for a in answer),
+            "F-RA-20 patch 015: the connection's own lookup of a host the bounded lookup just resolved is answered at once from that answer (port 443), not from a resolver that has stopped",
+            f"bounded ok={ok} ({why}); second lookup {'still waiting' if th.is_alive() else result} after {took:.2f}s")
+finally:
+    socket._socket.getaddrinfo = real
+# 015 / claude F-RA-11: the forwarder with a lookup that fails.
+opened = []
+saved_urlopen = proxy_service.urllib.request.urlopen if hasattr(proxy_service, "urllib") else None
+import urllib.request
+saved_global_urlopen = urllib.request.urlopen
+urllib.request.urlopen = lambda *a, **k: opened.append(a) or (_ for _ in ()).throw(AssertionError("no connection may be opened"))
+def failing(host, port, family=0, type=0, proto=0, flags=0):
+    raise OSError("Temporary failure in name resolution")
+socket._socket.getaddrinfo = failing
+class Srv:
+    config_data = {"upstream_host": "https://forward-test.invalid"}
+try:
+    t0 = time.monotonic()
+    res = proxy_service.ProxyRuntimeServer.forward_to_upstream_result(Srv(), "GET", "/dorequest.php?r=login2&u=qa", "", {"User-Agent": "ra"})
+    took = time.monotonic() - t0
+    verdict(res[0] == "network_error" and res[1] == 503 and opened == [] and took < 2.0 and b"name lookup" in res[3],
+            "F-RA-11 patch 015: the forwarder with a failed lookup returns network_error 503 at once and opens no connection",
+            f"{res[:3]} after {took:.2f}s, opened {len(opened)}")
+except Exception as exc:
+    verdict(False, "F-RA-11 patch 015: the forwarder with a failed lookup returns network_error 503 at once and opens no connection", repr(exc))
+finally:
+    socket._socket.getaddrinfo = real; urllib.request.urlopen = saved_global_urlopen
+    network.reset_retroachievements_reachability_for_tests()
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13c.out"; check $? "stream D's d13c predicates ran ($(grep -c '^PASS' "${DD}/d13c.out") PASS / $(grep -c '^FAIL' "${DD}/d13c.out") FAIL)" "stream D's d13c predicates printed no verdicts: $(tail -5 "${DD}/d13c.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13c.out"
+# The patched client's own tests for patch 015's network half still pass
+# with the lookup's answer remembered.
+( cd "${T}/patched" && PYTHONPATH=. RAOFFLINEPROXY_CONFIG_DIR="${DD}/unittest-cfg" python3 -m unittest linux.tests.test_linux_network > "${DD}/unittest.out" 2>&1 ); DUT=$?
+[ "${DUT}" -eq 0 ]; check $? "the patched client's tests/test_linux_network.py pass ($(tail -n 3 "${DD}/unittest.out" | grep -o 'Ran [0-9]* tests\?' || echo '?'))" "the client's network tests: rc ${DUT}: $(grep -E '^(FAIL|ERROR):' "${DD}/unittest.out" | head -3 | tr '\n' '|') $(tail -n 3 "${DD}/unittest.out" | tr '\n' '|')"
+else
+    echo "    SKIP  the d13c predicates: section t did not run"
+fi
+
+# D14. #308 9-emulators claude F-EM-03 = gpt F-EM-03, claude F-EM-09 = gpt
+# F-EM-05: cheevos_armsx2.sh leaves secrets.ini with one [Achievements]
+# section holding one Token line, whatever it held before -- a second
+# [Achievements] header (the shape the pre-#170 script appended on a device
+# whose PCSX2.ini lacked the section), an empty file, no file -- and keeps
+# every other line; a second launch changes nothing. Run whole, with the
+# image's busybox for sed and awk (the device's), as section w runs it.
+src_of "projects/ROCKNIX/packages/emulators/standalone/armsx2-sa/scripts/cheevos_armsx2.sh" "${DD}/cheevos_armsx2.sh"
+DA="${DD}/armsx2"; DAI="${DA}/storage/.config/ARMSX2/inis"; mkdir -p "${DAI}" "${DA}/repo" "${DA}/shim"
+cp "${DD}/cheevos_armsx2.sh" "${DA}/repo/cheevos_armsx2.sh"
+DABB=(); DAPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then DABB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); DAPATH="/shim:/bbin:/usr/bin:/bin"; fi
+cat > "${DA}/profile" <<PEOF
+export PATH=${DAPATH}
+get_setting() {
+    case "\$1" in
+        global.retroachievements) echo 1 ;;
+        global.retroachievements.username) echo player ;;
+        global.retroachievements.token) echo TOKEN-NEW ;;
+        *) echo 0 ;;
+    esac
+}
+PEOF
+dar() { # one launch's script; rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${DABB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${DA}/profile" /etc/profile \
+        --bind "${DA}/storage" /storage --ro-bind "${DA}/shim" /shim --ro-bind "${DA}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        bash /repo/cheevos_armsx2.sh > "${DA}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+dasecrets() { printf "$1" > "${DAI}/secrets.ini"; }
+dashape() { # <name> <expected other lines, | separated>: one header, one Token, the others kept, a second launch a no-op
+    local want="$2" n_hdr n_tok other
+    n_hdr=$(grep -cFx '[Achievements]' "${DAI}/secrets.ini" 2>/dev/null); n_tok=$(grep -c '^Token *=' "${DAI}/secrets.ini" 2>/dev/null)
+    other="$(grep -v '^Token *=' "${DAI}/secrets.ini" 2>/dev/null | grep -vFx '[Achievements]' | grep -v '^$' | tr '\n' '|')"
+    cp "${DAI}/secrets.ini" "${DA}/first" 2>/dev/null; dar
+    [ "${n_hdr:-0}" -eq 1 ] && [ "${n_tok:-0}" -eq 1 ] && grep -qx 'Token = TOKEN-NEW' "${DAI}/secrets.ini" && [ "${other}" = "${want}" ] && cmp -s "${DA}/first" "${DAI}/secrets.ini" \
+        && awk '/^\[Achievements\]$/{a=1; next} /^\[/{a=0} /^Token *=/{exit !a} END{}' "${DAI}/secrets.ini"
+    check $? "#308 F-EM-03/05/09 cheevos_armsx2.sh, $1: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing" "#308 F-EM-03/05/09 cheevos_armsx2.sh, $1: rc ${RC}; secrets.ini: $( { tr '\n' '|' < "${DAI}/secrets.ini"; } 2>/dev/null || echo absent) (want the other lines '${want}')"
+}
+printf '[Achievements]\nEnabled = true\nUsername = player\n' > "${DAI}/PCSX2.ini"
+dasecrets '[Achievements]\nToken = old\n[Achievements]\nToken = old\n'; dar; dashape "two headers, a Token under each (claude's shape)" ""
+dasecrets '[Achievements]\nToken =\n[Achievements]\nToken = old\n'; dar; dashape "the seed's bare Token, then a second header (gpt's shape)" ""
+dasecrets '[Other]\nKey = 1\n[Achievements]\nToken = x\nFoo = bar\n[More]\nZ = 2\n[Achievements]\nToken = y\nBaz = 3\n'; dar; dashape "two sections apart, other sections and keys" "[Other]|Key = 1|Foo = bar|Baz = 3|[More]|Z = 2|"
+: > "${DAI}/secrets.ini"; dar; dashape "an empty file" ""
+rm -f "${DAI}/secrets.ini"; dar; dashape "no file" ""
+dasecrets '[Achievements]\nToken = old\n'; dar; dashape "the ordinary file" ""
+
+# D15. #308 9-emulators claude F-EM-04: cheevos_ppsspp.sh asks whether the
+# proxy is listening without netstat -- which no package of PPSSPP's declares,
+# and whose absence read as "nothing answers" -- by reading /proc/net/tcp and
+# tcp6 itself (bash and grep, both on the image), and says apart "nothing is
+# listening" and "couldn't tell". 0.0.0.0 and [::1] count as the loopback's.
+# Run whole, with the image's busybox for sed; the socket table is a fixture
+# (RAOFFLINEPROXY_PROC_NET, as for the ctl's `listening`).
+src_of "projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.sh" "${DD}/cheevos_ppsspp.sh"
+DP="${DD}/ppsspp"; DPS="${DP}/storage/.config/ppsspp/PSP/SYSTEM"; mkdir -p "${DPS}" "${DP}/repo" "${DP}/shim" "${DP}/procnet"
+cp "${DD}/cheevos_ppsspp.sh" "${DP}/repo/cheevos_ppsspp.sh"
+cat > "${DP}/profile" <<PEOF
+export PATH=$([ -n "${BB}" ] && echo /shim:/bbin:/usr/bin:/bin || echo /shim:/usr/bin:/bin)
+get_setting() {
+    case "\$1" in
+        global.retroachievements) echo 1 ;;
+        global.retroachievements.username) echo player ;;
+        global.retroachievements.token) echo TOKEN ;;
+        global.retroachievements.hardcore) echo 0 ;;
+        global.retroachievements.offlineproxy) echo 1 ;;
+        *) echo "" ;;
+    esac
+}
+PEOF
+dpp() { # one launch's script against the fixture socket table; rc in $RC, the log in ${DP}/log
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr $([ -n "${BB}" ] && echo "--ro-bind ${TMP}/bbin /bbin --ro-bind ${BB_HOST} ${BB}") \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${DP}/profile" /etc/profile \
+        --bind "${DP}/storage" /storage --ro-bind "${DP}/shim" /shim --ro-bind "${DP}/repo" /repo --ro-bind "${DP}/procnet" /procnet \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log --setenv RAOFFLINEPROXY_PROC_NET "${1:-/procnet}" \
+        bash -c 'bash /repo/cheevos_ppsspp.sh; rc=$?; cat /var/log/cheevos.log > /storage/cheevos.log 2>/dev/null; exit $rc' > "${DP}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+dppini() { printf '[General]\nX = 1\n[Achievements]\nAchievementsEnable = False\nAchievementsUserName = player\nAchievementsChallengeMode = False\nAchievementsHost = \n' > "${DPS}/ppsspp.ini"; rm -f "${DP}/storage/cheevos.log"; }
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: 127.0.0.1:8080 in LISTEN in the socket table routes PPSSPP to the proxy (no netstat)" "#308 claude F-EM-04: rc ${RC}; ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+printf '  sl  local_address                         remote_address                        st\n   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: [::1]:8080 in LISTEN (tcp6) counts too" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F91 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
+dppini; dpp
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: nothing on 8080 launches direct, and the log says nothing is listening" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+dppini; dpp /nonexistent
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q "couldn't tell whether" "${DP}/storage/cheevos.log" && ! grep -q 'nothing is listening' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: a socket table it cannot read launches direct and says it couldn't tell -- not that nothing answers" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+
+# D16. #308 1-raoffline claude F-RA-23 = gpt F-RA-24: the recipe declares the
+# packages that provide the tools its shipped scripts call
+# (packaging-and-patches.md, "A shipped script's tools are dependencies too"):
+# bash (the ctl's interpreter), busybox (flock, mkfifo, mktemp, stat, logger,
+# sed, awk, head, tail, date, sleep), coreutils (timeout: the image's is
+# coreutils', a file in /usr/bin, not a busybox link), grep (GNU grep; the
+# image's busybox has no grep applet) and systemd (systemctl).
+src_of "${PKG_REL:-projects/ROCKNIX/packages/network/raofflineproxy/package.mk}" "${DD}/package.mk"
+DDEPS=" $(sed -n 's/^PKG_DEPENDS_TARGET="\(.*\)"$/\1/p' "${DD}/package.mk" | head -n 1) "
+DMISS=""; for p in Python3 bash busybox coreutils grep systemd; do case "${DDEPS}" in *" ${p} "*) ;; *) DMISS="${DMISS} ${p}" ;; esac; done
+[ -z "${DMISS}" ]; check $? "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET names Python3, bash, busybox, coreutils, grep and systemd (${DDEPS# })" "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET is '${DDEPS# }', missing:${DMISS}"
+
+# D17. #308 1-raoffline gpt F-RA-10: a helper's budget bounds its blocking
+# work. The image helper waited in as_completed for a download to finish
+# before it could look at its deadline, and then for the running ones as the
+# pool closed: with downloads of five seconds and --seconds 1 it now returns
+# at its bound (D1's store and stand-in download, forty badges missing).
+# And the ctl's half: each helper the ctl runs is bounded at the process as
+# well as by its own --seconds -- the scan's and the top-up's image pass, the
+# `images` verb and the `refresh` verb run under `timeout` (the harness's shim
+# hands the budget to the child as FAKE_BUDGET).
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d17.out" 2>&1 <<'EOS'
+import os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+calls = work / "calls"; calls.write_text("")
+env = dict(os.environ, PYTHONPATH=f"{work / 'site'}:{client}", RAOFFLINEPROXY_CONFIG_DIR=str(work / "cfg"), HOME=str(work), D_CALLS=str(calls), D_EACH="5")
+t0 = time.monotonic()
+p = subprocess.Popen([sys.executable, helper, "--seconds", "1"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+try:
+    out, _ = p.communicate(timeout=30)
+except subprocess.TimeoutExpired:
+    p.kill(); out, _ = p.communicate()
+took = time.monotonic() - t0; out = out.decode(errors="replace")
+print(f"{'PASS' if p.returncode == 1 and took < 3.0 and '>>> why SOME_IMAGES_NOT_SAVED' in out else 'FAIL'} budget: --seconds 1 over five-second downloads -- exit {p.returncode} after {took:.2f}s")
+EOS
+grep -q '^PASS budget:' "${DD}/d17.out"; check $? "#308 gpt F-RA-10 cache-images: a pass of --seconds 1 returns at its bound with SOME_IMAGES_NOT_SAVED, not after the running downloads ($(sed -n 's/^PASS budget: //p' "${DD}/d17.out"))" "#308 gpt F-RA-10 cache-images: $(grep 'budget:' "${DD}/d17.out" || tail -3 "${DD}/d17.out" | tr '\n' '|') -- the deadline waited for the downloads"
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\n' > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+grep -q '^start [0-9.]* budget=[0-9][0-9]* --seconds [0-9][0-9]*' "${TR}/images-calls"; check $? "#308 gpt F-RA-10 ctl: the scan's image pass runs under a process bound ($(sed -n 's/^start [0-9.]* \(budget=[0-9]* --seconds [0-9]*\).*/\1/p' "${TR}/images-calls" | head -n 1))" "#308 gpt F-RA-10 ctl: the scan's image pass: $(tr '\n' '|' < "${TR}/images-calls" 2>/dev/null | cut -c1-160) -- no bound but the helper's own"
+rm -f "${TR}/images-calls"
+tctl images
+[ "${RC}" -eq 0 ] && grep -q '^start [0-9.]* budget=[0-9][0-9]* --seconds [0-9][0-9]*' "${TR}/images-calls"; check $? "#308 gpt F-RA-10 ctl: the images verb's helper runs under a process bound" "#308 gpt F-RA-10 ctl: images rc ${RC}: $(tr '\n' '|' < "${TR}/images-calls" 2>/dev/null | cut -c1-160)"
+cat > "${T}/repo/raofflineproxy-refresh" <<'EOS'
+#!/bin/bash
+echo "budget=${FAKE_BUDGET:-none} $*" > /run/refresh-calls
+EOS
+chmod +x "${T}/repo/raofflineproxy-refresh"; rm -f "${TR}/refresh-calls"
+tctl refresh --all
+[ "${RC}" -eq 0 ] && grep -q '^budget=[0-9][0-9]* --seconds [0-9][0-9]* --all$' "${TR}/refresh-calls"; check $? "#308 gpt F-RA-10 ctl: the refresh verb's helper runs under a process bound ($(cat "${TR}/refresh-calls" 2>/dev/null))" "#308 gpt F-RA-10 ctl: refresh rc ${RC}: $(cat "${TR}/refresh-calls" 2>/dev/null) -- no bound but the helper's own"
+rm -f "${TR}/images-mode" "${TR}/images-calls" "${TR}/refresh-calls" "${TR}/helper-plan"
+else
+    echo "    SKIP  #308 F-RA-10's ctl cases: section t did not run"
+fi
+
+# D18. #308 1-raoffline claude F-RA-07: the ctl's own reads of the proxy's
+# store -- pending, pending-ids, account and summary -- are run here against
+# a store the pinned client made (its Storage, at the commit package.mk
+# pins, patches applied), so a schema the client changes shows here as a
+# FAIL, not as cannot_tell on a device. The header names the pin it was last
+# read against, and D3 runs summary and pending-ids on the same kind of store.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.login("qa"), '{"Success":true,"User":"QA","Token":"planted","Score":1234,"SoftcoreScore":56}')
+s.upsert_pending_award({"achievementId": 4242, "queryString": "/dorequest.php?r=awardachievement&u=QA&a=4242&h=0", "requestBody": "", "userAgent": "ra", "queuedAt": 1789400000000})
+s.close()
+EOS
+tctl pending; DPR=${RC}; DPO="$(cat "${OUT}")"
+tctl pending-ids; DIR=${RC}; DIO="$(cat "${OUT}")"
+tctl account; DAR=${RC}; DAO="$(cat "${OUT}")"
+tctl summary; DSR=${RC}
+[ "${DPR}" -eq 0 ] && [ "${DPO}" = "1" ] && [ "${DIR}" -eq 0 ] && [ "${DIO}" = "4242 1789400000" ] && [ "${DAR}" -eq 0 ] && [ "${DAO}" = "score=1234 softcore=56" ] && [ "${DSR}" -eq 0 ] && ! grep -q 'planted' "${OUT}"; check $? "#308 claude F-RA-07: pending, pending-ids, account and summary read a store the pinned client's Storage wrote (1 / 4242 1789400000 / score=1234 softcore=56 / exit 0), the token never printed" "#308 claude F-RA-07: pending rc ${DPR} '${DPO}'; pending-ids rc ${DIR} '${DIO}'; account rc ${DAR} '${DAO}'; summary rc ${DSR} -- the ctl's SQL no longer fits the client's schema"
+src_of "${CTL_REL}" "${DD}/ctl-header"
+DPINHDR="$(sed -n '1,/^\. \/etc\/profile$/p' "${DD}/ctl-header" | grep -o 'package.mk pins ([0-9a-f]\{40\}' | head -n 1 | grep -o '[0-9a-f]\{40\}')"
+[ -n "${DPINHDR}" ] && [ "${DPINHDR}" = "${PIN}" ]; check $? "#308 claude F-RA-07 / gpt F-RA-28: the ctl's header names the pin package.mk pins (${PIN:0:10}) as the schema it was read against" "#308 F-RA-07/28: the header names '${DPINHDR:-nothing}', package.mk pins ${PIN}"
+else
+    echo "    SKIP  #308 F-RA-07's case: section t did not run"
+fi
+
+# D19. Follow-up to #307 PL-060 (the coordinator, 2026-09-28): a badge the
+# RetroAchievements image server does not have -- 404 or 410, a permanent
+# "not there" -- is recorded as absent, is not asked for again, and does not
+# fail the run; a transient failure (a timeout, a 5xx, a refused connection,
+# a short read) still fails it with SOME_IMAGES_NOT_SAVED and is tried again
+# next time. download_static_image says which, and logs the URL's outcome
+# class with the HTTP status, where it used to swallow the reason (patch
+# 016). First on the patched client; then a scan through the ctl with the
+# real image helper beside it and the image server answered from a plan
+# (/run/image-plan, read by a hook in section t's sitecustomize).
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d19-cfg" PYTHONPATH="${CLIENT}" python3 - > "${DD}/d19.out" 2>&1 <<'EOS'
+import io, logging, os, struct, urllib.error, zlib
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+from raofflineproxy import image_cache
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+log = io.StringIO(); handler = logging.StreamHandler(log)
+logger = logging.getLogger("raofflineproxy"); logger.addHandler(handler); logger.setLevel(logging.INFO)
+def answer(kind):
+    def fetch(url, headers, timeout=10.0, _redirects=3):
+        if kind.isdigit():
+            raise urllib.error.HTTPError(url, int(kind), "status", {}, None)
+        if kind == "timeout":
+            raise TimeoutError("timed out")
+        return ({"Content-Length": str(len(PNG))}, PNG)
+    return fetch
+got = {}
+saved = image_cache.fetch_static_asset
+try:
+    for kind in ("404", "410", "503", "timeout", "ok"):
+        image_cache.fetch_static_asset = answer(kind)
+        got[kind] = image_cache.download_static_image(f"https://media.retroachievements.org/Badge/d19-{kind}.png", f"/Badge/d19-{kind}.png", "ua")
+finally:
+    image_cache.fetch_static_asset = saved
+text = log.getvalue()
+ok = got == {"404": "absent", "410": "absent", "503": "transient", "timeout": "transient", "ok": "cached"}
+print(("PASS" if ok else "FAIL") + f" outcome: {got}")
+ok = all(s in text for s in ("absent", "HTTP 404", "HTTP 410", "HTTP 503", "https://media.retroachievements.org/Badge/d19-404.png", "transient"))
+print(("PASS" if ok else "FAIL") + " logged: " + " | ".join(l for l in text.splitlines() if "d19-" in l)[:400])
+EOS
+grep -q '^PASS outcome:' "${DD}/d19.out"; check $? "PL-060 follow-up, patch 016: download_static_image says what became of an image -- 404 and 410 absent, a 503 and a timeout transient, a whole PNG cached" "PL-060 follow-up, patch 016: $(grep 'outcome:' "${DD}/d19.out" || tail -3 "${DD}/d19.out" | tr '\n' '|') -- the reason was swallowed"
+grep -q '^PASS logged:' "${DD}/d19.out"; check $? "PL-060 follow-up, patch 016: the outcome class, the HTTP status and the URL are logged" "PL-060 follow-up, patch 016: $(grep 'logged:' "${DD}/d19.out" | cut -c1-300 || echo 'no verdict')"
+# Through the ctl: the real helper beside it, the image server a plan.
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-images" "${T}/repo/raofflineproxy-cache-images"; chmod +x "${T}/repo/raofflineproxy-cache-images"
+grep -q 'image-plan' "${T}/pypath/sitecustomize.py" || cat >> "${T}/pypath/sitecustomize.py" <<'EOS'
+if os.path.exists("/run/image-plan"):
+    import json as _json, struct as _struct, urllib.error as _ue, zlib as _zlib
+    import raofflineproxy.auth as _auth
+    import raofflineproxy.image_cache as _ic
+    _auth.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
+    def _chunk(t, d): return _struct.pack(">I", len(d)) + t + d + _struct.pack(">I", _zlib.crc32(t + d) & 0xFFFFFFFF)
+    _PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", _struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", _zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+    def _fetch(url, headers, timeout=10.0, _redirects=3):
+        path = "/" + url.split("://", 1)[-1].split("/", 1)[-1]
+        with open("/run/image-fetches", "a") as f:
+            f.write(path + "\n")
+        what = _json.load(open("/run/image-plan")).get(path, "ok")
+        if what.isdigit():
+            raise _ue.HTTPError(url, int(what), "status", {}, None)
+        if what == "timeout":
+            raise TimeoutError("timed out")
+        return ({"Content-Length": str(len(_PNG))}, _PNG)
+    _ic.fetch_static_asset = _fetch
+EOS
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+badges = [{"ID": 9300 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9300 + i}.png"} for i in (1, 2, 3, 4)]
+s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Achievements": badges}}), source_rom_path="/nes/b.nes")
+s.close()
+EOS
+DSTATIC="${TPD}/image_cache/static/Badge"
+# 9301 404, 9303 410, 9302 and 9304 served.
+echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -q '>>> why' "${OUT}" && [ -s "${DSTATIC}/9302.png" ] && [ ! -e "${DSTATIC}/9301.png" ]; check $? "PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a badge the server does not have failed the scan"
+: > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -qx '/Badge/9301.png' "${TR}/image-fetches" && ! grep -qx '/Badge/9303.png' "${TR}/image-fetches"; check $? "PL-060 follow-up: the next scan does not ask for the absent badges again (rc ${RC})" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches") -- an absent badge was asked for at every pass"
+# A timeout and a 503: a failure of the run, not recorded as absent, asked again.
+rm -f "${DSTATIC}/9302.png" "${DSTATIC}/9304.png"
+echo '{"/Badge/9301.png": "404", "/Badge/9302.png": "timeout", "/Badge/9303.png": "410", "/Badge/9304.png": "503"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060 follow-up: a badge that timed out and one the server answered 503 end the scan COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED)" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+: > "${TR}/image-fetches"; echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -qx '/Badge/9302.png' "${TR}/image-fetches" && grep -qx '/Badge/9304.png' "${TR}/image-fetches" && [ -s "${DSTATIC}/9302.png" ] && [ -s "${DSTATIC}/9304.png" ]; check $? "PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches")"
+rm -f "${TR}/image-plan" "${TR}/image-fetches"; dfake_images
+else
+    echo "    SKIP  the PL-060 follow-up's cases: section t did not run"
+fi
+
+# D20. #308 1-raoffline claude F-RA-17's part in this file: the usage line
+# names every verb the ctl answers -- summary was missing from it.
+if [ "${DT_OK}" -eq 1 ]; then
+tctl no-such-verb
+[ "${RC}" -eq 2 ] && grep -q '|summary|' "${ERR}"; check $? "#308 claude F-RA-17: the usage line names summary with the other verbs" "#308 claude F-RA-17: rc ${RC}; usage: $(head -c 300 "${ERR}")"
+fi
+

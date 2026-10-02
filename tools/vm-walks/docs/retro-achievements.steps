@@ -1,0 +1,69 @@
+# play/retro-achievements.md: RETROACHIEVEMENTS SETTINGS and its OFFLINE
+# ACHIEVEMENTS (BETA) page. GAME SETTINGS is eleven presses up from the MAIN
+# MENU's top row; on it: UPDATE GAMELISTS, MOONLIGHT GAME STREAMING, then the
+# ACCOUNTS heading, then RETROACHIEVEMENTS SETTINGS -- two presses down, not
+# three (two exploratory walks counted the heading, 2026-09-29). On the
+# settings page: RETROACHIEVEMENTS, USERNAME, PASSWORD, WEB API KEY (fork
+# builds), then OPTIONS: HARDCORE MODE, OFFLINE ACHIEVEMENTS (BETA) -- five
+# presses down. The settings frame shows the account's name on its USERNAME
+# row: tools/png-blackout before it is filed.
+# The MAIN MENU is reached from its bottom, so the walk is the same whether
+# the guest is signed in to RetroAchievements (the menu then opens on that
+# row, above GAME SETTINGS) or not: up from the top row lands on BACK, the
+# next on QUIT, and the rows above QUIT never move. (Until EmulationStation
+# f1ae6bc25 the first press landed on an empty tab strip, #325, and every
+# count here was one higher.)
+key ret
+wait-for-change 30 1
+settle
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+key up
+wait-for-change 30 1
+settle
+key x
+wait-for-change 30 1
+settle
+key down
+wait-for-change 30 1
+key down
+wait-for-change 30 1
+settle
+key x
+wait-for-change 30 1
+settle
+shot retroachievements-settings
+key down
+wait-for-change 30 1
+key down
+wait-for-change 30 1
+key down
+wait-for-change 30 1
+key down
+wait-for-change 30 1
+key down
+wait-for-change 30 1
+settle
+key x
+wait-for-change 30 1
+settle
+shot offline-achievements
+dismiss-dialogs

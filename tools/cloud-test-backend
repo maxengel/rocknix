@@ -817,6 +817,21 @@ EOF
     echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/BACKUPS"
     ;;
 
+  shipped-default)
+    # The folder cloud_sync.conf.defaults ships for DEFAULT_<KEY> (SAVES_REMOTE,
+    # SETTINGS_REMOTE, CONTENT_REMOTE), with its leading slash. The fixtures
+    # below and vm-qa take the folder names from here: a default copied into
+    # a fixture as a literal is a second copy of the default, and when the
+    # fork's folder moved from /ROCKNIX to /Rasteratops (D-CLOUD-156) the
+    # literals stayed, run 96 read PASS against a cloud laid out by the
+    # previous build's names, and the frames carried a TIDY UP row for it
+    # (2026-10-01, blindspot 71). Exits 2 when the key has no default.
+    defaults="$(dirname "$(readlink -f "$0")")/../projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf.defaults"
+    v=$(sed -n "s|^DEFAULT_${2:-}=\"\([^\"]*\)\"$|\1|p" "${defaults}" 2>/dev/null | head -1)
+    [ -n "${v}" ] || { echo "shipped-default: no DEFAULT_${2:-} in ${defaults}" >&2; exit 2; }
+    echo "${v}"
+    ;;
+
   content-remote)
     # Where cloud_content_backup/restore put whole content directories.
     # Same bucket-vs-folder split as syncpath.
@@ -825,7 +840,7 @@ EOF
 
   seed-content)
     # The content-tier fixture (D-CLOUD-048), at the endpoint. Under <root>
-    # (default ROCKNIX/Content, the shipped CONTENT_REMOTE): an SNES folder
+    # (default the shipped CONTENT_REMOTE, read from cloud_sync.conf.defaults): an SNES folder
     # with a ROM the device also has, a ROM only the cloud has, a gamelist
     # and a scraped image; an NES folder only the cloud has; a BIOS file.
     # With seed-device on the guest, every verdict the systems pages can
@@ -834,7 +849,8 @@ EOF
     # opened #76 -- scraped files on one side only, which must not count
     # unless the switch is on. Sizes are distinct so a total says which
     # files a side holds. Random bytes, so nothing here is a real ROM.
-    root="${2:-ROCKNIX/Content}"
+    root="${2:-}"
+    [ -n "${root}" ] || { root=$("$0" shipped-default CONTENT_REMOTE) || exit 2; root="${root#/}"; }
     fx=$(mktemp -d)
     mkdir -p "${fx}/ROMs/snes/images" "${fx}/ROMs/nes" "${fx}/BIOS"
     head -c 300000 /dev/urandom > "${fx}/ROMs/snes/shared.sfc"
@@ -857,7 +873,8 @@ EOF
     # counts as present on both sides), one only the device has, scraped
     # images/ and videos/ only the device has, and a GB folder the cloud
     # has never seen.
-    root="${2:-ROCKNIX/Content}"
+    root="${2:-}"
+    [ -n "${root}" ] || { root=$("$0" shipped-default CONTENT_REMOTE) || exit 2; root="${root#/}"; }
     # CONTENT_REMOTE is a path the device gives rclone, so it carries the
     # bucket, share or absolute root this backend needs; seed-content's
     # <root> is endpoint-relative and does not.

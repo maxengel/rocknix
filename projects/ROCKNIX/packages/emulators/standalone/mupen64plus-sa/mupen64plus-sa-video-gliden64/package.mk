@@ -44,12 +44,15 @@ configure_target() {
 
   case ${TARGET_ARCH} in
     arm|aarch64) PKG_MAKE_OPTS_TARGET+="-DNOHQ=On -DCRC_ARMV8=On -DEGL=On -DNEON_OPT=On" ;;
-    x86_64)
-      # The fork's: disable the GLideNHQ hi-res texture module (GCC-15 build
-      # issues), as ARM does. GENERIC_X64 is ours, so upstream has no branch.
-      PKG_MAKE_OPTS_TARGET+="-DNOHQ=On"
-    ;;
   esac
+
+  # GENERIC_X64, the fork's QA device, builds without the GLideNHQ hi-res
+  # texture module, as it always has (9d13fbcbfa: it failed under GCC 15 for
+  # want of <cstdint>, which post_unpack's include now supplies). Upstream's
+  # x86_64 device, AMD64, keeps the module.
+  if [ "${DEVICE}" = "GENERIC_X64" ]; then
+    PKG_MAKE_OPTS_TARGET+=" -DNOHQ=On"
+  fi
 
   export BINUTILS="$(get_build_dir binutils)/.${TARGET_NAME}"
   export APIDIR=$(get_build_dir mupen64plus-sa-core)/src/api

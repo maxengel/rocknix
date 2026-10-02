@@ -7,11 +7,11 @@ paths:
 <!--
 PROVENANCE (owner-directed + adopted reference):
   owner decision: 2026-07-13 — rubber-duck is prohibited; adversarial work routes to council.
-  reference: PossibilityTruthy/possibility-space@6e09be974fba633996a4266e12c50cfcafe2cd23
+  reference: the source estate, commit 6e09be974fba633996a4266e12c50cfcafe2cd23
   sources:
     .claude/skills/council/references/member-roster.md
     .claude/skills/council/references/model-verification.md
-    tools/council/council-invoke.ts
+    scripts/council-invoke.ts
   adapted: routing rule only. scaffold's verified council substrate is tracked by #136;
   until it lands, unavailable council work fails closed rather than using a substitute.
 -->
@@ -22,7 +22,11 @@ PROVENANCE (owner-directed + adopted reference):
 
 1. **Never invoke the `rubber-duck` agent.** This includes the Task-tool
    `rubber-duck` type and any renamed one-model "challenge my work" substitute.
-2. **Use council for genuinely adversarial work.** Independent challenge passes,
+2. **Use council for genuinely adversarial work.** The explicitly scoped
+   [three-model preliminary review](../../.claude/skills/council/references/review-formats.md)
+   is limited to advisory readiness questions before authoring. It cannot decide
+   contested claims, supply an approval, or replace a required council gate.
+   Independent adversarial challenge passes,
    competing interpretations, pre-mortem-style critique, and structured disagreement
    belong to the verified multi-model `council` process.
 3. **Do not build a pseudo-council.** Multiple ordinary subagents, one reviewer asked
@@ -30,9 +34,9 @@ PROVENANCE (owner-directed + adopted reference):
 4. **Fail closed when council is unavailable.** The session-skill substrate ships in
    the corpus as of #260 (2026-08-02): the `council` / `council-research` /
    `begin-exploration` skills, the `council-member-*` agent definitions, and the
-   Facilitator (`tools/council/council-invoke.ts`, OpenRouter route). Council is AVAILABLE
-   wherever that corpus is seeded and `OPENROUTER_API_KEY` is configured — run it via
-   the `council` skill. Where the key is missing or a seat fails verification, pause
+   Facilitator (`scripts/council-invoke.ts`, OpenRouter route). The tooling is installed where that corpus is seeded; actual
+   readiness requires fresh verification of all five members and request capacity
+   through the `council` skill. Where the key is missing or a seat fails verification, pause
    and surface the missing prerequisite. Do not silently fall back to rubber-duck or
    another single-model critic. (#136 remains the CI/workflow-side adoption tracker.)
 
@@ -47,20 +51,22 @@ skill family ships; #136 extends the same floor to CI review agents):
 
 | Seat | Required model | Effort | Context | Routing |
 | --- | --- | --- | ---: | --- |
-| Claude | `anthropic/claude-fable-5.1` | `xhigh` | 1,000,000 | One pinned slug; no cross-model fallback |
-| GPT | `openai/gpt-6-astra` | `max` | 1,050,000 | OpenRouter provider pinned to OpenAI; `allow_fallbacks: false` |
+| Claude | `anthropic/claude-fable-5.1` | `xhigh` | 1,000,000 | One pinned slug; no cross-model fallback. `xhigh`, not `max`: on bounded corpora `max` over-thinks into empty envelopes |
+| GPT | `openai/gpt-6-astra` | `max` | 1,050,000 | OpenRouter provider pinned to OpenAI; `allow_fallbacks: false`. `max` is the operator's 2026-09-09 direction; `openai/gpt-6-astra-pro` is the recorded escalation |
 
-- **Deprecated:** Claude Fable 5, Claude Opus 5, Claude Opus 4.8, and GPT-5.5 must not occupy these seats (Fable 5 retired from the Claude seat 2026-09-03; Opus 5 is the coordination model, not a member). Kimi K2.6 must not occupy the Kimi seat (K3 since 2026-08-27).
+- **Deprecated:** Claude Opus 4.8 and GPT-5.5 must not occupy these seats; Claude Fable 5 and
+  GPT-5.6 Sol retired from them on 2026-09-09 (scaffold#562).
 - Each invocation must capture the served model from the provider response and pass the
   council's semantic identity gate before its output becomes input to the next stage.
-- A missing or mismatched seat shrinks or halts the roster per the council contract; it
-  never substitutes another model into that seat.
+- All five seats are required. A missing or mismatched seat halts advancement for
+  diagnosis and repair per the council contract; never shrink the roster or silently
+  substitute a reserve. See the canonical council roster reference.
 - Council stages remain serial-gated even when member calls within a stage run in
   parallel. The active roster is fixed for the run.
 
 ## Seats write to different lengths, and length is not quality
 
-The gemini and mistral seats return **substantially shorter artifacts than the
+The gemini and mistral seats (Mistral held the fifth seat until Muse Spark 1.3 replaced it, scaffold#915, 2026-09-27) returned **substantially shorter artifacts than the
 other three, every time**. Maintainer, 2026-09-05: *"Gemini and Mistral will
 always come back with thinner plans."* On the conflict-resolution run their
 round-2 plans were a few pages against roughly seventy kilobytes each from

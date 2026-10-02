@@ -1,0 +1,18 @@
+19:42:46 === B-pl064 on guest d, BUILD_ID="8196071ff52b59eaea0058f35faf6b9db4b5a43d"
+    sizes: 3000 cut / 5360 whole
+    0
+    system.cfg
+    system.cfg.backup.qa307
+    system.cfg.qa307orig
+    system.cfg.tmp
+    tz
+19:42:46 power-cut-shaped reboot: sync, then sysrq b (no shutdown-time backup, no interface save on the way down)
+19:43:02   PASS  the guest came back on a new boot (ssh answered: the settings that turn sshd on survived)
+    [    2.003412] ROCKNIX chksysconfig[356]: system.cfg was cut and had no good copy; the whole one a write left beside it (system.cfg.tmp) was put in place
+19:43:02   PASS  the boot said the whole system.cfg.tmp was put in place
+19:43:02   PASS  system.cfg is the whole copy, byte for byte (md5 185c5c7cf078fb1a8c8908f54de7c49b, want 185c5c7cf078fb1a8c8908f54de7c49b) -- not the image defaults
+19:43:02   PASS  no system.cfg.tmp is left beside it
+19:43:02   PASS  get_setting reads the player's settings (system.hostname present)
+    after: -rw-r--r--    1 root     root          5360 Sep 28 15:42 system.cfg
+    after: -rw-r--r--    1 root     root          5360 Sep 28 15:42 system.cfg.backup
+19:43:02 === done: 5 PASS, 0 FAIL

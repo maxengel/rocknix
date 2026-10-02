@@ -53,8 +53,8 @@ RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 
 # by the rclone() wrapper below; the ceiling is enforced by timeout. The two
 # are RCLONE_SYNC_NET_OPTS and SYNC_CEILING_SECONDS in cloud_sync.conf, and
 # these are the same values for a config the helper has not reached.
-RCLONE_SYNC_NET_OPTS_FALLBACK="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"
-SYNC_CEILING_SECONDS_FALLBACK=20
+RCLONE_SYNC_NET_OPTS_FALLBACK="--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"
+SYNC_CEILING_SECONDS_FALLBACK=90
 RCLONE_NET_OPTS_ARRAY=()
 
 # Non-interactive support for hooks and the ES menu:
@@ -179,6 +179,7 @@ DELIBERATE_CEILING_GRACE=6
 DELIBERATE_CEILING_SECONDS=36
 CEILING_DIR_ROOT=/var/run
 RCLONE_CHILD=""
+RCLONE_MOVED=0
 
 # Is this child still running? kill -0 says yes of one that has exited and
 # not been waited for, so the state in /proc is read: Z is done. The comm
@@ -190,8 +191,12 @@ child_running() {
 }
 
 # The furthest rclone's stats block in the tail of a trace has got: bytes
-# transferred, checks done, files transferred, files deleted -- four
-# integers on one line. The bytes line is the Transferred: with a unit in
+# transferred, checks done, files transferred, files deleted, entries
+# listed -- five integers on one line. The listed count is the Checks line's
+# "Listed N" (#308, the seats' claude F-CS-13): a first backup against a
+# folder of tens of thousands of files lists for longer than the ceiling
+# before its first check completes, and a count that only read checks
+# ended that run as a stall. The bytes line is the Transferred: with a unit in
 # it; the one without is the file count. A block's last line is glued to
 # the next block's Transferred: (the rule's "Progress output" section),
 # which the sed unglues. Rates, ETAs, percentages and the elapsed time are
@@ -211,9 +216,10 @@ progress_mark() {
             if (n >= 2) { b = w[1] * unit(w[2]); if (b > bytes) bytes = b }
             else if (n == 1 && w[1] ~ /^[0-9]+$/ && w[1] + 0 > files) files = w[1] + 0
         }
-        /^Checks:/  { s = $0; sub(/^Checks:[ \t]*/, "", s);  sub(/[^0-9].*$/, "", s); if (s + 0 > checks)  checks  = s + 0 }
+        /^Checks:/  { s = $0; sub(/^Checks:[ \t]*/, "", s);  sub(/[^0-9].*$/, "", s); if (s + 0 > checks)  checks  = s + 0
+                      if ($0 ~ /Listed [0-9]/) { l = $0; sub(/^.*Listed /, "", l); sub(/[^0-9].*$/, "", l); if (l + 0 > listed) listed = l + 0 } }
         /^Deleted:/ { s = $0; sub(/^Deleted:[ \t]*/, "", s); sub(/[^0-9].*$/, "", s); if (s + 0 > deleted) deleted = s + 0 }
-        END { printf "%d %d %d %d\n", bytes, checks, files, deleted }'
+        END { printf "%d %d %d %d %d\n", bytes, checks, files, deleted, listed }'
 }
 
 # Did any count in <mark> exceed <high water>? Prints the new high water --
@@ -221,8 +227,8 @@ progress_mark() {
 # that starts over) never lets an old level read as new progress -- and
 # returns 0 when something grew.
 advance_mark() {
-    local a=($1) b=(${2:-0 0 0 0}) i grew=1
-    for i in 0 1 2 3; do
+    local a=($1) b=(${2:-0 0 0 0 0}) i grew=1
+    for i in 0 1 2 3 4; do
         if [ "${a[$i]:-0}" -gt "${b[$i]:-0}" ] 2>/dev/null; then
             b[$i]="${a[$i]}"
             grew=0
@@ -244,7 +250,7 @@ advance_mark() {
 # printed afterwards overtakes rclone's last block.
 bounded_rclone() {
     local dir="${CEILING_DIR_ROOT}/cloud_sync.${$}.${RANDOM}" fifo trace pid tee_pid rc
-    local mark high="0 0 0 0" new since now ticks=0 ended=0 n progress_verb=0
+    local mark high="0 0 0 0 0" new since now ticks=0 ended=0 n progress_verb=0
     if ! mkdir -p "${dir}" 2>/dev/null || ! mkfifo "${dir}/fifo" 2>/dev/null; then
         # Nowhere to trace through. On a device /var/run is tmpfs and this
         # does not happen; when it does, the call runs as it did before the
@@ -319,6 +325,11 @@ bounded_rclone() {
     if [ "${progress_verb}" -eq 1 ] && [ -s "${trace}" ] && [ -n "$(tail -c1 "${trace}")" ]; then
         printf '\n'
     fi
+    # Whether this call moved anything -- a file transferred or deleted --
+    # for the stamp of a run the network later ends (#308 claude F-CS-24).
+    local moved_bytes moved_checks moved_files moved_deleted moved_listed
+    read -r moved_bytes moved_checks moved_files moved_deleted moved_listed <<< "$(progress_mark "${trace}")"
+    { [ "${moved_files:-0}" -gt 0 ] || [ "${moved_deleted:-0}" -gt 0 ]; } 2>/dev/null && RCLONE_MOVED=1
     rm -rf "${dir}" 2>/dev/null
     if [ "${ended}" -eq 1 ]; then
         log_message "rclone $1 made no progress for ${DELIBERATE_CEILING_SECONDS}s and was ended (it returned ${rc}); reporting 124" "false" "WARN"
@@ -327,12 +338,40 @@ bounded_rclone() {
     return "${rc}"
 }
 
+# Did rclone log moving a file -- "<path>: Copied (...)", "Moved (...)",
+# "Deleted" -- since <offset> into LOG_FILE, or in <file> (its stderr, when
+# the options carry no --log-file)? An automatic run's rclone runs under
+# timeout, not the stall ceiling, so it has no trace for progress_mark to
+# read; what it logs is how RCLONE_MOVED is known for it (the audit of the
+# fixes, claude G-A-01: the game-exit sync stamped a bare 69, SKIPPED, over
+# saves that went up).
+logged_moved() { # <offset into LOG_FILE> [file]
+    local now
+    {
+        now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) && [ "${now}" -gt "$1" ] 2>/dev/null \
+            && tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null
+        [ -n "${2:-}" ] && cat "$2" 2>/dev/null
+    } | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
+
 rclone() {
     if [ "${AUTOMATIC}" -eq 1 ]; then
         if [ "${SYNC_DEADLINE}" -gt 0 ]; then
             local left=$(( SYNC_DEADLINE - $(date +%s) ))
-            [ "${left}" -ge 1 ] || left=1
-            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+            # Past the ceiling nothing more is started (#308 gpt F-CS-34): each
+            # call used to be given a second more and three to die in, so a
+            # run that met its ceiling went on for as many seconds again as it
+            # had calls left -- the probe that words the failure, the tidy.
+            # The call's answer is the ceiling's own, 124.
+            if [ "${left}" -lt 1 ]; then
+                log_message "rclone $1 not started: the automatic ceiling had passed" "false"
+                return 124
+            fi
+            local log0 rc
+            log0=$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)
+            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"; rc=$?
+            logged_moved "${log0}" && RCLONE_MOVED=1
+            return "${rc}"
         else
             command rclone "$@"
         fi
@@ -442,6 +481,59 @@ first_remote() {
     else
         rclone listremotes 2>/dev/null | head -1
     fi
+}
+
+# Does the remote compare files by size alone? rclone decides equality by
+# size, then modtime, then hash. Plain WebDAV supports neither modification
+# times nor hashes; rclone supports both only on Fastmail Files, ownCloud
+# (and its Infinite Scale), Nextcloud and its own serve (rclone.org/webdav,
+# "Modification times and hashes"; the vendor names from `rclone help
+# backend webdav`). On every other WebDAV vendor -- SharePoint, `other`,
+# none -- the modtime is "not supported" and never consulted, so two files
+# of one size are equal to it whatever their bytes: a battery save, the
+# same size every time it is written, never moved again after its first
+# upload (#315, D-CLOUD-153; measured on 8196071ff5, `Sizes identical` at
+# -vv, `backend features` Precision 3153600000000000000, Hashes []). A
+# crypt or alias remote over such a WebDAV inherits it, so one hop through
+# its `remote =` is followed (audit of the fix, F-SS-04). Read from the
+# config file, never by starting rclone (a second on a handheld); the
+# section is matched as a string, never as a pattern (a `.` in a name is
+# not a wildcard, F-SS-03/05). The answer is "no" for a remote this cannot
+# read, so every other remote keeps its passes as they were; over-detecting
+# is harmless, since the flag it enables is what rclone does with real
+# modtimes anyway.
+# RCLONE_CONF_FILE: the harness points it at a fixture (tools/last-good-scripts-test);
+# RCLONE_CONFIG is rclone's own override, honoured the same way.
+remote_compares_by_size() {
+    local remote="${1%:}" conf="${RCLONE_CONF_FILE:-${RCLONE_CONFIG:-/storage/.config/rclone/rclone.conf}}" type vendor inner hop
+    [ -r "${conf}" ] || return 1
+    for hop in 1 2 3; do
+        [ -n "${remote}" ] || return 1
+        type=$(_rclone_conf_key "${conf}" "${remote}" type)
+        case "${type}" in
+            webdav)
+                vendor=$(_rclone_conf_key "${conf}" "${remote}" vendor)
+                case "${vendor}" in
+                    nextcloud|owncloud|infinitescale|fastmail|rclone) return 1 ;;
+                    *) return 0 ;;
+                esac ;;
+            crypt|alias)
+                inner=$(_rclone_conf_key "${conf}" "${remote}" remote)
+                remote="${inner%%:*}"; [ "${remote}" != "${inner}" ] || return 1 ;;
+            *) return 1 ;;
+        esac
+    done
+    return 1
+}
+# _rclone_conf_key <conf> <section> <key>: the key's first value in that
+# section, the section name compared as a string.
+_rclone_conf_key() {
+    awk -v want="[$2]" -v key="$3" '
+        /^\[/ { insec = ($0 == want); next }
+        insec && index($0, key) == 1 {
+            rest = substr($0, length(key) + 1); sub(/^[ \t]*=[ \t]*/, "", rest)
+            if (rest != substr($0, length(key) + 1)) { sub(/[ \t]+$/, "", rest); print rest; exit }
+        }' "$1" 2>/dev/null
 }
 
 # Exit EXIT_NO_NETWORK (69) means "skipped: no network". Answered locally,
@@ -642,16 +734,50 @@ record_last_run() {
         0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
         *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
     esac
+    # SKIPPED means nothing was touched (#308 claude F-CS-24): a run the
+    # network ended after a transfer of this run had moved a file keeps its
+    # 69 and adds the gaps token and a why, which the rows read as COULDN'T
+    # FINISH. Known for the deliberate runs from the stall ceiling's trace,
+    # and for the automatic ones from what their rclone logs (logged_moved).
+    if [ "${exit_code}" = "${EXIT_NO_NETWORK}" ] && [ "${RCLONE_MOVED}" -eq 1 ]; then
+        why=" gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    fi
     write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
 }
 
-# Is this settings archive whole? tar lists every member or fails. busybox
-# unzip has no -t, so for a zip the listing is the test (a truncated zip has
-# no central directory to list); -t is tried first for an unzip that has it.
+# Is this settings archive whole? tar lists every member or fails. For a zip,
+# an unzip that can test its members is asked to, and its "no" stands (audit
+# #307 PL-070): the check was `unzip -t || unzip -l`, so a zip whose central
+# directory lists but whose member's bytes are damaged failed -t and then
+# passed -l, and was sent as this device's newest. The image's busybox unzip
+# has -t: it inflates every member, so a damaged compressed stream fails it
+# (it checks no CRC, so a STORED member's bytes are beyond it -- measured on
+# 1.36.1; the settings archives are tar.gz now, and older zips deflated).
+# Only an unzip that does not know the option falls back to a listing,
+# which still catches a zip cut short (no central directory to list).
+# Whether it knows the option is asked once: one that does not says so
+# before it opens anything.
+UNZIP_CAN_TEST=""
+unzip_can_test() {
+    if [ -z "${UNZIP_CAN_TEST}" ]; then
+        if unzip -t /nonexistent-cloud-backup-probe.zip 2>&1 \
+            | grep -qiE 'invalid option|unrecognized option|illegal option|unknown option'; then
+            UNZIP_CAN_TEST=0
+        else
+            UNZIP_CAN_TEST=1
+        fi
+    fi
+    [ "${UNZIP_CAN_TEST}" = 1 ]
+}
 archive_whole() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
-        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+        *)
+            if unzip_can_test; then
+                unzip -t "${1}" >/dev/null 2>&1
+            else
+                unzip -l "${1}" >/dev/null 2>&1
+            fi ;;
     esac
 }
 
@@ -675,6 +801,43 @@ say_why() {
 # The summary's word for a phase (D-UI-028): COMPLETED, or COULDN'T FINISH.
 # rclone's 9 (nothing needed moving) is a completion. SUCCESS and COMPLETED
 # WITH ERRORS -- a partial success reported as errors -- retire.
+# Whether the cloud is bucket-based (S3 and compatibles, GCS, Swift, B2), and
+# on a bucket whether a folder exists: its parent lists it. cloud_restore's
+# two helpers, the same rule here so the two scripts never disagree about
+# whether a saves folder is there (#141).
+BUCKET_BASED=""
+bucket_based() {
+    if [ -z "${BUCKET_BASED}" ]; then
+        if rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true'; then
+            BUCKET_BASED=1
+        else
+            BUCKET_BASED=0
+        fi
+    fi
+    [ "${BUCKET_BASED}" = "1" ]
+}
+bucket_dir_listed() {
+    local path="${1%/}" parent name
+    name="${path##*/}"
+    [ -n "${name}" ] || return 0
+    parent="${path%/*}"
+    rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qx "${name}/"
+}
+
+# Whether the saves setting is a default this project once shipped
+# (/GAMES, /ROCKNIX/Saves), from cloud_migrate_layout's own list: a string
+# test, no network. Names compared as written.
+superseded_saves_setting() {
+    local tool s want="${SAVES_REMOTE%/}"
+    tool="$(dirname "$(readlink -f "$0")")/cloud_migrate_layout"
+    [ -x "${tool}" ] || tool=/usr/bin/cloud_migrate_layout
+    [ -x "${tool}" ] || return 1
+    while IFS= read -r s; do
+        [ -n "${s}" ] && [ "${s%/}" = "${want}" ] && return 0
+    done < <("${tool}" --superseded 2>/dev/null)
+    return 1
+}
+
 outcome_word() {
     case "$1" in
         0|9) echo "COMPLETED" ;;
@@ -727,6 +890,10 @@ idle_timeout_seconds() {
 # what; this is the answer for a reader that takes the last line --
 # tools/cloud-round-trip's vocabulary gate does, and "Settings backup:
 # COMPLETED" was not a sentence it accepts (#153, D-CLOUD-126).
+# A saves folder at the cloud's root keeps no record of the cloud saves a
+# backup replaces (G-A-09); a run that completed says so after Completed.
+REPLACED_NOT_KEPT=0
+REPLACED_NOT_KEPT_LINE="Your saves folder is your cloud's top folder, so no replaced cloud saves are kept."
 run_outcome_line() {
     local rc="$1" why
     case "${rc}" in
@@ -735,6 +902,8 @@ run_outcome_line() {
             # said so where it was skipped (D-CLOUD-090).
             if [ "${SYSTEM_ONLY}" -eq 1 ] && [ "${SETTINGS_NOTHING_RAN}" -eq 1 ]; then
                 echo "Skipped: there's no settings backup on this device to send yet."
+            elif [ "${REPLACED_NOT_KEPT}" -eq 1 ]; then
+                echo "Completed. ${REPLACED_NOT_KEPT_LINE}"
             else
                 echo "Completed."
             fi ;;
@@ -803,11 +972,25 @@ check_rclone_config() {
 check_internet() {
     log_message "Checking cloud storage reachability..." "false"
 
-    local remote
+    local remote probe_rc=1
     remote=$(rclone listremotes 2>/dev/null | head -1)
-    if [ -n "${remote}" ] && rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
-        log_message "Cloud storage ${remote} is reachable" "false"
-        return 0
+    if [ -n "${remote}" ]; then
+        rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
+        if [ "${probe_rc}" -eq 0 ]; then
+            log_message "Cloud storage ${remote} is reachable" "false"
+            return 0
+        fi
+    fi
+
+    # A probe the automatic ceiling ended (the wrapper's 124) is the
+    # ceiling's answer, not the sign-in's: it fell through to the branch
+    # below and read COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN (the
+    # audit of the fixes, claude G-A-09).
+    if [ "${AUTOMATIC}" -eq 1 ] && [ "${probe_rc}" -eq 124 ]; then
+        log_message "the reachability probe was ended by the automatic ceiling; reporting that" "false"
+        log_message "Couldn't finish: the cloud took too long. It'll try again next time." "true" "ERROR"
+        say_why "$(why_for 124)"
+        clean_exit 124
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
@@ -862,6 +1045,14 @@ network_lost_during_run() {
         log_message "Couldn't finish: lost the network during ${what}. Try again when you're online." "true" "ERROR"
         clean_exit "${EXIT_NO_NETWORK}"
     fi
+    # An automatic run its ceiling ended (124, or rclone's own 10 for
+    # --max-duration) has no time left to probe with -- the wrapper starts
+    # nothing past the deadline (#308 gpt F-CS-34) -- and the true answer is
+    # the ceiling's: why_for says THE CLOUD TOOK TOO LONG.
+    if [ "${AUTOMATIC}" -eq 1 ] && { [ "${rc}" = 124 ] || [ "${rc}" = 10 ]; }; then
+        log_message "${what} was ended by the automatic ceiling (rclone exit ${rc}); reporting that" "false"
+        return 0
+    fi
     if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
         log_message "${what} failed (rclone exit ${rc}) but ${REMOTENAME} answers now; reporting rclone's own result" "false"
         return 0
@@ -877,26 +1068,144 @@ network_lost_during_run() {
     clean_exit "${EXIT_NO_NETWORK}"
 }
 
-# Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
-# shape: every line blank, a comment, KEY=value with its double quotes
-# balanced, or the continuation of a value whose previous line ended in a
-# backslash (RCLONEOPTS is written that way). The shape check matters
+# Is this saves allowlist whole? Its last rule is the catch-all "- /**",
+# and a file cut before it admits everything under the saves folder. The
+# line itself, whole: "- /**/*.db" starts the same way (audit #307 PL-020,
+# the same test cloud_sync_helper makes before it installs a rules file).
+rules_whole() {
+    [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
+}
+# The allowlist this device writes and keeps (cloud_sync_helper).
+MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
+
+# Is this a cloud_sync.conf that can be run with? bash -n, and a grammar
+# nothing but assignments of text can pass. Every line is blank, a
+# comment, or KEY=value, where the value is
+#   - "double quoted": any text but a backtick, a $ that is not a plain
+#     $NAME or ${NAME}, and a backslash that is not the line's last
+#     character (the continuation RCLONEOPTS is written with) or one of
+#     bash's own escapes inside double quotes, \" \\ \$ and \`, each of
+#     which is the one character bash makes of it;
+#   - 'single quoted' on one line, with no $( or backtick in it;
+#   - or a bare word of letters, digits and . / : @ % + , = _ -;
+# and after it nothing, or blanks and a # comment. The shape check matters
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
+#
+# The escapes were refused until the audit of the fix round (PL-015): the
+# validator before this grammar passed them, so an upgraded device whose
+# hand-edited RCLONEOPTS read --exclude \"*.tmp\" was told its settings
+# could not be read on every run. A backslash before anything else is
+# still refused; bash would keep it, and nothing needs it.
+#
+# A blank is a space or a tab, and nothing else is: no line may carry a
+# control character but a tab (the audit of the fix round, PL-002). Bash
+# does not split a word on a carriage return, a vertical tab or a form
+# feed, so EXTRA="x"<CR>#$(cmd) is one word whose $(cmd) runs, and so is a
+# "comment" line <CR>#$(cmd) -- and this grammar read all three as blanks
+# ([ \t\r] after a value, [[:space:]] before a comment) and passed them.
+#
+# And nothing in it runs when it is sourced (audit #307 PL-051's script
+# half). The setup page writes the folder values from what a player typed
+# or picked, and an earlier build wrote one that held "$(...)" as it
+# stood, which every `source` of this file then ran; a folder value
+# (SAVESPATH, SETTINGS_BACKUPS, SAVES_REMOTE, SETTINGS_REMOTE,
+# CONTENT_REMOTE) is plain text on one line, with no $, backtick,
+# backslash or control character. The first cut of this refused only $(
+# and a backtick, and let a continued line through unchecked: a quoted
+# value continued onto a line that closed the quote and went on
+# (`RCLONEOPTS="--progress \` then `"; touch x; : ""`), a value closed and
+# followed by `; command`, and ${W@P}, which runs the command a value
+# spells out, all passed and ran (the audit of the fixes, G-A-05). A
+# config that fails is not sourced: the caller falls back to the good
+# copy or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
+#
+# CONF_WHY says why a file was refused -- "line N: <its shape>", never the
+# value -- for the caller's log (PL-015): a refusal that names nothing
+# leaves whoever reads the log to guess which line of a hand edit it was.
 conf_valid() {
-    [ -s "$1" ] || return 1
-    bash -n "$1" 2>/dev/null || return 1
-    awk '
-        cont { cont = ($0 ~ /\\$/); next }
-        /^[[:space:]]*(#|$)/ { next }
-        /^[A-Za-z_][A-Za-z0-9_]*=/ {
-            n = gsub(/"/, "\"")
-            if ($0 ~ /\\$/) { cont = 1; next }
-            if (n % 2) exit 1
-            next
+    CONF_WHY=""
+    if [ ! -s "$1" ]; then CONF_WHY="the file is missing or empty"; return 1; fi
+    if ! bash -n "$1" 2>/dev/null; then CONF_WHY="bash cannot parse it"; return 1; fi
+    # A NUL byte ends awk's record on the device's busybox, so the grammar below
+    # would read "EXTRA=x"<NUL>"#$(cmd)" as EXTRA=x (the audit of the fixes,
+    # claude G3-D-02); counted before anything reads the file.
+    if [ "$(tr -d '\000' < "$1" 2>/dev/null | wc -c)" -ne "$(wc -c < "$1")" ]; then CONF_WHY="a NUL byte"; return 1; fi
+    CONF_WHY=$(awk '
+        function bad(why) { if (!failed) print "line " NR ": " why; failed = 1; exit 1 }
+        # A double-quoted value from position i of s: the position after
+        # its closing quote, or 0 when the line ends in a continuation.
+        function dq(s, i,    n, c, d) {
+            n = length(s)
+            while (i <= n) {
+                c = substr(s, i, 1)
+                if (c == "\"") return i + 1
+                if (c == "`") bad("a backtick inside double quotes")
+                if (c == "\\") {
+                    if (i == n) return 0
+                    d = substr(s, i + 1, 1)
+                    if (d == "$" && substr(s, i + 2, 1) ~ /[(\[{]/) bad("a \\$ followed by (, [ or { -- a literal $( that a shell context could still run (audit of the fixes, G3-D-01)")
+                    if (d == "\"" || d == "\\" || d == "$" || d == "`") { val = val c d; i += 2; continue }
+                    bad("a backslash inside double quotes that is not one of the escapes bash reads there")
+                }
+                if (c == "$") {
+                    d = substr(s, i + 1)
+                    if (match(d, /^[A-Za-z_][A-Za-z0-9_]*/) || match(d, /^\{[A-Za-z_][A-Za-z0-9_]*\}/)) {
+                        val = val c substr(d, 1, RLENGTH); i += 1 + RLENGTH; continue
+                    }
+                    bad("a $ inside double quotes that is not a plain $NAME or ${NAME}")
+                }
+                val = val c; i++
+            }
+            bad("a double-quoted value that runs on past the line without a backslash")
         }
-        { exit 1 }
-    ' "$1"
+        # After a value: nothing, or blanks and a comment.
+        function rest(s, i) { if (substr(s, i) !~ /^([ \t]+(#.*)?)?$/) bad("something after the value that is not a # comment") }
+        function whole() {
+            if (key ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)$/ \
+                && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad("a folder value that is not plain text on one line")
+        }
+        {
+            s = $0
+            t = s; gsub(/\t/, "", t)
+            if (t ~ /[[:cntrl:]]/) bad("a control character other than a tab")
+            if (indq) {
+                lines++
+                j = dq(s, 1)
+                if (j == 0) next
+                indq = 0; rest(s, j); whole(); next
+            }
+            if (s ~ /^[ \t]*(#|$)/) next
+            if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad("a line that is not KEY=value, a comment or blank")
+            key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
+            # A name the shell owns is refused whatever its value: bash evaluates an
+            # assignment to RANDOM, SECONDS or LINENO as arithmetic, and arithmetic
+            # runs a $( ) it finds (the audit of the fixes, gpt G3-D-01: a sourced
+            # RANDOM="BASH_VERSINFO[\\$(cmd)0]" ran cmd on the host); PATH, IFS and
+            # the rest change what every later command means.
+            if (key ~ /^(RANDOM|SRANDOM|SECONDS|LINENO|HISTCMD|BASHPID|BASH_[A-Z_]*|EPOCH[A-Z]*|FUNCNAME|GROUPS|DIRSTACK|PIPESTATUS|SHELLOPTS|BASHOPTS|COMP_[A-Z_]*|READLINE_[A-Z_]*|PATH|IFS|ENV|BASH_ENV|CDPATH|HOME|PS[0-4]|PROMPT_COMMAND|TMPDIR|SHELL|LANG|LC_[A-Z_]*|GLOBIGNORE|HISTFILE|TMOUT|OPTIND|OPTARG|PWD|OLDPWD|SHLVL|UID|EUID|PPID|LD_[A-Z_]*)$/) bad("a name the shell owns (" key ")")
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = dq(s, i + 1)
+                if (j == 0) { indq = 1; next }
+                rest(s, j); whole(); next
+            }
+            if (c == "'"'"'") {
+                j = index(substr(s, i + 1), "'"'"'")
+                if (!j) bad("a single-quoted value that does not close on its line")
+                val = substr(s, i + 1, j - 1)
+                if (val ~ /\$\(|`/) bad("a $( or a backtick inside single quotes")
+                rest(s, i + j + 1); whole(); next
+            }
+            match(substr(s, i), /^[A-Za-z0-9_.\/:@%+,=-]*/)
+            val = substr(s, i, RLENGTH)
+            rest(s, i + RLENGTH); whole()
+        }
+        END {
+            if (failed) exit 1
+            if (indq) { print "line " NR ": a double-quoted value that never closes"; exit 1 }
+        }
+    ' "$1")
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -917,6 +1226,8 @@ load_config() {
     # (D-CLOUD-078, #105).
     local conf="/storage/.config/cloud_sync.conf"
     if ! conf_valid "${conf}"; then
+        # Which line, and what about it -- never the value (PL-015).
+        log_message "cloud_sync.conf is not run with: ${CONF_WHY}" "false" "WARN"
         if [ -f "${conf}.bak" ] && conf_valid "${conf}.bak"; then
             log_message "cloud_sync.conf does not parse; putting back the copy taken before this run's update" "false" "WARN"
             cp -f "${conf}.bak" "${conf}.tmp.$$" && mv -f "${conf}.tmp.$$" "${conf}"
@@ -973,12 +1284,49 @@ load_config() {
         if [ $cleanup_choice -eq 0 ]; then
             # User selected Yes - cleanup duplicates
             echo -e "\e[34m> Running duplicate cleanup...\e[0m"
-            /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
-            echo -e "\e[34m> Duplicates cleaned.\e[0m"
-            echo ""
-            pause 2
-            # Reload config after cleanup
-            source /storage/.config/cloud_sync.conf
+            # The cleanup rewrites the file this run has already checked, so
+            # what it leaves is checked again before it is sourced -- the one
+            # `source` PL-051 left unchecked (the audit of the fixes, claude
+            # G-A-14). A cleanup that fails, or leaves a file conf_valid
+            # refuses, has the copy from before it put back, and the run goes
+            # on with that: the last known good state (D-CLOUD-078).
+            #
+            # The copy is the last known good only once it is known to be
+            # whole (the audit of the fix round, PL-004): cp's status, a byte
+            # compare with the live file, and conf_valid on the copy itself.
+            # The put-back below used to take any copy that was merely not
+            # empty, so a cp that filled the card part-way left a prefix, the
+            # cleanup never ran, and the prefix replaced the untouched, valid
+            # file. A copy that is not whole is removed, no cleanup runs
+            # without one, and the run goes on with the file as it is -- it
+            # was checked and sourced above.
+            local pre_cleanup="${conf_file}.pre-cleanup.$$"
+            if ! { cp -f "${conf_file}" "${pre_cleanup}" 2>/dev/null \
+                   && cmp -s "${conf_file}" "${pre_cleanup}" \
+                   && conf_valid "${pre_cleanup}"; }; then
+                rm -f "${pre_cleanup}"
+                log_message "the copy of cloud_sync.conf to keep before the duplicate cleanup could not be made whole; the cleanup was not run and the file is as it was" "false" "WARN"
+                log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
+                pause 2
+            elif /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file" \
+               && conf_valid "${conf_file}"; then
+                rm -f "${pre_cleanup}"
+                echo -e "\e[34m> Duplicates cleaned.\e[0m"
+                echo ""
+                pause 2
+                # Reload config after cleanup
+                source "${conf_file}"
+            elif mv -f "${pre_cleanup}" "${conf_file}"; then
+                log_message "the duplicate cleanup failed or left cloud_sync.conf not whole (${CONF_WHY:-the cleanup itself failed}); the copy from before it is back" "false" "WARN"
+                log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
+                pause 2
+            else
+                rm -f "${pre_cleanup}"
+                log_message "the duplicate cleanup left cloud_sync.conf not whole and the copy from before it could not be put back" "false" "ERROR"
+                log_message "Your cloud sync settings couldn't be read. Nothing was changed.\nSet up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+                say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+                clean_exit 1
+            fi
         else
             # User selected No or cancelled - skip cleanup
             echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
@@ -1089,22 +1437,35 @@ load_config() {
         log_message "Added --update from command line" "false"
     fi
 
-    # A SETTINGS_REMOTE inside SAVES_REMOTE is a data-loss trap. Phase 1 syncs
-    # SAVES_REMOTE and the archive is an excluded file, so --delete-excluded removes
-    # it. A full run hides that -- phase 2 re-uploads moments later -- but a run
-    # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION set
-    # to no) deletes the archives and puts nothing back. Only sync deletes, and
-    # --delete-excluded is a no-op for copy, so say nothing unless it can bite.
-    # Warn rather than refuse: the layout is the user's to choose, and archives
-    # may already be sitting there.
-    if [ "${BACKUPMETHOD}" == "sync" ] && [[ "${RCLONEOPTS}" == *"--delete-excluded"* ]]; then
-        case "${SETTINGS_REMOTE}/" in
-            "${SAVES_REMOTE%/}/"*)
-                log_message "SETTINGS_REMOTE=${SETTINGS_REMOTE} is inside SAVES_REMOTE=${SAVES_REMOTE}" "false" "WARN"
-                log_message "Your settings folder in the cloud sits inside your saves folder.\nA saves-only backup would delete the settings backups kept there.\nMove the settings folder alongside the saves folder, as it is by default." "true" "WARN"
+    # A settings or ROMs and BIOS folder inside SAVES_REMOTE. Each tier belongs
+    # beside the saves folder, not in it: a folder nested there rides with
+    # every tool that moves the saves folder whole (the layout migration moved
+    # the settings archives into Saves/backup/ that way, audit #307 PL-025),
+    # and the setup page no longer writes such a layout (PL-015, stream C). An
+    # earlier build derived /GAMES/Content inside a top-level /GAMES, and a
+    # config that says so is read as it stands and warned about, never
+    # rewritten -- the layout is the owner's, and TIDY UP YOUR CLOUD FOLDERS
+    # is what moves it. The warning used to cover the settings folder alone,
+    # and only while RCLONEOPTS carried --delete-excluded, which load_config
+    # strips above -- so it could never fire (#308 claude F-CS-17). Logged on
+    # every run; on the screen for a run somebody pressed, not the automatic
+    # syncs, where it would sit on every game-exit card. Not for a saves
+    # folder at the root ("" or "/", one root as F-CS-25 reads it): every
+    # folder is inside that one, the tidy cannot move a folder out of it, and
+    # the backup says what such a folder costs instead (the audit of the
+    # fixes, claude G-A-08: "/" was warned about on every run, "" never).
+    local nested_key nested_val nested_what
+    for nested_key in SETTINGS_REMOTE CONTENT_REMOTE; do
+        nested_val="${!nested_key}"
+        [ -n "${nested_val}" ] && [ -n "${SAVES_REMOTE%/}" ] || continue
+        case "${nested_val%/}/" in
+            "${SAVES_REMOTE%/}/"?*)
+                log_message "${nested_key}=${nested_val} is inside SAVES_REMOTE=${SAVES_REMOTE}" "false" "WARN"
+                if [ "${nested_key}" = "SETTINGS_REMOTE" ]; then nested_what="settings folder"; else nested_what="ROMs and BIOS folder"; fi
+                [ "${AUTOMATIC}" -eq 1 ] || log_message "Your ${nested_what} in the cloud sits inside your saves folder. TIDY UP YOUR CLOUD FOLDERS in MANAGE CLOUD STORAGE moves it out." "true" "WARN"
                 ;;
         esac
-    fi
+    done
 
     log_message "Configuration loaded successfully" "false"
 }
@@ -1206,6 +1567,9 @@ execute_rclone_with_error_handling() {
     # stdout goes to terminal (shows progress), stderr goes to temp file for logging
     rclone "${method}" "${extra_opts[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" "${source}" "${dest}" 2>"$stderr_file"
     local rclone_exit_code=$?
+    # With no --log-file in the options rclone's own lines, the ones that
+    # say what moved, are on stderr (claude G-A-01).
+    logged_moved "$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)" "$stderr_file" && RCLONE_MOVED=1
     
     # Log any stderr output for debugging
     if [ -s "$stderr_file" ]; then
@@ -1220,13 +1584,25 @@ execute_rclone_with_error_handling() {
     return $rclone_exit_code
 }
 
-# Keep only the newest stamp folder under the remote --backup-dir root. Names
-# are stamps, so sorting them is ordering them by age; the root not existing
-# (nothing replaced yet) lists nothing and nothing happens.
+# One record at rest under the remote --backup-dir root: the folder this run
+# wrote. It is named by this run and kept by that name, and every other
+# folder goes (D-CLOUD-078 (3)). The root is shared by every device on the
+# cloud and the names are stamps from each device's own clock, so name order
+# is not age: a folder from a device whose clock runs ahead, or from this
+# one before its clock was corrected, sorted after this run's, and "keep the
+# newest by name" purged the record this run had just written (audit #307
+# PL-021). When this run replaced nothing it wrote no folder, nothing is
+# superseded, and the newest by name is kept as before. The root not
+# existing, or not listing, removes nothing.
 prune_replaced_remote() {
-    local root="$1" d
-    rclone lsf --dirs-only "${root}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
-        | tr -d '/' | grep . | sort -r | tail -n +2 | while read -r d; do
+    local root="$1" pinned="$2" names doomed d
+    names=$(rclone lsf --dirs-only "${root}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d '/' | grep .)
+    if [ -n "${pinned}" ] && printf '%s\n' "${names}" | grep -qxF -- "${pinned}"; then
+        doomed=$(printf '%s\n' "${names}" | grep -vxF -- "${pinned}")
+    else
+        doomed=$(printf '%s\n' "${names}" | sort -r | tail -n +2)
+    fi
+    printf '%s\n' "${doomed}" | while read -r d; do
         [ -n "${d}" ] || continue
         log_message "removing replaced-saves folder ${root}/${d} (superseded)" "false"
         rclone purge "${root}/${d}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
@@ -1282,6 +1658,33 @@ backup_game_saves() {
         return 0
     fi
     
+    # A default this project once shipped (/GAMES, /ROCKNIX/Saves) that the
+    # cloud does not hold is no folder at all (D-CLOUD-161), and a backup
+    # does not make it (D-CLOUD-172): it made one before, on a device
+    # updated from stock ROCKNIX, and the startup card said SKIPPED - YOUR
+    # CLOUD FOLDER ISN'T SET UP YET over a backup that had just written
+    # nine saves into /GAMES (guest d, run 100). So it says what the
+    # restore says -- the offer line, which an automatic sync's card reads
+    # as that SKIPPED and a deliberate run as the offer to create the
+    # folder, whose seeding settles the setting on the current folders
+    # (cloud_migrate_layout --settle) -- and the cloud folder step asks at
+    # the next boot (D-CLOUD-170). Asked only for such a setting; a listing
+    # that cannot answer leaves the backup as it was, since skipping it on
+    # a guess would leave the saves only on the device.
+    if superseded_saves_setting; then
+        local saves_folder="${SAVES_REMOTE%/}" list_rc
+        rclone lsd "${REMOTENAME}${saves_folder}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; list_rc=$?
+        if [ ${list_rc} -eq 0 ] && bucket_based && ! bucket_dir_listed "${saves_folder}"; then
+            list_rc=3
+        fi
+        if [ ${list_rc} -eq 3 ]; then
+            log_message "saves folder ${SAVES_REMOTE} is a default an earlier version shipped, and the cloud has none; a backup does not make it (D-CLOUD-172)" "false"
+            log_message "Nothing backed up: your cloud has no ${saves_folder} folder yet." "true"
+            echo ">>> offer create-saves-folder|${saves_folder}"
+            return 0
+        fi
+    fi
+
     # Test remote connectivity before starting backup
     # One round trip, not two. mkdir is idempotent and fails when the remote
     # is unreachable or the sign-in has lapsed, so it is the reachability
@@ -1345,6 +1748,42 @@ backup_game_saves() {
         all_opts+=("--filter-from" "/storage/.config/cloud_sync-rules.txt")
         log_message "RCLONEOPTS carried no --filter-from; the saves allowlist was added (#71)" "false" "WARN"
     fi
+    # And the allowlist is whole (audit #307 PL-020): its last rule, the
+    # catch-all "- /**", is what keeps everything the rules do not name --
+    # the ROMs, the BIOS, the artwork -- out of the saves backup. A file cut
+    # before that line admits all of it, so a rules file without the line,
+    # whole and alone on it, is refused rather than run with. The helper no
+    # longer installs such a file; this is for one it did not write.
+    #
+    # The device's own allowlist only: a filter file the player named
+    # themselves is theirs to write, catch-all or not (#71's contract, the
+    # round-trip's "a user's own --filter-from is honoured"). The first cut
+    # held every named file to the catch-all and refused the player's.
+    local next_is_rules=0 rules_bad="" named
+    for opt in "${all_opts[@]}"; do
+        named=""
+        if [ "${next_is_rules}" = 1 ]; then
+            next_is_rules=0
+            named="${opt}"
+        else
+            case "${opt}" in
+                --filter-from|--filters-file) next_is_rules=1 ;;
+                --filter-from=*|--filters-file=*) named="${opt#*=}" ;;
+            esac
+        fi
+        [ -n "${named}" ] || continue
+        if [ "$(readlink -f -- "${named}" 2>/dev/null || printf '%s' "${named}")" = "${MANAGED_RULES}" ]; then
+            rules_whole "${named}" || rules_bad="${named}"
+        else
+            log_message "the saves rules are the player's own file ${named}; used as written" "false"
+        fi
+    done
+    if [ -n "${rules_bad}" ]; then
+        log_message "the rules file ${rules_bad} has no catch-all line (- /**); refusing the saves backup" "false" "ERROR"
+        log_message "The list of what to sync is damaged, so nothing was sent. Try again." "true" "ERROR"
+        say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        return 1
+    fi
     # Add debug logging if enabled
     if [ -n "$rclone_debug" ]; then
         all_opts+=("$rclone_debug" "INFO")
@@ -1401,6 +1840,26 @@ backup_game_saves() {
             BACKUPMETHOD="copy"
         fi
     fi
+    # #315 (D-CLOUD-153, refined by the audit of the fix, D-CLOUD-154): on
+    # a remote that compares by size alone, every saves pass runs with
+    # --update -- the recent set too. rclone then compares the local mtime
+    # with the cloud's upload time (it substitutes a one-second window itself
+    # where precision is unsupported; --modify-window changes nothing, and
+    # --ignore-times on the recent set would have re-sent the ten-minute
+    # slack every exit and replayed an untouched save over another device's
+    # newer copy): a save written after its upload is sent, one written
+    # before it is skipped. The one case this cannot see is a save written
+    # while the device's clock was wrong; the recent window already needs
+    # the clock, and #317 (the content-based transport) is its answer. A
+    # remote that keeps modtimes or hashes gets nothing here.
+    if remote_compares_by_size "${REMOTENAME}"; then
+        local has_update=0
+        for opt in "${all_opts[@]}"; do [ "${opt}" = "--update" ] && has_update=1; done
+        [ "${has_update}" = 1 ] || all_opts+=("--update")
+        log_message "the remote compares by size alone (#315): the local mtime is compared with the cloud's upload time (--update)" "false"
+    else
+        log_message "the remote keeps modtimes or hashes: rclone's own comparison" "false"
+    fi
     local backup_rel="${SETTINGS_BACKUPS#${SAVESPATH%/}/}"
     if [ "${backup_rel}" != "${SETTINGS_BACKUPS}" ]; then
         all_opts+=("--exclude=${backup_rel}/**")
@@ -1430,9 +1889,29 @@ backup_game_saves() {
     # is one record at rest (D-CLOUD-078 (3)). The folder is shared by every
     # device using the saves folder, so "one cycle" is one cycle of whichever
     # device ran last.
-    local replaced_root="${SAVES_REMOTE%/}-replaced"
-    all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/$(date +%Y_%m_%d-%H%M%S)")
-    log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
+    local replaced_root="${SAVES_REMOTE%/}-replaced" replaced_stamp=""
+    # A saves folder at the remote's root ("" or "/") has no sibling: the
+    # folder above would be "-replaced" under the root, inside the
+    # destination, and rclone refuses the run outright ("destination and
+    # parameter to --backup-dir mustn't overlap", exit 7) -- every saves
+    # backup failed for such a config (#308 claude F-CS-25). The backup goes
+    # on without the one-cycle record -- rclone can keep none on that
+    # remote -- and the player is told so, on the console and in the run's
+    # outcome line (the audit of the fixes, G-A-09: it was said only in the
+    # log, which nobody is told the path of).
+    case "${SAVES_REMOTE}" in
+        ""|"/")
+            replaced_root=""
+            REPLACED_NOT_KEPT=1
+            log_message "the saves folder is the cloud's root: no replaced-saves folder is kept (it would sit inside the saves folder)" "false" "WARN"
+            log_message "${REPLACED_NOT_KEPT_LINE}" "true" "WARN"
+            ;;
+        *)
+            replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
+            all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/${replaced_stamp}")
+            log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
+            ;;
+    esac
 
     # Check if the rclone version supports the terminal width flag
 
@@ -1457,10 +1936,18 @@ backup_game_saves() {
     # started on. A bind that landed mid-run means part of the run went to
     # the other card: a failed run, and not one to record. A good run
     # records the card, so the next transfer has something to compare.
+    #
+    # Only a transfer that completed is recorded (#308 gpt F-CS-20): a
+    # failed first run used to establish the card as if it had synced. A
+    # failed one is still compared, so a card that changed under it says so.
     local root_note=""
     if [ -x "${saves_root_tool}" ]; then
-        if ! root_note=$("${saves_root_tool}" record "${saves_root_id}"); then
-            BACKUP_STATUS=1
+        if [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; then
+            if ! root_note=$("${saves_root_tool}" record "${saves_root_id}"); then
+                BACKUP_STATUS=1
+            fi
+        else
+            root_note=$("${saves_root_tool}" record "${saves_root_id}" --no-write) || true
         fi
     fi
 
@@ -1474,8 +1961,8 @@ backup_game_saves() {
     # The replaced files of the run that just completed are the one record
     # kept; older stamp folders go. Not on a --recent run: a remote round
     # trip the game-exit sync should not pay (the next full pass trims).
-    if [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
-        prune_replaced_remote "${REMOTENAME}${replaced_root}"
+    if [ -n "${replaced_root}" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
+        prune_replaced_remote "${REMOTENAME}${replaced_root}" "${replaced_stamp}"
     fi
 
     # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
@@ -1722,7 +2209,7 @@ backup_system_files() {
             # uploaded as this device's newest and counted toward the kept
             # history, and the restore side then refused it with nothing to
             # fall back to (D-CLOUD-078, #105). tar lists every member or
-            # fails; busybox unzip has no -t, so a zip is listed instead.
+            # fails; a zip is tested member by member (archive_whole).
             if ! archive_whole "${archive}"; then
                 log_message "The settings archive ${base} does not list; not sending it" "false" "ERROR"
                 log_message "This device's settings backup is damaged, so it wasn't sent. Back up settings again." "true" "ERROR"
@@ -1819,7 +2306,8 @@ MANIFEST
             local uploaded
             for uploaded in "${uploaded_names[@]}"; do
                 local one
-                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+                # A listing's bound, not a transfer's (#308 claude F-CS-21).
+                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
                     | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
                 [ -n "${one}" ] || continue
                 remote_bytes=$((remote_bytes + one))
@@ -1902,7 +2390,16 @@ MANIFEST
                 if [ "${total_n}" -gt "${mine_n}" ]; then
                     log_message "Leaving $((total_n - mine_n)) archive(s) not named for this device (${label}) alone in ${device_dest}" "false"
                 fi
-                printf '%s\n' "${mine}" | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
+                # The archives this run uploaded are kept by name, whatever
+                # the others' names say: a date is the clock of the device
+                # that wrote it, and three archives stamped by a clock that
+                # ran ahead used to leave this run's upload as the one past
+                # the count (audit #307 PL-021). The rest are kept by count,
+                # newest name first, to CLOUD_BACKUP_KEEP in all.
+                local others left
+                others=$(printf '%s\n' "${mine}" | grep -v '^$' | grep -vxF -f <(printf '%s\n' "${uploaded_names[@]}"))
+                left=$(( keep - ${#uploaded_names[@]} )); [ "${left}" -ge 0 ] || left=0
+                printf '%s\n' "${others}" | grep -v '^$' | tail -n +$((left + 1)) | while read -r old_archive
                 do
                     [ -n "${old_archive}" ] || continue
                     log_message "Removing old cloud backup ${old_archive}" "false"
@@ -1921,13 +2418,21 @@ MANIFEST
 }
 
 # Main script execution
+# The follow check that ran here before every sync (D-CLOUD-160's "your
+# other devices will follow") is the cloud folder step's now, which runs
+# where the player first meets the cloud -- the end of cloud setup, and the
+# first boot of this build on a device linked to an earlier folder -- and on
+# the transfer pages' scan (D-CLOUD-170, #363). Every sync paid for it before.
+
 main() {
     check_network_link
     check_rclone_config
-    # backup_game_saves proves the remote reachable with the mkdir it needs
-    # anyway; only the system-only path has no such step of its own.
-    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     load_config
+    # backup_game_saves proves the remote reachable with the mkdir it needs
+    # anyway; only the system-only path has no such step of its own. After
+    # load_config, which sets an automatic run's deadline: the probe ran
+    # before it, outside the ceiling (#308 gpt F-CS-34).
+    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     
     # Use the first configured remote in rclone
     # Note: This assumes at least one remote is configured and the first one should be used
@@ -1969,8 +2474,15 @@ main() {
     
     # The run's exit, decided by both phases (the note below the summary
     # says why); computed here because the outcome line reads it.
+    # rclone's 9 -- nothing needed moving -- is a completion wherever a
+    # phase is judged (outcome_word, run_outcome_line), so it is here too: a
+    # saves phase that returned 9 used to keep a settings phase's failure
+    # out of the exit and the stamp, and the run said Completed. over an
+    # archive that never moved (audit #307 PL-028).
     local overall=${BACKUP_STATUS}
-    [ "${overall}" -eq 0 ] && overall=${BACKUP_SYSTEM_STATUS}
+    case "${overall}" in
+        0|9) overall=${BACKUP_SYSTEM_STATUS} ;;
+    esac
 
     # Provide final summary of all operations
     log_message "====================================" "true"

@@ -1,0 +1,52 @@
+23:14:55 === C-signin on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+    setup: 1
+    setup: rclone v1.75.1
+23:15:32 -- 1 F-RS-18: the serve beside the offline proxy on port 8080
+23:15:32   PASS  the offline proxy runs (toggle on)
+    ADDRESS=http://10.0.2.15:8080
+    NAME=Dropbox
+    PROVIDER=http://127.0.0.1:53690/signin?state=QA307STATE
+23:15:35    listening (hex): 00000000:0E76 0100007F:D1B2 0100007F:D1BA 0100007F:1269 0100007F:04D2 0F02000A:1F90 00000000:14EB 3600007F:0035 3500007F:0035 00000000:008B 00000000:006F 00000000:0016 00000000:01BD 0100007F:1F90 
+23:15:35   PASS  the proxy listens on 127.0.0.1:8080 (0100007F:1F90)
+23:15:35   PASS  the serve listens on the LAN address 10.0.2.15:8080 (0F02000A:1F90) at the same time
+23:15:35   PASS  status waiting, no 'already in use'
+23:15:35 -- 2 PL-017 / PL-016: the phone page by curl
+23:15:35   PASS  a type before the window opened is refused (409): the page's script keeps its box for the window (PL-016's script half is C4's node case)
+23:15:39   PASS  the window is up on the stand-in's page
+23:15:43    POSTs: type=abc 204, key=backspace 204, type=d 204
+    page: 19:15:40 field u=a
+    page: 19:15:40 field u=ab
+    page: 19:15:40 field u=abc
+    page: 19:15:41 field u=ab
+    page: 19:15:41 field u=abd
+23:15:43   PASS  PL-017: abc, Back, d -> the page's field holds 'abd' (want abd)
+    cloud_sync.log: [2026-09-28 19:15:40] [INFO] [cloud_oauth] typed 3 characters
+    cloud_sync.log: [2026-09-28 19:15:41] [INFO] [cloud_oauth] typed 0 characters + backspace
+    cloud_sync.log: [2026-09-28 19:15:41] [INFO] [cloud_oauth] typed 1 characters
+23:15:44 -- 3 gpt F-RS-12: the on-screen keyboard's layouts
+23:16:09    frames: /workspace/tmp/rocknix-session/proofs-307/frames/C-signin-osk-letters.png /workspace/tmp/rocknix-session/proofs-307/frames/C-signin-osk-shift.png /workspace/tmp/rocknix-session/proofs-307/frames/C-signin-osk-symbols.png (read by eye: every key inside the panel)
+23:16:09   PASS  the window stayed up through the keyboard walk
+23:16:09 -- 4 PL-049: cloud_oauth cancel with the page up
+23:16:10   PASS  the window went 1.2 s after cancel
+23:16:11   PASS  the serve is gone too (status idle)
+23:16:11 -- 5 PL-018: the pad after an on-device sign-in
+    pad: free /dev/input/event5
+23:16:18    the interface's pid 1552; its log on the pad: 
+23:16:38   PASS  before any sign-in the pad moves the menu (frame difference 6.92)
+    ADDRESS=http://10.0.2.15:8080
+    NAME=Dropbox
+    PROVIDER=http://127.0.0.1:53690/signin?state=QA307STATE
+23:16:45   PASS  while the window is up the bridge holds the pad (grabbed /dev/input/event5)
+23:16:45    type=qa307go 204: the stand-in page signs in and redirects back
+23:16:48   PASS  the sign-in landed (status signed-in; remote 1 qa307x section)
+23:16:48   PASS  at the sign-in the pad is let go while the window is still up (free /dev/input/event5, window up) -- PL-018
+    wait: rc=0
+23:16:48    cloud_oauth wait returned after 0.2 s
+23:16:54   PASS  after the sign-in, window closed, the pad moves the menu (frame difference 6.90)
+23:16:54   PASS  without a restart (the interface's pid still 1552)
+23:17:03 -- 6 E1 (this build): unmasked credentials in the interface's logs
+    shapes:       2 pass ran
+23:17:03   PASS  no credential value in /var/log/es_log*.txt after the sign-in flows (0 shape(s) other than the hasher's 'pass ran'); no call site in the pinned tree builds sh -c '... --password "..."' (git grep), so dcf7fa8c7's regression has no line to leak on this build
+    teardown: qa-cloud:
+    teardown: 0
+23:17:05 === done: 17 PASS, 0 FAIL

@@ -126,7 +126,7 @@ No Conventional Commits. Scope by package or device, matching history:
 
 ## Fork workflow (this working copy is a fork)
 
-`origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
+`origin` = `rasteratops/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.md` / `worktrees.md`; the essentials:
 
 - Branch `next` = `upstream/next` + a *personal overlay* (`.claude/`, `AGENTS.md`,
@@ -143,7 +143,7 @@ No Conventional Commits. Scope by package or device, matching history:
   (`git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"`).
 - Remove a worktree with `tools/fork-worktree remove`, never `git worktree remove --force`
   (D-WORKFLOW-005): it cannot tell a checkout from hours of build output.
-- Issues go on the fork: always `gh --repo maxengel/rocknix` (`gh` defaults to upstream
+- Issues go on the fork: always `gh --repo rasteratops/distribution` (`gh` defaults to upstream
   here, which has Issues disabled).
 - User-facing behavior changes need a follow-up docs PR to the separate
   `ROCKNIX/rocknix.org` repo — code and the public docs must not drift.
@@ -204,6 +204,7 @@ every-session ones at the start of a session and a scoped one before touching it
 **Every session** (no `paths:` glob, or `**`):
 
 - `adversarial-council.md` -- Adversarial-analysis routing — never use the rubber-duck agent; use only the verified multi-model council process, with pinned Fable 5.1 and GPT-6 Astra seats. Read before requesting a challenge pass, independent adversarial analysis, or council deliberation.
+- `bugs-are-agent-first.md` -- What a bug is here: fixed to the best of our ability means fixed and closed; every criterion is verified on the VM by an agent; what the VM cannot verify is not a known bug but an item the community tests or a thing to keep an eye on; no known bug is open when a build is called a release candidate (D-QA-051).
 - `ceremonies.md` -- Which ceremony is owed and when -- a friction entry's issue, a mini-retro, the weekly and monthly summaries, the work-log index, the register lint, a blindspot's guard, a code audit, a futro -- as a state machine tools/ceremony-check reads from the record; what a missing one refuses (D-WORKFLOW-028, D-QA-040).
 - `decision-register.md` -- The append-only ledger of maintainer and operational decisions — when to write a row, when to read one, and why a settled choice should be cited rather than re-argued.
 - `device-builds.md` -- Building, publishing, and safely flashing images for the handheld devices we test on, as distinct from the GENERIC_X64 VM build.
@@ -229,7 +230,7 @@ every-session ones at the start of a session and a scoped one before touching it
 **Scoped** (open before touching the paths):
 
 - `change-log.md` -- The running change log is written the day a player-visible change lands; a section is a set of claims checked against the build. (paths: `projects/ROCKNIX/packages/**`, `docs/cloud-sync-changelog.md`)
-- `council-substrate-integrity.md` -- Hard, mechanically-enforced rules for any council or council-research invocation. Every council member call MUST go through the Council Facilitator (`tools/council/council-invoke.ts`). `runSubagent`, ad-hoc `curl`/`fetch`, MCP provider tools, and bespoke scripts are FORBIDDEN as council member invocation paths. Auto-loads on every council / council-research artifact so the rule is in the orchestrator's context at the relevant moment, not buried inside a skill reference doc the orchestrator may not open. (paths: `research/council-research/**`, `research/council-runs/**`, `.claude/skills/council-research/**`, `.claude/skills/council/**`, `.claude/agents/council-member-*.agent.md`, `tools/council/council-invoke.ts`, `tools/council/lib/council-verification.ts`)
+- `council-substrate-integrity.md` -- Hard, mechanically-enforced rules for any council or council-research invocation. Every council member call MUST go through the Council Facilitator (`scripts/council-invoke.ts`). `runSubagent`, ad-hoc `curl`/`fetch`, MCP provider tools, and bespoke scripts are FORBIDDEN as council member invocation paths. Auto-loads on every council / council-research artifact so the rule is in the orchestrator's context at the relevant moment, not buried inside a skill reference doc the orchestrator may not open. (paths: `research/council-research/**`, `research/council-runs/**`, `.claude/skills/council-research/**`, `.claude/skills/council/**`, `.claude/agents/council-member-*.agent.md`, `scripts/council-invoke.ts`, `scripts/lib/council-verification.ts`)
 - `generic-x64-vm-testing.md` -- How to build-test and QA the GENERIC_X64 (x86_64) VM image locally in QEMU/KVM. (paths: `projects/ROCKNIX/devices/GENERIC_X64/**`, `projects/ROCKNIX/packages/**`, `scripts/mkimage`, `scripts/image`, `tools/vm-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/vm-visual-qa`, `tools/vm-walks/**`, `tools/cloud-test-backend`, `tools/emulator-exit-test`, `tools/time-to-play`, `docs/vm-qa-log.md`)
 - `handheld-evidence.md` -- What a handheld keeps across a power cycle, what to capture first when one misbehaves, and how the hang-to-reboot path works. (paths: `projects/ROCKNIX/packages/sysutils/**`, `projects/ROCKNIX/packages/rocknix/**`, `projects/ROCKNIX/devices/*/linux/**`, `projects/ROCKNIX/devices/*/patches/linux/**`, `docs/**`)
 - `packaging-and-patches.md` -- Writing a package.mk and generating patches: the required fields, the templates, and how patches are produced and scoped. (paths: `packages/**`, `projects/**`)

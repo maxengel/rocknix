@@ -1,0 +1,143 @@
+{
+  "schema_version": "council-run-manifest@1.0.0",
+  "run_id": "2026-09-30-rasteratops-fork-plan-r2",
+  "created_at": "2026-09-30T14:25:06.241Z",
+  "topic": "The plan to fork ROCKNIX as rasteratops (#338): phases, order, gates, risks and what 0.0.1 must prove",
+  "roster": [
+    "claude",
+    "gemini",
+    "gpt",
+    "kimi",
+    "muse"
+  ],
+  "provenance_contract": "council-facilitator@1.14.0",
+  "roster_contract": {
+    "version": "council-facilitator@1.14.0",
+    "sha256": "7fef37a4109c202d151970f8e8c8049467514fd069bc8e42d95663306e8b18f9",
+    "provider": "openrouter"
+  },
+  "coordinator": {
+    "harness": "claude-code",
+    "requested_model": "claude-opus-5",
+    "observed_model": null,
+    "observation": "unverified",
+    "voting": false
+  },
+  "expected_outputs_per_step": {
+    "step1": [
+      {
+        "member": "claude",
+        "kind": "initial-analysis",
+        "path": "claude-analysis.md"
+      },
+      {
+        "member": "gemini",
+        "kind": "initial-analysis",
+        "path": "gemini-analysis.md"
+      },
+      {
+        "member": "gpt",
+        "kind": "initial-analysis",
+        "path": "gpt-analysis.md"
+      },
+      {
+        "member": "kimi",
+        "kind": "initial-analysis",
+        "path": "kimi-analysis.md"
+      },
+      {
+        "member": "muse",
+        "kind": "initial-analysis",
+        "path": "muse-analysis.md"
+      }
+    ],
+    "step2": [
+      {
+        "member": "claude",
+        "kind": "peer-review",
+        "path": "peer_reviews/claude_peer_review.md"
+      },
+      {
+        "member": "gemini",
+        "kind": "peer-review",
+        "path": "peer_reviews/gemini_peer_review.md"
+      },
+      {
+        "member": "gpt",
+        "kind": "peer-review",
+        "path": "peer_reviews/gpt_peer_review.md"
+      },
+      {
+        "member": "kimi",
+        "kind": "peer-review",
+        "path": "peer_reviews/kimi_peer_review.md"
+      },
+      {
+        "member": "muse",
+        "kind": "peer-review",
+        "path": "peer_reviews/muse_peer_review.md"
+      }
+    ],
+    "step3": [
+      {
+        "member": "claude",
+        "kind": "revised-plan",
+        "path": "revised_approaches/claude-revised_plan.md"
+      },
+      {
+        "member": "gemini",
+        "kind": "revised-plan",
+        "path": "revised_approaches/gemini-revised_plan.md"
+      },
+      {
+        "member": "gpt",
+        "kind": "revised-plan",
+        "path": "revised_approaches/gpt-revised_plan.md"
+      },
+      {
+        "member": "kimi",
+        "kind": "revised-plan",
+        "path": "revised_approaches/kimi-revised_plan.md"
+      },
+      {
+        "member": "muse",
+        "kind": "revised-plan",
+        "path": "revised_approaches/muse-revised_plan.md"
+      }
+    ],
+    "step4": [
+      {
+        "member": "claude",
+        "kind": "peer-vote",
+        "path": "peer_votes/claude_vote.md"
+      },
+      {
+        "member": "gemini",
+        "kind": "peer-vote",
+        "path": "peer_votes/gemini_vote.md"
+      },
+      {
+        "member": "gpt",
+        "kind": "peer-vote",
+        "path": "peer_votes/gpt_vote.md"
+      },
+      {
+        "member": "kimi",
+        "kind": "peer-vote",
+        "path": "peer_votes/kimi_vote.md"
+      },
+      {
+        "member": "muse",
+        "kind": "peer-vote",
+        "path": "peer_votes/muse_vote.md"
+      }
+    ],
+    "step4_5": [
+      {
+        "member": "claude",
+        "kind": "consensus-plan",
+        "path": "revised_approaches/consensus_plan.md"
+      }
+    ]
+  }
+}

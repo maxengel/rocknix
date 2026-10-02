@@ -92,6 +92,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `player-language.md` | clear, then brief, then sized to the space, for every string a player reads (D-UI-045) | every session |
 | `time-to-play.md` | interface → a game's first frame, and one game's exit → the next, as a first-class metric (D-CLOUD-098) | every session |
 | `vm-first.md` | *can this be done on the VM?* asked and answered in writing before any test, proof or measurement (D-QA-007) | every session |
+| `bugs-are-agent-first.md` | what a bug is: fixed to the best of our ability means fixed; every criterion verified on the VM by an agent; the two other classes (open item to test, keep an eye on); no known bug at the call (D-QA-051) | every session |
 | `ceremonies.md` | which ceremony is owed and when -- friction entries, retros, the weekly and monthly summaries, the index, audits, futros -- as a state machine `tools/ceremony-check` turns (D-WORKFLOW-028) | every session |
 | `release-candidates.md` | the standard operating procedure for every release candidate: nothing behind before the cut, a clean baseline, the candidate's build, every test, play-testing, the call, the two-agent upstream audit, then the submission and builds for every test device (D-WORKFLOW-047) | every session |
 | `adversarial-council.md` | adversarial analysis routes through the verified multi-model council; never the rubber-duck agent | `**` |
@@ -115,7 +116,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `rclone-cloud-sync.md` | the cloud-sync subsystem: config conventions, the bounded automatic sync, last-good behaviour | the rclone package, `rocknix/sources/scripts/**`, the five cloud tools |
 | `generic-x64-vm-testing.md` | building and QA'ing the GENERIC_X64 VM image, and the harness that drives it | GENERIC_X64, `projects/ROCKNIX/packages/**`, `scripts/mkimage`, `scripts/image`, the VM tools, `docs/vm-qa-log.md` |
 | `handheld-evidence.md` | what a handheld keeps across a power cycle and what to capture first when one misbehaves | device packages and kernels, `docs/**` |
-| `council-substrate-integrity.md` | every council member call goes through the Facilitator; no ad-hoc provider calls | council artifacts, skills, agents and `tools/council/**` |
+| `council-substrate-integrity.md` | every council member call goes through the Facilitator; no ad-hoc provider calls | council artifacts, skills, agents, `scripts/council-invoke.ts` and `scripts/lib/council-verification.ts` |
 
 Three documents under `docs/` carry interface law and load **nowhere** — open
 them when the work is theirs: `docs/es-menu-map.md` (where a row belongs; and
@@ -132,7 +133,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has thirty-six of them. One line each; the rule named is where the
+estate now has thirty-seven of them. One line each; the rule named is where the
 detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
@@ -149,6 +150,7 @@ both lists and to this table, or it is invisible.**
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `vm-upgrade-rehearsal` | boot the previous image in a guest, seed a player's state, update in place, check every piece survived | `upgrade-and-install.md` |
+| `cloud-pair-migration` | the mixed-installation test: one cloud, a device updated in place from the previous build and a fresh install, the folder's join, move and follow read from the cloud and both confs (D-CLOUD-158) | `rclone-cloud-sync.md` |
 | `es-syntax-check` | compile an EmulationStation edit syntax-only with the image build's own command, before the pin moves | `es-native-ui.md` |
 | `png-blackout` | paint a rectangle of a frame black with the standard library, so a screendump carrying the QA account's name is filed with the band painted out | `generic-x64-vm-testing.md` |
 | `fork-newdrive` | move the build estate to another volume | `device-builds.md` |
@@ -168,11 +170,15 @@ both lists and to this table, or it is invisible.**
 | `font-stems` | how sharp a widget face renders at each pixel size: strokes, solid cores, mean stem, per px, on FreeType | `es-native-ui.md` |
 | `signin-memory` | what the cloud sign-in window costs in memory on a QA guest: the window's and WebKit's peak RSS while a page loads | `generic-x64-vm-testing.md` |
 | `vocabulary-check` | back up / backup, and the rest of the player vocabulary | `es-player-text.md` |
+| `forbidden-terms-check` | does a tree, or a set of lines, carry a word from the list kept outside every tree (D-WORKFLOW-061); the fork CI runs it | `fork-workflow.md` |
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
 | `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |
 | `box-check` | is every open acceptance checkbox on the fork agent-verifiable -- names its artifact, and a physical fact when it asks for a device (D-QA-044; the checkbox checker, D-QA-045) | `issue-tracking.md` |
+| `prose-check` | does a rocknix.org draft read as the site's own writers write -- the tells the samples named, fail and warn; `--self-test` passes the maintainer's page and fails a machine-sounding draft (#323, D-WORKFLOW-068) | the `developer-relations` skill |
 | `release-catalog` | what each kept cut carried, what was proven on it and where it is, generated from the artifacts' RECORD.txt into `docs/releases/catalog.md` (D-WORKFLOW-044) | `issue-tracking.md` |
+| `rc-preflight` | may this tree be cut as a release candidate: packages current, the bases level with ROCKNIX, no bug without a disposition, the record clean -- or each finding accepted by a register row (#271, D-WORKFLOW-047) | `release-candidates.md` |
+| `pr-stack-check` | build the upstream series by content from `docs/pr-series/map.txt` in a throwaway worktree, and prove the last head equals `next` on every upstream-bound path (#322) | `fork-workflow.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

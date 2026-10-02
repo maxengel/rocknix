@@ -1,0 +1,48 @@
+00:39:02 === X-migrate on guest d, BUILD_ID="320d2b2bea0c35d77d627d14b3a43ea52aba9109"
+00:39:02 -- the isolated root: a second remote [aa-migrate], the same backend with /QA307m appended, listed first
+    root made: 1
+    stale stanzas removed, left: 0
+    first remote: aa-migrate:
+    seeded: GAMES/
+    seeded: GAMES/backup/
+    seeded: GAMES/backup/settings-old.zip
+    seeded: GAMES/game.srm
+    old layout conf: SAVES_REMOTE="/GAMES"
+    old layout conf: SETTINGS_REMOTE="/GAMES/backup"
+    old layout conf: CONTENT_REMOTE="/GAMES/Content"
+00:39:03 -- before, from the host
+    host sees:      30000 GAMES/backup/settings-old.zip
+    host sees:      20000 GAMES/game.srm
+00:39:03 -- --check
+    check:   backups  aa-migrate:/ROCKNIX/Backups
+    check: 
+    check: Would move, server-side, leaving anything else where it is:
+    check:   aa-migrate:/GAMES/backup  ->  aa-migrate:/ROCKNIX/Backups
+    check:   aa-migrate:/GAMES  ->  aa-migrate:/ROCKNIX/Saves
+    check: 
+    check: Nothing has been changed. Run with --apply to do it.
+    check: rc=0
+00:39:04   PASS  --check offers the move (rc 0)
+00:39:04 -- --apply
+    apply: Removing the old saves folder...
+    apply: Nothing is stored at aa-migrate:/GAMES/Content, so only the setting changes.
+    apply: Now using /ROCKNIX/Content for your ROMs, BIOS, and game content.
+    apply: Content is now at aa-migrate:/ROCKNIX/Content.
+    apply: 
+    apply: Done. Saves are at aa-migrate:/ROCKNIX/Saves, backups at aa-migrate:/ROCKNIX/Backups.
+    apply: Old folders were left in place if anything else was in them.
+    apply: rc=0
+00:39:05   PASS  --apply completed (rc 0)
+00:39:05 -- after, from the host
+    host sees:      30000 ROCKNIX/Backups/settings-old.zip
+    host sees:      20000 ROCKNIX/Saves/game.srm
+00:39:05   PASS  the save is at /ROCKNIX/Saves/game.srm
+00:39:05   PASS  the settings archive is at /ROCKNIX/Backups/settings-old.zip
+00:39:05   PASS  nothing of ours left under /GAMES
+    pointers: SAVES_REMOTE="/ROCKNIX/Saves"
+    pointers: SETTINGS_REMOTE="/ROCKNIX/Backups"
+00:39:05   PASS  the pointers follow the move
+00:39:05   PASS  a second --check finds nothing to move
+00:39:05 -- the guest's conf and remote back
+    remotes: qa-cloud:     conf: SAVES_REMOTE="/QA307d/Saves"
+00:39:05 === done: 7 PASS, 0 FAIL

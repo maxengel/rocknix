@@ -263,10 +263,63 @@ not resolve host` -- and to end the lag remove the override and put the
 symlink back (`rm -f /storage/.config/resolv.conf /run/rocknix/resolv.conf;
 ln -sf /run/systemd/resolve/stub-resolv.conf /run/rocknix/resolv.conf`). The
 override is a supported user setting, so leave the guest without it. ES logs
-to `/var/log/es_log.txt` (a `/storage/.cache/log/` copy beside it); there is
+to `/var/log/es_log.txt` (`/var/log` is `/storage/.cache/log` bind-mounted by
+`var-log.mount`, the same files under either path); there is
 no `es_log.txt` under `/storage/.config/emulationstation/`, and a `grep -c`
 on that path over serial returns an error line whose digits are none, which
 `tr -dc '0-9'` turns into an empty count -- a FAIL that names the harness.
+
+## The guests render in hardware, and the frames come over VNC (#291)
+
+Until 2026-09-26 every QA guest rendered with Mesa's **softpipe**: the
+image's options had said `LLVM_SUPPORT="yes"` for llvmpipe since the device
+was added, and `config/graphic` reset it to `no` before Mesa read it, so
+the interface, the compositor and RetroArch all drew on the CPU through the
+slowest software rasterizer -- RetroArch dropped six frames in ten, its
+udev poll could stall past a 100 ms key press (the #249 proof's misses),
+and the walks took twenty-two minutes. Nobody had read the renderer line;
+the options comment was taken as the behaviour.
+
+Two things changed, and both are the default now:
+
+- **`generic-x64-vm --headless` puts the guest on hardware GL through
+  virgl** (`--gl auto`): `virtio-gpu-gl-pci` with `-display
+  egl-headless,rendernode=<node>`, the node the first `/dev/dri/renderD*`
+  whose driver is not `nvidia` (virglrenderer wants Mesa's EGL; on the
+  build box that is the Intel iGPU, `renderD128`, with the RTX A1000 on
+  `renderD129` under the proprietary driver). The image's Mesa carries the
+  virgl driver, so RetroArch reports `Renderer: virgl (Mesa Intel(R)
+  Graphics (ARL))` and drops one frame in two thousand. `--gl none` (or
+  `VM_GL=none` through `vm-pair`) is the software path; the image also
+  carries **llvmpipe** now for that path (the `config/graphic` reset keeps a
+  device's explicit yes).
+- **The monitor's `screendump` has no surface under a GL scanout** (QEMU
+  answers `Error: no surface`; the frame is a texture the console never
+  reads back). `vm-visual-qa`'s `Monitor.screendump` -- and so `frame`,
+  `shot`, every walk, `time-to-play`, `ra-offline-test`'s frames and
+  `cloud-round-trip`'s walk steps -- takes the frame over the guest's VNC
+  display instead, the server `info vnc` names, as the same P6 file; once
+  seen, VNC is used for the rest of the session. The RFB client is in the
+  tool, standard library only, raw encoding, about 0.1 s a frame at 640x480.
+
+`vm-qa`'s report says which display the guest had (`display: GL through
+virgl on /dev/dri/renderD128`, read from QEMU's own command line) and which
+renderer its Mesa reported (`renderer: virgl (...)`, from the launch log the
+exit suite leaves). A report that reads `softpipe` is a guest on the wrong
+path, whatever the options say. Hardware rendering moves pixels against the
+accepted walk baseline once; that accept is named in `docs/vm-qa-log.md`.
+
+## A launch, a START or a walk waits for the interface to be idle (D-QA-057)
+
+`GET http://127.0.0.1:1234/isIdle` answers `[ true ]` with 200 only when no
+hasher, scraper, content installer, updater or game is running; while any of
+them runs, `POST /launch` answers 200 and starts nothing, and a page may still
+be loading. After a reboot with new ROMs the hasher runs for seconds to a
+minute on guest d. So a proof's reboot helper waits for `/isIdle`, for the
+startup sync's card to go and for a still screen before the script walks, and
+a launch through the API waits for `/isIdle` and dismisses dialogs first
+(`proofs-307/common.sh`, `tools/ra-offline-test`). A wait that expires says so
+in the log; a longer sleep is never the fix (blindspot 64).
 
 ## Driving EmulationStation from the monitor
 
@@ -465,8 +518,13 @@ that. Present: `mapfile` (bash), `stat -c`, `find -path`, `mktemp -d`,
 `find -printf`, `ls --time-style`, `realpath`. `comm ... | wc -l` reading 0
 on the image shipped once (2026-09-06, a difference count that said
 "identical"); `pgrep -c` prints usage and exits 1, which a `$(...)` reads as
-an empty string. When a script reaches for a coreutils name, run it on the VM
-before believing the host.
+an empty string. And **`pgrep -x` matches the whole command line**, not the
+name: `pgrep -x retroarch` reads 0 while `/usr/bin/retroarch -L ...` runs
+(2026-09-26, two proofs reported a launch that had happened as one that had
+not; the #239 experiment's "RetroArch up: no" was the same). Poll a process
+by its argv with a self-excluding bracket, `pgrep -f 'retroarc[h] -L'`, on the
+guest and on a handheld alike. When a script reaches for a coreutils name,
+run it on the VM before believing the host.
 
 ## Fixtures for the cloud tier
 
@@ -643,20 +701,26 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
   `/proc/uptime` and refuse the boot if it is not small.
 - **Live logs over SSH**: default login is `root` / `rocknix`; `PermitRootLogin yes`. No
   `sshpass` on the host — use `SSH_ASKPASS=<script-echoing-pw> SSH_ASKPASS_REQUIRE=force
-  setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to tmpfs `/var/log/es_log.txt`,
-  sway to `/var/log/sway.log`.
-  **The ES log file is late, and its tail can be lost.** `AsyncLogger`
-  (`es-core/src/Log.cpp`) queues lines to a worker and flushes the stream
-  every 8 batches, so a line can sit unflushed for minutes on an idle
-  carousel -- on 2026-09-14 the token check's lines reached the file 100 s
-  after they were logged, and a live `grep -c` said 0 for a line that was
-  there. So a live check never gates on the file: read the count again
-  later, or take the line from a channel that is not buffered. **ERROR
-  lines also go to stderr, which is the journal** (`journalctl -b -u
-  emustation`, the unit's `start_es.sh[pid]` lines, immediate); WARNING and
-  INFO lines reach only the file, which is complete in `es_log.N.txt` after
-  the next boot (the SIGTERM handler flushes, with a 10 ms wait for the
-  worker that fork #178 asks about). And **the credential filter drops
+  setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to `/var/log/es_log.txt`,
+  sway to `/var/log/sway.log`; `/var/log` is `/storage/.cache/log`
+  bind-mounted (`var-log.mount`), not tmpfs, so `es_log.0.txt`..`es_log.3.txt`
+  are the previous boots' files and survive a reboot.
+  **The ES log file was late until ES `469441d4d` (RC-11, 2026-09-15; fork
+  #178).** `AsyncLogger` (`es-core/src/Log.cpp`) flushed the stream every 8
+  batches, so a line could sit unflushed for minutes on an idle carousel --
+  on 2026-09-14 the token check's lines reached the file 100 s after they
+  were logged, and a live `grep -c` said 0 for a line that was there. Since
+  the fix the worker flushes after every batch: a WARNING line is in the
+  file 5-12 ms after it is logged (ten trials, 2026-09-25), and a `reboot`
+  2 s after one leaves it in `es_log.0.txt` (ten of ten). **ERROR and
+  WARNING lines also go to stderr, which is the journal** (`journalctl -b
+  -u essway` -- the unit is `essway.service`, whose `start_es.sh[pid]` lines
+  these are; there is no `emustation` unit); INFO lines reach only the
+  file and are not written at the shipped level. To provoke exactly one
+  WARNING line on a guest with nothing else logging, ask the interface's
+  API from a loopback address it does not treat as local:
+  `curl --interface 127.0.0.2 http://127.0.0.1:1234/caps` (one 403, one
+  `Access disabled for 127.0.0.2` line). And **the credential filter drops
   prose**: RetroAchievements' refusal reads `Invalid user/password
   combination`, so a `grep -v passw` read of the log or the journal says
   the line is not there when it is (the same run, twice). For a read whose

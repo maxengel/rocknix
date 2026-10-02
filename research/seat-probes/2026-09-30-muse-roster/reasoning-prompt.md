@@ -1,0 +1,1 @@
+Seat five people (A, B, C, D, E) around a round table so that A is not next to B, C is directly opposite E, and D sits immediately clockwise of A. List every distinct seating (rotations count as the same seating), then say how many there are. Be brief.

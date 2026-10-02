@@ -1,0 +1,24 @@
+# The punch items stream B owned (with the acceptance text each carries; #307)
+
+- **PL-003** (High) The saved-network join stores nmcli's escaped passphrase -- `tools/last-good-scripts-test` case: a PSK with `:` and `\` round-trips through join and read back byte for byte; on the guest, `get_setting wifi.key` after a join equals the value typed
+- **PL-004** (High) An unquoted array expansion drops every backed-up path that contains a space -- a location named `my games/` is in the archive; the scripts test constructs it and fails the unfixed script
+- **PL-005** (High) The credential scan warns and the backup still exits 0; detected credentials do not block publication -- a settings tree seeded with a `pass =` line produces no archive and the outcome line; `tools/last-good-scripts-test` case
+- **PL-006** (High) The credential scan's prefix class admits no capital, so `Password=` and `TOKEN=` pass under a custom `LOCATIONS` -- `Password=<long literal>` in a custom location is caught; the scripts test covers it
+- **PL-007** (High) The pre-restore snapshot covers the device's selection, not the archive's members -- restoring an archive with a member outside `LOCATIONS` and rolling back restores the original file
+- **PL-008** (High) A broad custom selection nests the backup directory's own credential-bearing snapshots into the archive -- an archive made with `LOCATIONS=/storage/.config` holds no member under the backup directory
+- **PL-009** (High) A failed snapshot collection reads as an empty device -- a collector made to fail (an unreadable location) aborts the restore with the outcome line; the scripts test covers it
+- **PL-010** (High) A legacy restore overwrites the device's cloud identity -- a legacy archive carrying an `rclone.conf` leaves the device's untouched; the scripts test covers it
+- **PL-011** (High) A failed settings write returns success -- `set_setting` on a read-only file exits non-zero; the scripts test covers it
+- **PL-031** (Medium) The saved-network join reports success on the wrong interface -- the scripts test: a join with another interface up reports the joined one's state
+- **PL-035** (Medium) An empty custom selection, or a path spelled with `/.`, escapes the policy's exclusions -- the scripts test: `/storage/./.config` is excluded like `/storage/.config`
+- **PL-036** (Medium) Unchecked collection errors, and whitespace lost in the legacy inspection -- the scripts test covers a member with a space in the legacy path
+- **PL-037** (Medium) Seed pruning leaves an edited file on restore -- the scripts test: an edited `es_settings.cfg` after a backup that pruned it is reset on restore
+- **PL-038** (Medium) A custom location outside `/storage` is dropped silently -- the scripts test: `/flash/x` in `LOCATIONS` ends with the refusal line
+- **PL-039** (Medium) The restore mark's write is unchecked -- the scripts test: an unwritable mark path ends the restore before the restart
+- **PL-040** (Medium) The redaction misses a value starting with `&` or `;` -- the redaction test covers `&y=KEY` at a value's start
+- **PL-041** (Medium) Two waiters can remove each other's stale lock, and the PID write's result is ignored -- `tools/wait-lock-test` and an ES unit test with two contenders on a stale lock
+- **PL-044** (Medium) `rm -rf` unchecked before `cp -rf` -- the scripts test: a failing `rm` does not reach the `cp`
+- **PL-045** (Medium) The restore marker is consumed when the snapshot's folder exists unmounted -- the scripts test: an unmounted folder leaves the marker
+- **PL-046** (Medium) A filtered file is counted when the `mv` fails -- the evidence test: a failing `mv` is not counted
+- **PL-064** (Medium) Startup deletes a temporary the previous writer may have needed, and usable means one assignment -- a unit test with a cut live file, a whole `.tmp` and no backup loads the `.tmp`
+- **PL-077** (Low) Same-second concurrent runs share names -- two runs in one second leave two archives

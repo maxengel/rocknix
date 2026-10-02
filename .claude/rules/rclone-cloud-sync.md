@@ -48,8 +48,10 @@ gamesave sync flows; if it ever belongs anywhere, it's the settings backup/resto
 
 **Console-first (hard rule, 2026-07-25):** ROCKNIX is a handheld gaming OS. Product
 surfaces — UI labels, dialogs, script output, on-device help, public docs — must assume a
-player holding the handheld with, at most, a phone as the companion device. There is no
-browser on the device; never instruct users to "open a link" on it. QEMU/VMs are a QA
+player holding the handheld with, at most, a phone as the companion device. The only
+browser on the device is the cloud sign-in window `cloud_oauth` opens for a provider's
+page (since #228, 2026-09), and nothing else may send a player to a link on the device;
+never instruct users to "open a link" on it. QEMU/VMs are a QA
 vehicle only: no product-facing text may mention QEMU, VMs, port forwards, or emulator
 setups (that guidance belongs in dev docs/release notes). A computer may be referenced
 only where technically unavoidable (e.g. rclone's OAuth `authorize` step).
@@ -153,6 +155,16 @@ seeded from the `/usr/config/*.defaults` templates:
   `--delete-excluded` unconditionally (like the `--verbose` strip); `sync` restores keep
   mirror semantics *within* the allowlist but can never delete outside it. Preserve that
   strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
+  **Since the audit's fixes (2026-09-28, #307):** the shipped `RCLONEOPTS` no longer carries
+  `--delete-excluded` at all, and `cloud_backup` strips it as `cloud_restore` does, whatever
+  the file says -- the shipped conf's comment now says `copy` is the default (sends what
+  differs, deletes nothing, keeps what it replaces for one cycle in `<saves folder>-replaced`)
+  and that no menu offers `sync`. The nesting warning covers both the settings folder and
+  the content folder, always logs, and shows on screen on deliberate runs (it used to fire
+  only while the flag was present, which the strip removed a few lines earlier, so it never
+  fired: #308 F-CS-17). The prune of `<saves folder>-replaced` and of the settings
+  archives keeps the folder and archive this run wrote by name and prunes the rest by count
+  (D-CLOUD-141's sibling in `cloud_backup`, #307 PL-021).
 - **The two phases have different transfer roots, so filter rules do not carry
   between them.** Phase 1 runs from `SAVESPATH` (`/storage/roms`); phase 2 runs
   from `SETTINGS_BACKUPS` (`/storage/roms/backup`) to `SETTINGS_REMOTE`, and on
@@ -180,8 +192,12 @@ seeded from the `/usr/config/*.defaults` templates:
   syncs `SAVES_REMOTE` with `--delete-excluded` and the archive is an excluded file,
   so a nested path is deleted there. A full run hides this -- phase 2 re-uploads
   moments later -- but a `--saves-only` run (or `BACKUPFILE_BACKUP_OPTION="no"`)
-  deletes the archives and puts nothing back. `cloud_backup` now warns when the
-  two are nested and the method can actually delete.
+  deletes the archives and puts nothing back. `cloud_backup` warns when either the
+  settings folder or the content folder is nested in the saves folder; `cloud_setup`
+  refuses a one-level saves folder where it is typed and derives `<parent>/Backups` and
+  `<parent>/Content` beside a deeper one; `cloud_sync_helper` derives no content folder
+  for a top-level saves folder on an upgraded config (`CONTENT_REMOTE` is written empty,
+  the remote's root, for the owner to set) -- #307 PL-015, D-CLOUD-143's neighbours.
 
 - **Reachability means the remote, not the internet.** `check_internet` used to
   ping `google.com`, wrong in both directions: it fails for a self-hosted or LAN
@@ -282,7 +298,7 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   exit hotkey's kill reported as 0 (D-LAUNCH-001) -- not the emulator's own
   code) and
   `capture-failures` (one line per degraded run, last 20 kept). They exist
-  because `/var/log` is tmpfs unless `debugging` is on (D-CLOUD-027): the log
+  because `/var/log` is a bind of `/storage/.cache/log` and persists across boots (D-SYS-001; it was tmpfs unless `debugging` was on before that row, which D-CLOUD-027 described -- stream C, 2026-09-28, found the old sentence here): the log
   line is gone at the next reboot, the stamp is not.
 
 Budget on an H700, measured: **starting rclone costs about a second** by
@@ -298,13 +314,24 @@ single-file push, and the exit-4 timing.
 EmulationStation runs the startup sync and the sync after a game with
 `--automatic`. Under it every rclone the script makes carries
 `RCLONE_SYNC_NET_OPTS` (`--contimeout 5s --timeout 5s --retries 1
---max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
+--max-duration 90s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
 `timeout` (coreutils' on the image -- busybox ships no such applet)
-against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
+against a deadline `SYNC_CEILING_SECONDS` (90) from the script's
 start -- because `--max-duration` bounds transfers and nothing else, and a
 stalled listing retried ten times is what held the exit card for 321 s on
 the VM (#135). A run the ceiling ends returns 124 (timeout) or 10 (rclone),
 and `why_for` says THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME.
+The ceiling was 20 s until 2026-09-25 (D-CLOUD-137, #282): the first exit
+sync after hours offline carried a two-hour backlog, Dropbox moved one
+file a second -- a changed file moved aside server-side and then
+uploaded, an unchanged one re-uploaded to set a time Dropbox cannot set
+-- and twelve operations were all twenty seconds allowed. The idle
+timeout still ends a stalled transfer in five, so the ceiling counts only
+while bytes move; a launch mid-sync still asks STOP IT AND PLAY / KEEP
+WAITING. `cloud_sync_helper` moves a config still on the old default to
+the new one and leaves a changed value alone: the append loop adds only
+a missing key, so without that a device the earlier images configured
+keeps 20 for ever.
 
 The back up and restore a player presses keep `RCLONE_NET_OPTS`, and since
 #153 (D-CLOUD-126) run under a **stall ceiling**: every rclone of a
@@ -637,15 +664,23 @@ A fixture that stages "the cloud's copy is newer" or "the same size" has to
 know what the shipped `copy` does on each backend. Measured on the VM pair
 in a fourteen-case matrix, not inferred:
 
-- **WebDAV (`rclone serve webdav`)** reports every file's modtime as its
-  *upload* time — a local mtime does not survive the trip — and offers no
-  hashes. A plain `copy` replaces the destination whenever size **or** mtime
-  differ, in either direction; `copy --update` keeps whichever side has the
-  later mtime; an equal-size, equal-mtime byte change is skipped outright
-  (#53's shape, and A2's). So "the cloud's copy is newer" is staged by
-  making the local file *older* (`touch -d` an hour back), never by touching
-  the cloud. A PUT killed mid-transfer leaves a partial file at the
-  endpoint, hash-equal to nothing.
+- **WebDAV (`rclone serve webdav`, `vendor = other`)** reports every file's
+  modtime as its *upload* time — a local mtime does not survive the trip —
+  and offers no hashes. **Measured again on 2026-09-28 (rclone 1.75.1,
+  `8196071ff5`, #315): a plain `copy` decides on size alone there.** rclone
+  cannot *set* a modtime on this vendor, so its precision is "not supported"
+  and the comparison never reaches the mtime: `-vv` says `size = 65536 OK`,
+  `Sizes identical`, and a changed save of unchanged size is not sent by
+  the exit sync or the full pass, with or without `--no-traverse`. The
+  earlier reading of this paragraph ("replaces whenever size **or** mtime
+  differ") was wrong for this vendor; `copy --update` compares the two
+  modtimes only inside a `--modify-window`, which is the whole width when
+  precision is unsupported. So "the cloud's copy is newer" is still staged
+  by making the local file *older* (`touch -d` an hour back), never by
+  touching the cloud, and a same-size change needs a content-based
+  transport (#315: `--ignore-times` on the recent set, or the capture
+  manifest's changed set) to move at all. A PUT killed mid-transfer leaves
+  a partial file at the endpoint, hash-equal to nothing.
 - **MinIO** keeps modtimes and offers hashes: the equal-size, equal-mtime
   change is transferred, and a killed upload leaves nothing behind. `rclone
   cat` of a missing key exits 0 with no output — a missing key is an empty
@@ -682,3 +717,88 @@ So a card that wants to say which run it is in has to be told by the composition
 that runs both -- `main.cpp`'s startup command echoes `>>> doing receive` and
 `>>> doing send` before each half (D-UI-052), and `CloudText::phaseBar` maps the
 run's percentage into its half of the bar.
+
+## What the audit's fixes changed in the scripts' quiet behaviour (2026-09-28, #307/#308)
+
+- **`cloud_capture` keeps a set-aside manifest** (`manifest-<id>.json.corrupt-<epoch>`) until a
+  manifest that parses stands in its place (D-CLOUD-078 (2) then (3)); its commit runs under a
+  lock of its own (`/storage/.cache/cloud_sync/.capture.lock`, bounded at 5 s), never the
+  transfer lock, and the garbage collection spares any seal changed in the last ten minutes.
+- **`cloud_restore` walks the saves tree for partial files only when a transfer may have left
+  one**: a record `restore-tree-clean` under `/storage/.cache/cloud_sync` is removed as the
+  transfer starts and written back once it has ended and been swept if it needed to be; a clean
+  run after a clean run walks nothing. The first restore on this build sweeps once.
+- **The rules merge on an upgraded device keeps a rule that never took effect inert**: a
+  non-default rule found below the catch-all on the first merge this build makes (marker
+  `.cloud_sync-rules-user-first-applied`) is written after the defaults as `# inert: <rule>`
+  rather than woken; a rules file cut short is never installed, and the saves scripts refuse
+  one that lacks the anchored catch-all (#307 PL-020).
+- **`cloud_sync.conf` is never sourced with a command in it** (D-CLOUD-142); the content
+  scripts read their values as text.
+
+## What the audit of the fix round changed (2026-09-28, #313)
+
+- **The three cloud pointers are compared as folders, never as strings** (D-CLOUD-152):
+  `cloud_migrate_layout` cleans each once (a leading slash, no trailing slash, no `.`
+  parts), folds case where `rclone backend features` says the cloud is case-insensitive
+  or when the features cannot be read (the safe side), refuses a pointer with `..` in it
+  (rc 4, the existing couldn't-be-read why) and refuses to copy a folder onto itself.
+  `SAVES_REMOTE="/ROCKNIX/Saves/"` used to be copied onto itself, verified clean and
+  deleted (#313 PL-001; rclone's own copy of a folder onto itself exits 0 and changes
+  nothing, measured with the image's v1.75.1 -- the deletion was the script's).
+- **`cloud_sync.conf` refuses any control character but a tab, in all five readers**
+  (#313 PL-002): a carriage return before `#` let a command through the grammar and
+  into `source`. Bash's own escapes inside double quotes (`\"`, `\\`, `\$`, `` \` ``)
+  are accepted (PL-015); an escape that closes the quote or opens `$(`, and any escape
+  in a folder value, are still refused (D-CLOUD-142); a refusal logs the line number
+  and the shape, never the value. Only `cloud_backup`, `cloud_restore` and the helper
+  gate a `source`; the content scripts parse and now refuse the same file.
+- **The duplicate cleanup's safety copy is kept only when whole** (PL-004): `cp` must
+  succeed, `cmp` match the live file and `conf_valid` pass the copy; otherwise the copy
+  is removed, the cleanup does not run and the run continues on the file it checked.
+- **A key written twice means its first assignment, for every reader** (D-CLOUD-149;
+  PL-021): `cloud_setup`'s `conf_get` reads the first as the cleanup keeps it; a value
+  it cannot read as text exits 2 and its callers refuse, so a `CONTENT_REMOTE` written
+  in another form (indented, exported, `+=`) is unreadable, never the cloud's root.
+- **A saves folder with an empty, `.` or `..` part is refused** before any other check,
+  with the folder it would have meant offered (PL-009).
+- **An exit capture that has run past 100 s commits nothing** (D-CLOUD-151; PL-034,
+  the blind pass's S-27): counted from its first start across its one re-run, checked
+  before the lock wait and again with the lock, rc 1 with reason `too-slow`; the launch
+  gate's 120 s policy (D-UI-115) is untouched, and a capture blocked on its commit lock
+  gives up after two 5 s waits regardless. The stage's cleanup under that lock is one
+  `stat` and one `rm`, not one per seal.
+- **A match apply whose plan file cannot be removed removes nothing** and ends with
+  `SOMETHING WENT WRONG` (G2-A-04).
+- **`cloud_log_scrub` runs once per device at boot** (PL-014), before the capture pass,
+  and masks the credentials earlier builds wrote to `cloud_sync.log*` and `es_log*.txt`
+  under the persistent `/storage/.cache/log` (D-SYS-001), never changing a line count,
+  with a stamp per log family in `/storage/.cache/cloud_sync/log-scrubbed`.
+- **The cloud sign-in's state only moves forward** (D-CLOUD-150; PL-032).
+
+- **A remote that compares by size alone gets a comparison of its own** (D-CLOUD-153,
+  refined D-CLOUD-154; #315, found by PL-029's proofs on `8196071ff5`). On plain WebDAV
+  -- every vendor but Nextcloud, ownCloud, Infinite Scale, Fastmail and rclone's own
+  serve, the ones rclone documents modtimes and hashes for -- rclone cannot set
+  modtimes and has no hashes, so two files of one size are equal to it whatever their
+  bytes, and a battery save -- the same size every time it is written -- never moved
+  again after its first upload, in either direction, while the cards said COMPLETED.
+  `remote_compares_by_size` (the same function in `cloud_backup` and `cloud_restore`,
+  reading the remote's `type` and `vendor` from `rclone.conf` as strings, one hop
+  through a crypt or alias, never starting rclone) now decides: every saves pass --
+  the exit sync's recent set included, both scripts, both directions -- runs with
+  `--update` there, so rclone compares the local mtime with the cloud's upload time
+  (its own one-second window; `--modify-window` was measured inert and `--ignore-times`
+  would have replayed the recent window's ten-minute slack). Nothing changes on any
+  other remote. **The window is real (D-CLOUD-155):** the backend keeps whole seconds,
+  so a same-size change written in the same second as its upload is not sent until
+  its next write -- measured 2026-09-29 with the image's rclone, and the reason vm-qa
+  run 72 failed the round trip's #315 step on the first cut that carried the fix; a
+  test of this path waits 2 s between the upload and the change, as the proof and the
+  step now do. Two consequences to know: a save written while the device's clock was
+  wrong is not sent (the recent window already needs the clock), and at the next
+  startup the cloud's older copy can replace such a save, kept under `--backup-dir`
+  for one cycle -- #317, the content-based transport, is the answer for both. The
+  harness's section S315 proves where the flag lands per remote and the detection's
+  edges; `proofs-307/X-size-same.sh` proves the bytes, both directions, on the QA
+  WebDAV; the seats' reading of the packet is `docs/audits/2026_09_29-issue-315-size-only-fix/`.

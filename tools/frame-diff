@@ -302,7 +302,12 @@ def cmd_compare(argv):
                 lines.append('| `%s` | %s | %d px | claimed by %s |' % (s, where, n, who[0]['tail'] or 'a claim'))
                 claimed += 1
             else:
-                lines.append('| `%s` | %s | %d px | **UNCLAIMED** |' % (s, where, n))
+                # The box above is printed inclusive (x0..x1-1); a claim is
+                # half-open, so it is offered here in the form a claims line
+                # takes. Copying the printed range made claims a pixel short
+                # that read as written and never contained their box (t05,
+                # runs 96 and 99, 2026-10-01).
+                lines.append('| `%s` | %s | %d px | **UNCLAIMED** (claim as `%d %d %d %d`) |' % (s, where, n, x0, y0, x1, y1))
                 unclaimed += 1
     dt = time.time() - t0
     head = ['# frame-diff', '',

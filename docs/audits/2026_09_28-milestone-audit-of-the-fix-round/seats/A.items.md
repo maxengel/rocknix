@@ -1,0 +1,21 @@
+# The punch items stream A owned (with the acceptance text each carries; #307)
+
+- **PL-001** (Critical) `--match --apply` deletes a system whose cloud listing failed, and enforces no previewed plan -- `tools/last-good-scripts-test` case: a system whose listing returns 5 is neither planned nor removed; a system planned `remove` in the preview and `sync` at apply is refused; the `--max-delete` count on apply equals the preview's
+- **PL-012** (High) `--all` restores ROMs and never BIOS, and re-anchors the media filters -- a journey restore with `--all` brings `BIOS/` down; `tools/cloud-round-trip` asserts a BIOS file's presence after `--all`
+- **PL-015** (High) A root-level saves path nests the settings and content folders inside it -- `cloud_setup --set-saves-remote /` is refused with the reason, or the derived paths are `/ROCKNIX/Settings` beside `/ROCKNIX/Saves`; the scripts test covers both
+- **PL-020** (High) An incomplete rules file can replace the live allowlist, and the consumers do not check for the catch-all -- a candidate cut before its last line is not installed and the helper says so; `cloud_backup` with a rules file lacking the catch-all ends `COULDN'T FINISH`; both in the scripts test
+- **PL-021** (High) Pruning by name order can delete the replaced-saves folder or the archive this run just wrote -- the scripts test seeds a future-dated sibling folder and asserts the run's own folder survives the prune
+- **PL-025** (High) The layout migration moves the old root's backups into Saves -- the scripts test seeds an old root with `saves` and `backup/` and asserts nothing under `Saves/backup/` after `--apply`
+- **PL-026** (High) The pointers are rewritten only after both moves, and the backups' resume check compares the saves source -- the scripts test kills the migration between the two moves and asserts the second run completes
+- **PL-027** (High) A listing that fails reads as an empty folder, and the pointers move with nothing copied -- the scripts test points the migration at a dead endpoint and asserts no pointer changes
+- **PL-028** (High) A saves phase that moved nothing (rclone 9) hides a failed settings phase -- the scripts test: saves 9 beside a failed settings phase ends `COULDN'T FINISH`; `tools/cloud-round-trip`'s settings phase asserts the outcome
+- **PL-030** (High) Cloud folder names reach the shell unquoted -- a cloud folder named `a$(touch /tmp/x)b` picked on the guest leaves no `/tmp/x`; the script's refusal is in the scripts test
+- **PL-051** (Medium) Paths are written into the conf through an unescaped `sed` replacement, and the conf is sourced -- the scripts test: a path with `&` round-trips
+- **PL-052** (Medium) A relative `--retire` argument is unlinked relative to the working directory -- the scripts test: a relative argument is refused
+- **PL-053** (Medium) The migration purges the source after a point-in-time check -- the scripts test: a file added after the check survives
+- **PL-066** (Medium) The game-list pass's failure is dropped -- the scripts test: a failing game-list copy ends `COULDN'T FINISH`
+- **PL-067** (Medium) The capture's final check and rename are not one step -- the scripts test: two captures serialise
+- **PL-070** (Medium) `unzip -t || unzip -l` makes a listing pass for an integrity test -- the scripts test: a damaged archive under busybox fails the check
+- **PL-071** (Medium) `migrate_content`'s failure is dropped -- the scripts test: a failing content move ends non-zero
+- **PL-079** (High) A content match could delete N64 `.fla` saves -- the scripts test's case A25: a match over a system holding `Game.fla` plans no removal of it (FAIL on the old tree: `plan 'n64|remove|2|15'; Game.fla DELETED`)
+- **PL-080** (Medium) A long cloud listing was read as a stall and ended the automatic run -- the scripts test's case A30: a listing that grows for longer than the stall bound completes (FAIL on the old tree: `rc 124 after 4s`)

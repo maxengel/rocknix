@@ -214,3 +214,31 @@ record beside them said one turn, and it took a diagnostic build to see
 `exists yes turns 0`. A stamp or record the interface writes and reads back
 is a line that says what it is (`turns=1`), never a bare digit, and a
 reader that gets `""` from a file that exists should suspect this first.
+
+## A pooled connection with the link gone is silent for a quarter of an hour (2026-09-27, #299)
+
+`HttpReq` runs every request through one `curl_multi` handle, so a
+connection to a host is reused across requests, and a reused connection
+whose link has gone does not fail: the send goes nowhere and TCP retries
+it in silence for as long as `tcp_retries2` allows, about fifteen minutes.
+The connect timeout (10 s) was spent when the connection was made and the
+total timeout is 0 by default, so nothing ends it. `getCheevosHashes()`
+fetches the hash library that way, on the interface thread, from the
+hasher's constructor: a game list update with the Wi-Fi down held the
+screen for twelve minutes on the VM and failed the moment the link came
+back (`HttpReq::onError (3) : Failed sending data to the peer`, then `Game
+Hash failed`). Two things follow:
+
+- **A request that may be long but must never be silent sets
+  `HttpReqOptions::stallTimeout`** (seconds without a byte, curl's
+  `LOW_SPEED_LIMIT 1` / `LOW_SPEED_TIME`), not `timeout`: the library is
+  megabytes and #190 keeps its total unbounded on purpose. The hash
+  library's two requests set 30 s (ES `9202ebed5`).
+- **A fetch on the interface thread freezes the screen for its bound**,
+  so the bound is the freeze: 10 s of connect plus 30 s of stall with the
+  link down. Upstream's hasher fetches in its constructor and every
+  hasher starts on the interface thread; moving the fetch off it is #300's
+  follow-up, not a one-line change.
+
+The tell in a log: a `LogError` from `HttpReq::onError` stamped the second
+the link returned, with nothing from that request in the minutes before.
