@@ -1,0 +1,1495 @@
+signals: SigIgn=0000000001000004 SIGINT ignored=0 SIGPIPE ignored=0
+last-good-scripts-test: scripts in /workspace/repos/rocknix.worktrees/conflict-resolution
+  sed/mv/cp/tr/head/wc/cut/awk: BusyBox v1.36.1 (2026-09-19 04:00:01 UTC) multi-call binary. -- a copy of /workspace/repos/rocknix.worktrees/conflict-resolution/../generic-x64/build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/bin/busybox
+  a. chksysconfig keeps and restores the last good system.cfg
+    PASS  empty system.cfg + valid .backup: verify restored the backup (hostname MINE)
+    PASS  and the player's retroarch.cfg was left alone
+    PASS  one syslog line names the recovery
+    PASS  truncated system.cfg (no hostname): verify restored the backup
+    PASS  binary system.cfg: verify restored the backup
+    PASS  both empty: verify fell back to the image's system.cfg
+    PASS  backup with an empty current file left .backup unchanged
+    PASS  backup with a valid current file replaced .backup, no temp left
+    PASS  the image's own system.cfg (221 lines) is valid and became the record
+    PASS  a UTF-8 value (an accented Wi-Fi name) is text
+    PASS  a cut-off restore is undone at boot: the copy is back, the marker gone, 'reverted' left for the screen
+    PASS  a copy whose folder is not mounted yet is left for the later verify, marker kept, nothing said
+    PASS  with the copy missing the marker is cleared and 'failed' is said instead
+  b. backuptool: a kill mid-tar leaves the previous archive; a failed restore puts the snapshot back
+    PASS  a first backup writes one archive at the root (rc 0)
+    PASS  and it lists back whole
+    PASS  with the wifi key stripped
+    PASS  a second backup rotates the first into archive/ and leaves one at the root
+    PASS  the run died (rc 137)
+    PASS  the previous archive is still the only *.tar.gz at the root
+    PASS  a .partial sits beside it (2026_10_02-060236-ROCKNIX_SETTINGS.tar.gz.partial)
+    PASS  archive/ is unchanged (still one archive)
+    PASS  a restore whose extraction fails exits non-zero
+    PASS  and the pre-restore state was put back (f1 'changed', f2 'file2')
+    PASS  the snapshot is in archive/ as *PRE_RESTORE*
+    PASS  and the screen says the settings are unchanged
+    PASS  with no path, log or tool name on it
+    PASS  a good restore --then-cloud restores f1 and leaves .cloud-journey-pending
+  c. set_setting is one rename; sort_settings refuses an empty result
+    PASS  values with /, & and spaces land; 'default' deletes; the hostname stays
+    PASS  set_setting writes a temporary and renames it (no separate append)
+    PASS  a key on the file's last line is replaced, not lost
+    PASS  a one-line file keeps its one key
+    PASS  the key is matched literally (a.b does not take aXb)
+    PASS  clean_hostname: RG SP -> RG-SP, GENERIC_X64 -> GENERIC-X64, punctuation and edges trimmed, 63 at most, empty stays empty
+    PASS  an empty system.cfg gets its one line
+    PASS  sort_settings leaves a file with no hostname line alone
+    PASS  and sorts one that has it
+  d. cloud_sync_helper and the saves scripts keep the config's last good copy; stamps survive a kill
+    PASS  the helper keeps a .bak of a whole rules file before merging
+    PASS  and the merged file carries the user's rule first and the catch-all
+    PASS  no .new left beside either file
+    PASS  the conf gained the missing defaults whole (RCLONEOPTS spans lines) and parses
+    PASS  a truncated rules file does not replace the good .bak
+    PASS  a conf that does not parse does not replace the good .bak
+    PASS  and the helper left the torn conf as it was rather than appending to it
+    PASS  load_config on a torn conf falls back to the .bak and goes on
+    PASS  with no .bak it refuses (rc 1) instead of running with half a config
+    PASS  and says why on the protocol line
+    PASS  the last-backup stamp carries rc 1 and the why token as its third field
+    PASS  a stamp writer killed before its rename leaves the previous stamp (rc 137)
+    PASS  and its temp file beside it, not an empty stamp
+  e. nothing a screen can show carries an exit code, a log path, a tool's name or a flag
+    PASS  no screen line matches FORBIDDEN across the six scripts
+  f. backuptool: rclone.conf never enters an archive, and the scanner knows rclone's key names (#52)
+    PASS  a backup with rclone.conf in LOCATIONS completes (rc 0)
+    PASS  rclone.conf is not in the archive
+    PASS  and no token travelled in any member
+    PASS  files that are not held back are archived as before
+    PASS  the log says rclone.conf was held back
+    PASS  the scanner sees the pass= and password2= lines in a file it does not hold back (2 lines), and the backup ends there with the last archive unchanged (#307 PL-005)
+    PASS  a clean backup is silent: input_enable_hotkey, core_info_savestate_bypass and default_open_gui_key are not credentials (#221)
+    PASS  es_settings.cfg is archived without the ScreenScraper passwords or the IGDB client secret (#64, #274)
+    PASS  and its other settings travel (the user names, the client id, the theme)
+  g. the in-script RCLONE_NET_OPTS fallback is the shipped value (#146)
+    PASS  cloud_sync.conf.defaults ships RCLONE_NET_OPTS (--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1)
+    PASS  cloud_sync.conf carries the same value
+    PASS  cloud_backup: RCLONE_NET_OPTS_FALLBACK is the shipped value
+    PASS  cloud_restore: RCLONE_NET_OPTS_FALLBACK is the shipped value
+    PASS  cloud_content_backup: RCLONE_NET_OPTS_FALLBACK is the shipped value
+    PASS  cloud_content_restore: RCLONE_NET_OPTS_FALLBACK is the shipped value
+  h. the rclone wrapper: an automatic run's stalled call ends at the ceiling, a deliberate run's at the stall ceiling (D-CLOUD-118, D-CLOUD-126)
+    PASS  the wrapper is lifted from cloud_backup
+    PASS  an automatic run's stalled rclone returns 124 (timeout)
+    PASS  and within the ceiling (3s)
+    PASS  a deliberate run's rclone that finishes returns its own status
+    PASS  a deliberate run's rclone that shows no progress is ended at the stall ceiling and returns 124 (3s)
+    PASS  cloud_backup: why_for 124 on an automatic run says the cloud took too long
+    PASS  cloud_backup: and on a deliberate run that the cloud stopped answering (TRY AGAIN is in reach)
+    PASS  cloud_restore: why_for 124 on an automatic run says the cloud took too long
+    PASS  cloud_restore: and on a deliberate run that the cloud stopped answering (TRY AGAIN is in reach)
+    PASS  cloud_backup: RCLONE_SYNC_NET_OPTS_FALLBACK is the shipped value
+    PASS  cloud_restore: RCLONE_SYNC_NET_OPTS_FALLBACK is the shipped value
+  i. cloud_net_ready settles on a held default route however NetworkManager judges connectivity
+    PASS  connected (site only) + limited settles (rc 0, 3s)
+    PASS  and before the deadline
+    PASS  still connecting at the deadline exits 69
+    PASS  no route while NetworkManager says connecting: announced, waited the bound, then 69 (rc 69, 3s)
+    PASS  no route and disconnected (the radio off): 69 at once, nothing announced (rc 69, 0s)
+    PASS  a route that arrives while the link comes up: announced, then settled after the grace, before the deadline (rc 0, 5s)
+  j. cloud_sync_helper migrates the shipped retry bound once, and leaves a hand-tuned value alone (#107)
+    PASS  the pre-#107 bound is rewritten to ten low-level retries (rc 0)
+    PASS  and the once-only marker is set
+    PASS  a hand-tuned bound (four retries) is left alone
+  j2. cloud_sync_helper moves the automatic ceiling off the superseded default, and leaves a changed value alone (#282, D-CLOUD-137)
+    PASS  the 20 s ceiling of an earlier image becomes 90
+    PASS  and the old option string follows to --max-duration 90s
+    PASS  a ceiling somebody set (45) is left alone, and so is its option string
+  k. backuptool: what the image ships does not travel, and an older archive's copy of it is not put back (#45); a RetroAchievements token travels in no shape (#169)
+    PASS  a backup writes (rc 0)
+    PASS  the edited ini and the player's own file travel
+    PASS  shipped seeds identical to /usr/config do not (cheat.db, test/seed)
+    PASS  assets and the shader cache never do, edited or not
+    PASS  and the log says two were left out as the image's own
+    PASS  the five files that hold only a RetroAchievements token are held back (PPSSPP's .dat, Dolphin's, SkyEmu's, ARMSX2's; #169)
+    PASS  the four settings files with a token line travel with the value blanked and every other line kept (DuckStation, melonDS, flycast, AetherSX2)
+    PASS  and the planted token appears in no member of the archive
+    PASS  and the log counts five held back and four blanked
+    PASS  the offline RetroAchievements proxy's folder travels in no shape: none of its five files is in the archive (#165)
+    PASS  and the log counts the five held back under it
+    PASS  the scanner sees a Token = line in a file the strip does not know (test/unknown.ini), and only that one: the backup ends there (#307 PL-005)
+    PASS  a pre-#45 archive restores (rc 0)
+    PASS  the ini and the player's file come back from it
+    PASS  its assets and cache are left where they were
+    PASS  its token file is not put back over the device's own (tar, #169)
+    PASS  the proxy's queue from the archive is not put over this device's own (tar, #165)
+    PASS  while the copy kept before the restore still carries the device's own token (STRIP=0: it never leaves the device, and 'as they were' means exactly that)
+    PASS  a pre-#45 zip archive restores (rc 0)
+    PASS  the ini and the player's file come back from the zip
+    PASS  its assets and cache are left where they were (zip)
+    PASS  its token file is not put back from a zip either (#169; the image's unzip -x on an exact member name)
+    PASS  nor is the proxy's queue (zip, #165)
+    PASS  and the symlink the OS provides is still a symlink, said on the screen (KEEPING 1 FILE(S))
+    PASS  a backup whose list filter dies part-way (grep exit 2) writes nothing and says why in the log
+  l. a missing cloud folder reads as not there yet whatever the server's words (#142)
+    PASS  absent_not_broken is lifted from cloud_content_restore
+    PASS  a folder its listable parent lacks is absent (QA/Content/BIOS)
+    PASS  a folder its parent lists is present, so the failure was something else (QA/Content/ROMs)
+    PASS  absent two levels up, no leading slash (QA-Custom/Saves: the root lists and lacks QA-Custom)
+    PASS  absent three deep (Nope/A/B)
+    PASS  a folder the root lists is present (QA)
+    PASS  a root that will not list is broken, not absent
+    PASS  the root itself is never absent
+    PASS  a folder whose name starts with a hyphen (QA/-Dash) is present, not read as options and called absent
+    PASS  syncpath_problem is lifted from cloud_setup with the walk
+    PASS  on a path-based remote a folder its parent lacks is accepted as not there yet (QA/New)
+    PASS  on a bucket remote the provider's refusal stands, and the message names buckets (Bad-Bucket)
+    PASS  when rclone cannot say which kind the remote is, the provider's refusal is taken rather than the walk's 'not there yet' (QA/New)
+    PASS  and the provider's own 'not found' is accepted whatever the kind (QA/New)
+    PASS  cloud_setup carries the identical function
+    PASS  cloud_content_backup makes the folder before it copies into it
+    PASS  the scan asks it about ROMs and BIOS before calling the cloud unreadable
+    PASS  cloud_setup --check verifies the one remote the shim lists (rc 0)
+    PASS  its probe is bounded to one run and three low-level retries (RCLONE_LIST_OPTS), not rclone's three runs of ten
+  m. the shipped device name becomes this unit's own, once; a player's name is never touched (#50)
+    PASS  the family name H700 becomes H700-9a3f (four hex digits of the unit's id), written back
+    PASS  and the log says the shipped default was replaced
+    PASS  a second boot leaves it (stable)
+    PASS  a name the player typed is untouched (Max Deck)
+    PASS  an empty name gets the unit's own too
+    PASS  another family's name is not this device's shipped default and is left alone
+    PASS  another unit's generated name of this family (H700-15ca, carried by a settings restore) becomes this unit's H700-9a3f, and the log says whose it was
+    PASS  and the unit's own generated name is then left alone, silently
+    PASS  another family's generated name is left alone, as the bare family is (RK3566-15ca)
+    PASS  a family the network spells with a hyphen (GENERIC_X64): GENERIC-X64-15ca becomes GENERIC-X64-9a3f
+    PASS  with no adapter and nothing stored, the shipped name H700 is kept for a later boot and the log says so
+    PASS  and the boot that finds the adapter gives the unit its own name
+    PASS  an id with no hex digits (RG35XX-SP-unknown) keeps the shipped name and is logged, not silent
+    PASS  cloud_device_id --if-present with no adapter and nothing stored prints nothing, exits non-zero and seeds nothing
+    PASS  a plain run there still seeds from machine-id (H700-0123456789): the callers with the network up are unchanged
+    PASS  with an adapter and nothing stored, --if-present prints the adapter's hash (H700-937e3a53db) and stores nothing
+    PASS  a plain run stores that same id
+    PASS  and --if-present then returns the stored id
+    PASS  with the mDNS responder not up, the script logs that it will publish Max-Deck.local when it starts, and does not call it
+    PASS  with the responder already up, it is told the network form of the name (avahi-set-host-name Max-Deck) and the log says so
+    PASS  the script never calls hostnamectl (hostnamed re-applied its cached name on that call)
+    PASS  the mDNS responder is enabled, and its unit in the built image build.ROCKNIX-GENERIC_X64.x86_64 orders after network-base (D-NET-003)
+    PASS  network-base.service orders itself before systemd-hostnamed and NetworkManager
+  n. a deliberate cloud_backup ends a transfer that stops making progress at the stall ceiling, and says it couldn't finish (D-CLOUD-126)
+    PASS  a transfer that stops making progress ends the run non-zero (rc 124, 9s)
+    PASS  and within the ceiling and a margin (9 s + 15; took 9s)
+    PASS  last-settings-backup records no success (1790920989 124 YOUR_CLOUD_STOPPED_ANSWERING)
+    PASS  the why on the protocol line: YOUR CLOUD STOPPED ANSWERING
+    PASS  the outcome line is Couldn't finish ... Try again. ('Couldn't finish: your cloud stopped answering. Try again.')
+    PASS  rclone's open progress line was closed before the script spoke again: the per-file line stands whole
+    PASS  the ceiling is sized from the conf's --timeout 3s (9 s with the grace)
+    PASS  no fifo or trace is left under /var/run
+    PASS  a plain run completes (rc 0, 1s), stamps 0 and records the upload
+    PASS  and ends on the sentence the LINK cells accept: Completed.
+    PASS  a transfer that keeps moving for longer than the ceiling (15 s of climbing bytes against 9 s) is not ended (rc 0, 31s)
+  o. set_setting system.hostname default keeps the line chksysconfig's sentinel reads, empty (D-NET-009)
+    PASS  set_setting system.hostname default leaves an empty system.hostname= line
+    PASS  another key deleted with default is removed as before (z)
+    PASS  del_setting system.hostname does the same
+    PASS  and leaves no temporary beside the file
+    PASS  chksysconfig reads the file as usable (the sentinel line is there, empty)
+    PASS  and the shutdown-time backup takes it as the last good copy
+    PASS  network-base-setup then names the unit H700-9a3f and the log says the shipped default was replaced
+  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002); pending and flushed answer the sync cards (#173); pending-ids and account answer the achievements pages (#180)
+    PASS  status before: enabled=0, exit 1
+    PASS  enable (rc 0): the toggle is 1, hardcore 0, and the record says it was 1
+    PASS  the marker is written and the service started
+    PASS  stdout is the one line EmulationStation reads: hardcore=0
+    PASS  and the other lines of system.cfg are as they were
+    PASS  status after: enabled=1, hardcore=0, service=active, exit 0
+    PASS  a second enable keeps the record at 1 (rc 0)
+    PASS  disable (rc 0): the toggle is 0, hardcore is back at 1, the record line is gone
+    PASS  the marker is gone, the service stopped, and stdout is hardcore=1
+    PASS  a second disable changes nothing and still answers hardcore=1 (rc 0)
+    PASS  with no hardcore line before, enable then disable leaves hardcore 0 (rc 0/0)
+    PASS  a service that will not start: exit 1, no marker left, hardcore still 1, no toggle and no record written
+    PASS  and nothing on stdout for EmulationStation to mistake for a result
+    PASS  enable with the hardcore_was write failing: exit 1, toggle not 1, hardcore still 1, no record, marker gone, service stopped, nothing on stdout
+    PASS  enable with the hardcore write failing: exit 1, toggle not 1, hardcore still 1, no record, marker gone, service stopped, nothing on stdout
+    PASS  enable with the offlineproxy write failing: exit 1, toggle not 1, hardcore still 1, no record, marker gone, service stopped, nothing on stdout
+    PASS  pending before the service ever wrote a store: 0, exit 1
+    PASS  an empty queue: 0, exit 1
+    PASS  one pending row beside a flushed and a stale one: 1, on the one line, exit 0
+    PASS  a second pending row: 2
+    PASS  pending-ids: the two pending rows as '<id> <epoch>', oldest first, exit 0; the flushed and stale rows absent
+    PASS  account: score=1234 softcore=56 from the cached sign-in (the user name matched in lower case), exit 0, and the token appears nowhere
+    PASS  account for a user the proxy never signed in: exit 1, nothing on stdout
+    PASS  account with no user name set: exit 1, nothing on stdout
+    PASS  the same rows with the toggle off: 0, exit 1 -- nothing would send them
+    PASS  pending-ids with the toggle off: nothing, exit 1
+    PASS  account with the toggle off: nothing, exit 1
+    PASS  a store that is not one: exit 2, nothing on stdout, the reason on stderr
+    PASS  pending-ids on that store: exit 2, nothing on stdout
+    PASS  account on that store: exit 2, nothing on stdout
+    PASS  pending-ids with no store: nothing, exit 1
+    PASS  flushed with no stamp: exit 1, nothing on stdout
+    PASS  a stamp: printed as written, exit 0, and removed
+    PASS  asked again: exit 1 -- one flush is said once
+    PASS  a stamp that says nothing went: removed, exit 1, nothing claimed
+    PASS  a stamp the service replaces between the read and the remove is reported by the next call (first '1789337156 2', then '1789337200 5')
+    PASS  account on a cached sign-in without points (a token sign-in): exit 1, nothing on stdout
+    PASS  a stamp that is not one: removed, exit 1, nothing claimed
+  q. 099-networkservices: a daemon fragment that sets no CONF inherits none from the fragment before it (#166)
+    PASS  099-networkservices parses (bash -n)
+    fragments: 001-ssh 002-samba 004-tailscaled 004-zerotier-one 005-fstrim 006-raofflineproxy 007-syncthing
+    PASS  the boot pass ran over 001-ssh 002-samba 004-tailscaled 004-zerotier-one 005-fstrim 006-raofflineproxy 007-syncthing (rc 0)
+    PASS  samba on: smb.conf is still there after the pass
+    PASS  toggle on: raofflineproxy.conf is still there after the pass
+    PASS  and the unit's condition held when its start was processed
+    PASS  no start found its marker missing
+    PASS  ssh off: no sshd.conf, sshd stopped (the pass still does its job)
+    PASS  toggle off with a marker left behind: the marker is removed and the service stopped (rc 0)
+    PASS  and samba's marker is still there
+  r. the launch log carries no credential value: setsettings' Added setting and Fetch lines, runemu's Executing line, the helper's shapes (#176, D-INFRA-010)
+    PASS  setsettings.sh parses (bash -n)
+    PASS  runemu.sh parses (bash -n)
+    PASS  setsettings: the planted password is nowhere in exec.log
+    PASS  the Added setting line keeps the key: cheevos_password = "<redacted>"
+    PASS  game_setting's Fetch line reads ] (<redacted>), the ROM's own parentheses notwithstanding
+    PASS  a value under a plain key is untouched, and an empty credential stays empty (cheevos_token = "")
+    PASS  the appendconfig RetroArch reads still carries the real password
+    PASS  and the lifted functions ran without an error
+    PASS  runemu: the planted value is nowhere in its log (the Executing line, the loginit header)
+    PASS  the Executing line keeps the flag and the username: --ra-username qa-user --ra-password <redacted>
+    PASS  a command line with no credential, and the header's ARG1, are untouched
+    PASS  and runemu's lifted functions ran without an error
+    PASS  the helper: no planted value survives any of its 19 shapes (ScreenScraper pair, RA p=/t=/y=, setrootpass, INI Token, JSON, the guard's token formats, a PEM block, a URL password, a PSK)
+    PASS  and each keeps what names it: devpassword=<redacted>, &y=<redacted>, &p=<redacted>, setrootpass <redacted>, GITHUB_TOKEN=<redacted> (the key rule, before the ghp_ one), github_pat_<redacted>, max:<redacted>@
+    PASS  controls survive: a username, hotkey_enable, an empty cheevos_password, a URL's other parameters, disk-usage
+    PASS  and the three shapes the audit found passing (#186 PL-29): the web key's setting name, a single-quoted value, a bare t= on a proxy line
+    PASS  a second pass changes nothing (the bundle filters a log the launcher already filtered)
+    PASS  the sed program is accepted by the sed in use (the image's busybox)
+  s. rocknix-evidence: every file in the bundle has been through the credential filter, summary.txt says so, and without the filter nothing is collected (#176)
+    PASS  rocknix-evidence parses (bash -n)
+    PASS  snapshot wrote a page (rc 0)
+    PASS  the page's process list reads --ra-password <redacted>
+    PASS  collect wrote an archive (rc 0, 2026_10_02-060345-device-evidence.tar.gz)
+    PASS  no planted value anywhere in the bundle (grep -c 0 across 10 files: exec.log, es_log.txt, both journals, the snapshot page, the summary)
+    PASS  exec.log in the bundle keeps its keys: cheevos_password = "<redacted>", ] (<redacted>), devpassword=<redacted>
+    PASS  es_log.txt and the journal read setrootpass <redacted> and p=<redacted>
+    PASS  and lines with no credential are as they were
+    PASS  summary.txt says the filter ran and over how many files (10 file(s) rewritten, 0 left out)
+    PASS  the filtered copy keeps the log's mtime (when it was last written is evidence)
+    PASS  without the helper, snapshot writes no page (rc 0)
+    PASS  without the helper, collect refuses (rc 1), writes no archive and says why: Couldn't load the credential filter (redact_credentials, /etc/profile
+    PASS  and leaves no half-built directory behind
+  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33; #190; #194; #199)
+    PASS  the pinned client unpacked from raofflineproxy-248ce5acae75113d09500cd7c6661a12fee4b93c.tar.gz
+    PASS  the client at 248ce5acae with 15 patch(es) applied in order, each compiled: ok
+    PASS  ready with no export and no store: 0
+    PASS  ready from the export: 3 (a line that is not a number is not a game)
+    PASS  scan with the toggle off: exit 78, why TOGGLE_OFF, no stamp
+    PASS  scan with no account: exit 77, why NO_ACCOUNT, no stamp
+    PASS  scan offline by the proxy's probe: exit 69, no stamp, the refusal in scan.log
+    PASS  the ctl's probe wrote its own folder (/tmp/raofflineproxy-probe.XNOJld); the service's online_state.json still says online with its mtime unchanged
+    PASS  scan while another scan or top-up holds the lock: exit 75, no stamp
+    PASS  scan over the fixture library (rc 0): found=5 new=4 cached=1 indexed=2 hashing=2 --  found=5 new=4 cached=1 indexed=2 hashing=2 truncated=0 cursor_saved=1
+    PASS  the jobs: I 101 a.nes (cached for another account), I 105 e.nes (patch row alone), H h.gb, H i.gb -- and not b.nes (cached), c.nes (no set), d.nes (no hash), f.nes (stale recovery), g.nes (unlisted in an indexed system), the hidden, empty and media-folder files
+    PASS  the page's lines (total 4, done 4|0|5|0), the stamp (0 scan cached=4 ready=5 indexed=2 errors=0) and the client's export (101 102 105 and the two hashed) agree
+    PASS  a second scan: nothing new (every game now cached for this account), done 0|0|5|0
+    PASS  one FAIL among OKs and a skip: exit 1, errors 1, why SOME_GAMES_NOT_SAVED, the stamp says so
+    PASS  the next scan tries the failed game again, and the unknown one (nothing marks either cached): 2 jobs, one from the index, one to hash; done 2|0|n|0
+    PASS  a scan cancelled from its page (SIGINT after the first OK): exit 130, why CANCELLED to the page, the stamp with the one game it had saved
+    PASS  the cancelled run's helper (pid 936513) is gone and the scan lock is free
+    PASS  the scan after a cancel passes over the game the cancelled run saved: 3 jobs, done 3|0|5|0
+    PASS  three FAILs in a row: exit 1, why RETROACHIEVEMENTS_STOPPED_ANSWERING, stamped
+    PASS  a refused sign-in: exit 1, why SIGN_IN_REFUSED
+    PASS  topup with the resolver two probes behind: three probes ten seconds apart, then the run and the mark (rc 0)
+    PASS  the link's return runs the recently played pass alone: no listing, the smart pass, no stamp (nothing new)
+    PASS  with no override, the builtin history newer than the mark and the config's path absent: the wake top-up probes and runs (rc 0)
+    PASS  and the builtin history older than the mark, nothing else: skipped, no probe (rc 0)
+    PASS  a link-return topup with no game played since the mark: exit 0 at once, no probe, the log says so
+    PASS  with a game played since the mark: the probe and the recently played pass (rc 0)
+    PASS  an index's top-up refused offline leaves index-pending (rc 69)
+    PASS  the next link-return run, with no game played, lists the library for the pending index and clears the marker (rc 0)
+    PASS  index-offline leaves index-pending with its log line and no probe (rc 0)
+    PASS  a link-return run a minute after the mark, with the marker: lists the library once for it and clears the marker (rc 0)
+    PASS  and with the marker gone, the next run inside the half hour exits at once as before (rc 0)
+    PASS  topup --after-index: the listing (found=3 new=2), the indexed pass (cached=2), the recently played pass, the stamp with added=2
+    PASS  topup with no answer at all: nine probes, exit 69, and the mark untouched -- the next link event tries again
+    PASS  topup once the probe answers: the mark is set (rc 0)
+    PASS  a second topup inside the half hour: exit 0 at once, no probe
+    PASS  topup --after-index inside the half hour: probes and runs (rc 0)
+    PASS  topup with the listing 120 s late and a helper that would run 900 s: ended at 900 s from its start (rc 1), TOOK_TOO_LONG, no recently played pass
+    PASS  topup whose helper reported DONE and was then killed by the bound: the run finished, rc 0, no why (#188)
+    PASS  scan whose helper died after its DONE: COMPLETED, no why (#188)
+    PASS  topup keeps running (route topup, game 1 then 2 of 2) while its jobs run and removes it after (#189)
+    PASS  scan keeps running (route scan, game 1 then 2 of n) while its jobs run and removes it after (#189)
+    PASS  the helper's badge wait returns within its bound and shuts the pool down (ok 0.50)
+    PASS  summary: one line for game 102 -- 2 core achievements, 15 points, 1 unlocked (5), none pending; the empty set and another account's game not listed
+    PASS  summary: a casual award still waiting counts as unlocked and as pending (2 of 2, 15 points, pending 1)
+    PASS  summary with the toggle off: nothing, exit 1
+    PASS  topup --after-index behind a lock nobody releases: exit 75 after 890 virtual seconds, inside the deadline
+    PASS  disable during a scan: the run is asked to stop through its lock file's pid, the helper (pid 940907) is gone within ten seconds, disable exits 0 (the scan itself exited 143)
+    PASS  and the toggle is 0 with no stamp from the stopped run
+    PASS  refresh --bogus: usage on stderr, exit 64
+    PASS  images: the progress file reads route=images at=<epoch> while the helper runs
+    PASS  disable during an images run: asked to stop through the lock's pid, the image helper (pid 941359) gone within ten seconds, the progress file removed (the run exited 143)
+    PASS  refresh --game with no id: usage on stderr, exit 64 (the second usage branch)
+    PASS  a dead run's progress file is removed by the next verb that takes the lock (a top-up that skipped on the mark), exit 0
+    PASS  refresh: the progress file reads route=refresh at=<epoch> while the helper runs
+    PASS  disable during a refresh: the helper (pid 941511) gone within ten seconds, the progress file removed (the run exited 143)
+    PASS  a scan with the cap at ten over eleven unindexed ROMs: truncated=1 said in the log ( found=13 new=12 cached=1 indexed=2 hashing=10 truncated=1 cursor_saved=1)
+    PASS  the second scan reaches the eleventh file (g11.gbc a job) and is not truncated
+    PASS  the patched client's predicates ran (21 PASS / 0 FAIL lines)
+    PASS  PL-01 refresh: due = the cached games played recently (2); cached games nobody played (1, 3) and a played game with no cached set (9) are not
+    PASS  PL-01 refresh: a game played a day ago is recent, one played eight days ago is not, and the window is at most a week
+    PASS  PL-25 refresh: a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs
+    PASS  PL-25 refresh: a refused sign-in ends the pass without a request for the remaining games
+    PASS  PL-25 refresh: run() survives a pass that raises (the thread lives for the service's lifetime)
+    PASS  PL-02 eviction: a game with a fresh patch row keeps its 61-day-old achievementsets, gameid and unlocks rows
+    PASS  PL-02 eviction: a game whose every row is 61 days old is kept whole (cached games no longer expire); the login and User-Agent rows stay
+    PASS  PL-02 eviction: an incidental row older than sixty days still goes (a last-played mark), so the eviction runs
+    PASS  PL-23 credentials: with Beta's password configured and only Alpha's sign-in cached (and no login possible), nothing is returned -- never Alpha's token
+    PASS  PL-23 credentials: with Beta's own sign-in cached it is Beta's that is returned
+    PASS  PL-12 upload: a planted incident is not reported with upload_logs unset
+    PASS  PL-12 upload: with upload_logs true it is
+    PASS  PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left
+    PASS  013 / #213 validator (G-01): a whole PNG is published; a corrupt IDAT, a bad chunk CRC and a frame with no image data are not
+    PASS  010 / #190 store-only: X-RA-Store-Only: 1 is served from the store while the process believes it is online; without it, upstream first
+    PASS  011 / #194 login header: the store's answer to r=login2 carries X-RA-Offline: 1 and X-RA-Proxy: 1 with the body intact; a plain answer, an error and a raw asset carry X-RA-Proxy: 1 and no X-RA-Offline
+    PASS  012 / #199 image miss, store-only: an uncached /Images/ with X-RA-Store-Only: 1 while the state is online is 404 at once -- is_online never asked, nothing forwarded
+    PASS  012 / #199 image miss, offline: an uncached /Badge/ with no header while the process's own state is offline is 404 at once -- is_online never asked, the log line included, nothing forwarded
+    PASS  012 / #199 image hit: a cached /Images/ is served -- its bytes, image/png -- offline and store-only alike, with no question to the link
+    PASS  012 / #199 image miss, online: an uncached image with no header while the state is online still asks is_online and fetches upstream, as before
+    PASS  012 / #199 store-only header in another client's capitalisation (X-Ra-Store-Only, urllib's): still the store's copy, no probe, no fetch (G-02; until #258 only the exact and the all-lower spellings counted)
+  u. wifictl current, saved, forget and join read NetworkManager, not the setting; forget says when it dropped the connection; join activates the saved profile and moves the settings onto it (#191)
+    PASS  saved: the two wireless profiles as name<TAB>active|saved, the one in use first, the colon unescaped, the wired profile left out (rc 0)
+    PASS  current: the joined network's SSID, Home Wi-Fi -- NetworkManager's answer, not the setting (rc 0)
+    PASS  forget of the network in use: forgotten, then disconnected on a second line; exactly that profile deleted (rc 0)
+    PASS  current with no network joined: nothing printed, exit 1
+    PASS  saved after that forget: the one remaining network, saved
+    PASS  forget of a saved network whose name carries a space and a colon: forgotten alone, exactly that profile deleted, the one in use kept
+    PASS  forget of a name nobody remembers: nothing printed, exit 1, nothing deleted
+    PASS  forget of the wired profile: refused -- not a network a player joined
+    PASS  forget with no name: refused, nothing deleted
+    PASS  join of a saved network: its profile brought up (connection up, exactly that one), joined printed, wifi.ssid and wifi.key moved onto it from the profile
+    PASS  join of the network already in use: joined without a connection up, the settings still moved onto it
+    PASS  join of a name nobody saved: nothing printed, exit 1, nothing brought up, the settings untouched
+    PASS  join of the wired profile: refused -- not a network a player joined
+    PASS  join with no name: refused
+    PASS  join whose activation fails (the stored key refused): nothing printed, exit 1, the settings untouched, the device still on its network
+    PASS  join with NetworkManager not answering: exit 2, nothing printed, the settings untouched
+    PASS  saved with NetworkManager not answering: nothing printed, exit 1 -- not an empty list
+    PASS  current with NetworkManager not answering: exit 2, not 'joined to none'
+    PASS  forget with NetworkManager not answering: exit 2 (could not ask, as join and current say it; #308 F-WF-07), nothing deleted
+
+  v. the save state manager's arguments reach RetroArch as Batocera's launcher carries them (#196, D-UI-057): runemu reads -state_slot, -autosave and -state_file each on its own and takes the path whole; setsettings turns a .auto file into savestate_auto_load and any other into -e <slot>; without -state_file, today's lines byte for byte
+    PASS  runemu.sh calls parse_savestate_arguments with its own "$@"
+    PASS  a numbered slot (-state_slot 3 -state_file <slot file>): SNAPSHOT 3, no AUTOSAVE, the path whole -- spaces, parentheses and " - " -- the controllers intact
+    PASS  the AUTO SAVE tile, and a plain launch with AUTO SAVE/LOAD on (-autosave 1 -state_file <auto>, no -state_slot): AUTOSAVE 1, the .auto path whole, no SNAPSHOT
+    PASS  START NEW GAME (-autosave 0 alone): AUTOSAVE 0 and the controllers cut before it -- the shape the old parser dropped into CONTROLLERCONFIG
+    PASS  START NEW AUTO SAVE (-autosave 1 -state_slot -1): SNAPSHOT -1, RetroArch's auto slot
+    PASS  without -state_file, the shapes the built-in fallback sends (-autosave 1 -state_slot 2; -state_slot 2; -autosave 0 -state_slot 2; none; a netplay tail) read exactly as today
+    PASS  runemu hands setsettings --state_file= ahead of --controllers=, so the path never lands in CONTROLLERS (a ROM name can hold p1)
+    PASS  setsettings reads --state_file= whole and, placed ahead of --controllers=, leaves AUTOSAVE, SNAPSHOT and CONTROLLERS exactly as today
+    PASS  an empty --state_file= (no manager, or a tile without a file) reads as no state file, the other three as today
+    PASS  a numbered slot with AUTO SAVE/LOAD on: state_slot 3, auto-load and the exit auto save on, and " -e 3" on stdout
+    PASS  and the savestates directory is made
+    PASS  a numbered slot with AUTO SAVE/LOAD off: " -e 3" still, both auto settings off -- the slot loads, nothing is written at quit
+    PASS  the AUTO SAVE tile (-autosave 1, the .auto file, no slot): auto-load and auto-save on, no state_slot, nothing on stdout
+    PASS  a .auto file with AUTO SAVE/LOAD off: the file alone turns auto-load on (Batocera's rule), the exit auto save stays off
+    PASS  without a state file (the fallback's -autosave 1 -state_slot 2; nothing; -autosave 0 -state_slot 2): today's appendconfig lines byte for byte and nothing on stdout
+    PASS  START NEW GAME (-autosave 0 alone): both off, no state_slot, no -e
+    PASS  a slot that is not a number (none, -1, "3; rm -rf x") gets no -e: the fragment is eval'd inside RetroArch's command line
+    PASS  runemu still splices setsettings' stdout before --config (the line --host and --set-shader ride)
+    PASS  spliced, the RetroArch command reads ... _libretro.so -e 3 --config ...
+    PASS  and without a state file no -e is spliced
+  w. cheevos_armsx2.sh writes one Token line to secrets.ini, however often it runs (#170)
+    PASS  two launches leave exactly one Token line in secrets.ini, the current token
+    PASS  and PCSX2.ini carries the account once, with no Token of its own
+    PASS  a secrets.ini without the section gains [Achievements] once and one Token line
+    PASS  the shipped seed's bare 'Token =' line is replaced, not kept beside the written one
+    PASS  an upgraded device's four stale Token lines collapse to one on the first launch
+  x. the launcher's incremental-save modes, the password's handoff, and the keeper's cut/whole note (#209, #198, #247)
+    PASS  INCREMENT PER SAVE (""): savestate_auto_index true, savestate_max_keep 5
+    PASS  DO NOT INCREMENT ("2"): savestate_auto_index false, so the save hotkey writes the launched slot (#209, D-UI-083)
+    PASS  a legacy "0": off, as DO NOT INCREMENT
+    PASS  no maxincrementalsaves: no savestate_max_keep line, never an empty value
+    PASS  a password with a space, a $ and a backslash reaches cryptpw whole and lands in shadow (#198)
+    PASS  and smbpasswd receives it twice, byte for byte (printf, not echo -ne)
+    PASS  syncthing and the setting get the same bytes
+    PASS  a 64 KB dump under a 1 MB cap is noted whole
+    PASS  a 3 MB dump under a 1 MB cap is noted CUT from the raw count -- its compressed size is far under the cap (#247)
+    PASS  a dump of exactly the cap is noted whole, not CUT: one more byte is asked of the stream and none comes (audit #258, the seat's G-06)
+    PASS  with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)
+    PASS  and with a floor the card clears by more than the cap, the same dump is kept
+  F1. GENERIC_X64, the developers' QA device (D-QA-053): the boot quirks write only what a guest keeps, the serial shell stays on a VM, the launcher's print verb touches nothing (#307 PL-019, PL-022, PL-023, PL-033, PL-034, PL-073; #308)
+    PASS  the fixture's /etc carries the recipes' links into /storage (10 of them)
+    PASS  the quirk pass writes nothing into the read-only image: 0 'Read-only file system' lines on the journal
+    PASS  and says nothing else on the journal
+    PASS  and leaves /storage no file that changes a later boot (tmpfiles, sysctl, modules, udev, units, masks)
+    PASS  the earlier builds' pass wrote 20 file(s) into /storage the fixture can take back (the fixture holds what a guest holds)
+    PASS  one boot of the tree under test takes back every one of them
+    PASS  and the owner's own files beside them stay, a mask of their own and a drop-in under a name no retired quirk wrote included (the audit's G-F1-09)
+    PASS  and the boot that takes them back says so on the journal
+    PASS  and a second boot changes no file's bytes and says nothing
+    PASS  a mask of emergency.target the owner makes after the take-back survives the next boot
+    PASS  no quirk tree outside the recipe that installs it (packages/hardware/quirks is empty)
+    PASS  serial-debug-shell.service carries ConditionVirtualization=vm, a condition every start must meet
+    PASS  and keeps the console conditions tools/vm-serial depends on
+    PASS  and its header carries the SPDX line and the decision that keeps it (D-QA-053)
+    PASS  and IgnoreOnIsolate sits in [Unit], where systemd reads it
+    PASS  GENERIC_X64 ships no bootloader updater that has nothing to copy
+    PASS  and init skips a missing updater and writes the boot hint itself after update_bootloader
+    PASS  qemu-args prints the command and leaves a running guest's monitor and serial sockets, and makes no OVMF vars file (#307 PL-033)
+    PASS  and what it prints is the command run would start
+    PASS  and run still clears the stale sockets and makes the vars file from its template before it starts QEMU
+    PASS  a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)
+    PASS  a start refuses a socket path that is a symlink, and the socket it points at stays (the audit's G-F1-01)
+    PASS  a vars store whose size is not its firmware template's is refused and kept, one that matches is used (the audit's G-F1-05)
+    PASS  a comma in the disk, vars and monitor paths is doubled in QEMU's option strings (#308 gpt F-VM-13)
+    PASS  a 1 GiB disk is refused before QEMU, naming the 16 GiB the profile needs (#308 gpt F-VM-15)
+    PASS  --ssh-port 70000 and 0 are refused as the argument parser reads them (#308 claude F-VM-14)
+    PASS  --accel auto takes KVM only on an x86_64 host: TCG on aarch64 with /dev/kvm open, KVM on x86_64 (#308 gpt F-VM-14)
+    PASS  OVMF code and vars come from one directory: a 4M code image with only another directory's vars is refused, and a matched pair is taken (#308 claude F-VM-14)
+    PASS  a qcow2 with a backing file or an external data file is refused for a UTM bundle (#308 gpt F-VM-11)
+    PASS  the leftover check sees a planted .probe.zip.<x>.partial (the check can fail)
+    PASS  a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)
+    PASS  a UTM build whose archive write fails publishes nothing and leaves no temporary (the audit's G-F1-08)
+    PASS  a UTM build under umask 077 publishes a bundle of mode 600 (the audit's G-F1-06)
+    PASS  the shipped 640x480 follows a 1280x800 guest, and follows it back when the kept guest is re-run at 640x480 (#307 PL-034)
+    PASS  and back again at 1280x800
+    PASS  a value set by hand (1024x768) is left at 640x480 and at 1280x800
+    PASS  a disconnected DP-1 listing 1920x1080 first is passed over for the connected output's 1280x800 (#308 claude F-VM-10, gpt F-VM-09)
+    PASS  an interlaced 1920x1080i gives a height of 1080 (#308 claude F-VM-10)
+    PASS  an unrecorded 1280x800 met at a 640x480 boot is left: it cannot be told from a hand-set pair (the audit's G-F1-02)
+    PASS  an unrecorded 1280x800 met at a 1280x800 boot is taken, and follows a later 640x480
+    PASS  the shipped 640x480 put back by a RetroArch reset, beside the record, follows the mode again
+    PASS  a boot killed right after it rewrote the cfg leaves the size its own: the next boot follows (the audit's G-F1-04)
+    PASS  a record in its first form (two lines, x and y) is read
+    PASS  and an unrecorded 1024x768 is left
+    PASS  a second boot at the same mode leaves the cfg and the record as they were
+    PASS  a cfg naming vulkan moves to gl on an image with no Vulkan ICD, and is left where one exists (#308 claude F-VM-11)
+    PASS  an ICD under /storage/.local/share/vulkan/icd.d leaves vulkan alone
+    PASS  and the GENERIC_X64 profile ships gl, the driver a guest can draw with (#308 claude F-VM-11)
+    PASS  with the forwarded port on fw_cfg the guest gets the loopback command
+    PASS  and its own command follows the port, and goes when fw_cfg carries none
+    PASS  a command written by hand survives a boot with the port on fw_cfg and one without (the README's manual fallback)
+    PASS  and so does one written over the quirk's own command
+    PASS  an earlier build's unrecorded command, met on its own port, is taken and then follows the port
+    PASS  a loopback command a tester wrote for a forward of their own survives a boot with a port and one without (the audit's G-F1-03)
+    PASS  a six-digit fw_cfg port is refused, not cut to five digits (the audit's G-F1-07)
+    PASS  a boot killed right after it put a new command in place leaves it the quirk's: the next boot without a port removes it (the audit's G-F1-04)
+    PASS  a second boot on the same port changes nothing and says nothing
+  F2-1. a rotation generator is in the build stamp of every core whose table it writes (#307 PL-002)
+    PASS  an edit to rotation-table-fba.py moves fbalpha2012-lr's stamp, so scripts/build rebuilds it
+    PASS  an edit to rotation-table-fba.py moves fbalpha2019-lr's stamp, so scripts/build rebuilds it
+    PASS  an edit to rotation-table-fba.py moves fbneo-lr's stamp, so scripts/build rebuilds it
+    PASS  and leaves mame2003-plus-lr's alone -- that core does not run it
+    PASS  and leaves mame2010-lr's alone -- that core does not run it
+    PASS  an edit to rotation-table-mame.py moves mame2003-plus-lr's stamp
+    PASS  an edit to rotation-table-mame.py moves mame2010-lr's stamp
+  F2-2. the rotation generators read live source only, fail under their floor, and carry a licence header (#308 F-EM-04, F-EM-10, F-EM-11, F-EM-12)
+    PASS  FBA: live drivers only -- a driver inside /* */, a flag after //, a flag named in a string give no row
+    PASS  MAME: a commented-out GAME() gives no row, a live ROT0 wins over a commented ROT90, and // inside a string is text
+    PASS  --min N fails a table under N rows (two rows, --min 3) and passes one at N
+    PASS  and the MAME generator's --min fails its one-row fixture under 2
+    PASS  rotation-table-fba.py opens with an SPDX line and a copyright line
+    PASS  rotation-table-mame.py opens with an SPDX line and a copyright line
+    PASS  the usage lines name the files they are in, and the MAME generator compiles no regex it does not use
+    PASS  the five recipes hand the generator its floor (--min) and carry no copy of the row check
+  F2-2b. the generators skip strings, #if 0 and a separator-hidden comment; each recipe dies on the generator's failure itself (#307 follow-up: claude G-F2-04/05, gpt G-F2-03)
+    PASS  FBA: a driver inside #if 0, or inside a /* */ whose opener follows a digit separator (1'000), gives no row
+    PASS  MAME: a GAME() inside a string literal, or in an #if 0 block (nested #if included), gives no row; its #else does
+    PASS  a generator that fails (a python3 that exits 1) stops each of the five recipes through die, not through being the function's last line
+  F2-3. make docker-* writes .env owner-only in its recipe, over an older 0644 copy, and removes it after (#307 PL-043)
+    PASS  no prerequisite list writes .env as make reads the file (it did for every target, native builds included)
+    PASS  the container is handed a fresh .env, mode 600, though a 0644 one was there before
+    PASS  and .env is gone afterwards, the container's status the recipe's (7)
+    PASS  a get_env that fails starts no container and leaves no .env
+  F2-3b. an .env the recipe cannot remove stops the build before any credential is written into it (#307 follow-up: gpt G-F2-01)
+    PASS  an unremovable 0644 .env: no container, a non-zero status, and nothing forwarded written into it
+  F2-4. RetroArch's patches: the fork's apply at fuzz 0, the tree compiles, the sharp-size table follows the face that is drawn (#307 PL-032; #308 F-RW-02..10)
+    PASS  every patch applies in the package's order, the fork's with no fuzz
+    PASS  the patched gfx_widgets.c, video_thread_wrapper.c, command.c, runtime_file.c and configuration.c compile (host gcc, -fsyntax-only)
+    PASS  the table is the drawn face's: ozone/regular.ttf -> Inter UI Regular (a backslash path too), ozone/bold.ttf -> Inter UI Bold, the shipped xmb/monochrome/font.ttf -> none; 17.4 px moves to 18, 11 stays (15 is past the band)
+    PASS  both branches ask the drawn face for its table (all four regular and bold calls sharp, whole calls read), the message queue takes none (D-UI-098), each face's size is logged, and no log call carries a fork issue number
+    PASS  0016's and 0017's messages describe the 13 px floor and the face the shipped profile draws
+    PASS  the widget scale's XMB test has the configured-name fallback the ozone test has
+    PASS  the placement line is written after the divider is set and from the divider the placement adds
+    PASS  gfx_widgets_layout places the messages on screen again once the margin and divider are new
+    PASS  0018 keeps Auto only when a launch's append config sets it, answered when the configuration loads -- run over ten append lists, a file deleted after the load included
+    PASS  0018's message records the passing observation with both halves applied
+    PASS  0011's message names the upstream fix it stands in for (libretro/RetroArch#19518)
+  F2-5. GENERIC_X64's mupen64plus.cfg: every Control1 mapping is in [Input-SDL-Control1], once (#308 F-VM-09)
+    PASS  Control1's DPad and axis mappings are read under [Input-SDL-Control1], each key once
+  F2-5b. a GENERIC_X64 guest's existing mupen64plus.cfg loses the splice at the next launch and keeps everything else (#307 follow-up: claude G-F2-08, gpt G-F2-04)
+    PASS  GENERIC_X64: exactly the six pasted lines leave the player's copy; plugin = 5 and ScreenWidth = 1280 stay
+    PASS  a second launch changes nothing
+    PASS  another device's copy is left as it is
+  F2-6. ppsspp-lr: the x86_64 strip of -mno-outline-atomics runs after the patches that add it (#308 F-EM-02)
+    PASS  x86_64's CMakeLists.txt ends without the flag, aarch64's keeps it
+    PASS  scripts/unpack calls post_unpack (line 122), applies the patches (196), then calls post_patch (201)
+  F2-7. amiberry and yabasanshiro-sa stay off GENERIC_X64 without leaving upstream's AMD64 (#308 F-EM-05)
+    PASS  GENERIC_X64 skips both, AMD64 and H700 build both
+  F2-8. mupen64plus-sa-audio-sdl declares no library its make line turns off (#308 F-EM-08)
+    PASS  libsamplerate is not declared (NO_SRC=1), speexdsp is, and the comment says why for every architecture
+  F2-9. GLideN64 keeps hi-res textures on AMD64; GENERIC_X64's NOHQ is appended with a separator (#308 F-EM-15, gpt F-EM-02)
+    PASS  AMD64 builds GLideNHQ, GENERIC_X64 passes ' -DNOHQ=On' as its own word, H700 keeps upstream's arm
+  F2-10. gst-plugins-bad takes the generic option string whole; both overrides fail on a missing payload WebKit needs (#308 F-PB-09, gpt F-PB-24)
+    PASS  with a quoted value mid-string the override still passes all 172 options, the two mpegts ones enabled
+    PASS  gst-plugins-bad without libgstmpegts-1.0 fails the package
+    PASS  and with it keeps libgstmpegts-1.0 and nothing else
+    PASS  gst-plugins-base without the appsink plugin (libgstapp.so) fails the package
+    PASS  and with them keeps the libraries and plugins, and no tools
+  F2-11. ryzenadj and dmidecode keep the JELOS credit of the recipes they came from; ryzenadj passes cmake no quote characters (#308 F-PB-19)
+    PASS  both carry the JELOS line and a ROCKNIX line, and ryzenadj's -ludev reaches cmake as itself
+  F2-12. the recipes' comments say each thing once and only what is true; no empty quirk ships (#308 F-PB-21)
+    PASS  woff2 says its release date once, gst-plugins-base its appsink story once, cairo no GL backends, and no quirk file is empty
+  F2-13. zip has one recipe, the one the build uses (#308 F-BR-10)
+    PASS  one zip recipe (projects/ROCKNIX/packages/compress/zip)
+    PASS  mupen64plus's Control1 names no handheld's pad: name = "", what mode 2 writes itself (#308 claude F-VM-08)
+    PASS  flycast's [window] keeps fullscreen and carries no handheld's 1920x1080 (#308 claude F-VM-16)
+    PASS  m8c's GENERIC_X64 config is config.ini alone, no pad file for an Anbernic model (#308 claude F-VM-08)
+    PASS  the GENERIC_X64 RetroArch profile carries no core_updater_buildbot_url, a key RetroArch does not read (#307 PL-076)
+  C. the cloud sign-in broker and setup (audit #307 stream C)
+    PASS  a one-level saves folder (/GAMES) is refused and the config is left as it was (rc 1)
+    PASS  and says why, in words, with the folder to use instead (/GAMES/Saves): Your cloud folder needs to sit inside another folder, so your settings backups and games can go beside it.
+    PASS  --check-syncpath refuses it too, where the folder is typed
+    PASS  a two-level folder (Mine/Saves/) is stored with its settings and content folders beside it
+    PASS  and a deeper one (/a/b/Saves) likewise
+    PASS  a saves folder that would share a folder with its own siblings (/Mine/Backups) is refused, config untouched: Your cloud folder can't be called Backups: your settings backups go in a folder of that name beside it.
+    PASS  a saves folder that would share a folder with its own siblings (/Mine/Content) is refused, config untouched: Your cloud folder can't be called Content: your ROMs and BIOS go in a folder of that name beside it.
+    PASS  a saves folder that would share a folder with its own siblings (/Mine/backups) is refused, config untouched: Your cloud folder can't be called backups: your settings backups go in a folder of that name beside it.
+    PASS  --check-syncpath refuses /Mine/Content too
+    PASS  while /Mine/Saves still derives /Mine/Backups and /Mine/Content beside it
+    PASS  --set-content-remote Games/ stores /Games as the content root and leaves the saves and settings folders alone (rc 0)
+    PASS  --set-content-remote refuses '/' and leaves the config as it was (rc 1)
+    PASS  --set-content-remote refuses '/a/../b' and leaves the config as it was (rc 1)
+    PASS  --set-content-remote refuses '/It's' and leaves the config as it was (rc 1)
+    PASS  --set-content-remote refuses '/Two Words' and leaves the config as it was (rc 1)
+    PASS  a folder with & (/R&D/Saves) round-trips into the config
+    PASS  and every other line of the config, the multi-line RCLONEOPTS included, is byte for byte as it was
+    PASS  and --info reads it back as typed
+    PASS  a folder with | (/a|b/Saves) round-trips too
+    PASS  a name that would run as a command when the config is sourced is refused, config untouched: Your cloud folder's name can't contain ", $, `, or \.
+    PASS  and nothing ran
+    PASS  --info runs nothing in an already-written value and names no folder for it
+    PASS  and so does --seed-folders, which used to eval the config's lines
+    PASS  and --content-location runs nothing an already-written value holds
+    PASS  and --check-syncpath runs nothing an already-written value holds
+    PASS  and --use-content-root runs nothing an already-written value holds
+    PASS  a config that cannot be written is a failure, not OK (rc 1)
+    PASS  and --use-content-root likewise (rc 1)
+    PASS  a write that fails prints its one sentence and no shell diagnostic
+    PASS  a key assigned twice reads as its first assignment, the one the scripts run with after the duplicate cleanup (PL-021)
+    PASS  a single-quoted value reads without its quotes
+    PASS  a bare value with a trailing comment reads as the word
+    PASS  --content-location reads the config the same way
+    PASS  the refusal of /GAMES calls it the cloud folder, as the interface's row does
+    PASS  the refusal of /Mine/Backups calls it the cloud folder, as the interface's row does
+    PASS  a config path that is a directory is a failure, not OK, and nothing is left inside it (rc 1)
+    PASS  --use-content-root writes CONTENT_REMOTE="" once
+    PASS  a fresh path-based cloud is seeded: five READMEs, four folders reported OK
+    PASS  an owner's README is left alone when the folder lists
+    PASS  a listing that fails does not overwrite the owner's README
+    PASS  and on a fresh cloud whose listings fail, nothing is written
+    PASS  and the report says MISSING rather than OK
+    PASS  a fresh bucket cloud gets its five READMEs too
+    PASS  and an owner's README in a bucket is left alone
+    PASS  seeding a fresh cloud writes the layout marker at /Rasteratops (the control)
+    PASS  seeding a cloud whose saves are in /ROCKNIX joins that folder: the conf points there, nothing at /Rasteratops, no marker written (D-CLOUD-158's fresh device)
+    PASS  seeding a carried /GAMES whose cloud holds /ROCKNIX/Saves joins /ROCKNIX and makes no /GAMES (the Nova's shape)
+    PASS  seeding a carried /GAMES on an empty cloud makes the current folders, with the marker, and no /GAMES (D-CLOUD-161)
+    PASS  every rclone call --seed-folders makes carries the listing bound (25 calls)
+    PASS  and so does every listing --content-location makes (2 listings)
+    PASS  an empty CONTENT_REMOTE seeds ROMs/ and BIOS/ at the cloud's root, with no README at the top
+    PASS  while a config with no CONTENT_REMOTE line at all still gets the default /Rasteratops/Content
+    PASS  a second caller of _write_config waits for the first and gets its failure; configured stays False (PL-048)
+    PASS  and the remote was created once, not twice
+    PASS  a verified remote is reported to both callers, configured True, status signed-in
+    PASS  an authorize that exits without a token leaves status failed, with a reason (That address had already expired — they are only good for a couple of minutes.)
+    PASS  a replaced attempt's collector does not mark the new attempt failed
+    PASS  a serve whose port is taken exits 2 with status failed and a reason, no traceback, no authorize left (Something else on this handheld is using the sign-in's connection. Restart it and try again.)
+    PASS  a failed create logs a fixed sentence and carries none of rclone's words, in the log or the state (PL-074)
+    PASS  a failed cloud_remote create logs no value it was given, and no rclone words carrying one (rc 2)
+    PASS  cloud_oauth cancel with the window up ends the serve and closes the window
+    PASS  the pad's grab is released before the signed-in marker is written
+    PASS  wait, on the signed-in marker, returns only once the pad is free (3 polls)
+    PASS  a read during a write sees the whole previous state, and the write lands whole
+    PASS  a window that closed by itself still gets the pointer's hide timeout back ([0, 1000])
+    PASS  close's own kill of a window that outlived its server restores the timeout too
+    PASS  a pad whose d-pad is ABS_HAT0X/Y is found (/work/scratch/rs16.fkl34pvh/dev-input/event3)
+    PASS  and its hat presses reach the page as arrows (up, right, down, left), buttons as before
+    PASS  no var in the keyboard page's script shares a name with one of its functions (14 functions, 40 vars)
+    PASS  the keyboard page's script loads under node, binds the pad's touchend and mouseup, and sends its first probe
+    PASS  a listed pad with no node is passed over for the next (/work/scratch/f331.85d_c49x/dev-input/event7)
+    PASS  and the log names the pad it passed over and why
+    PASS  with no openable node, no pad (the page is driven from a phone)
+    PASS  an authorize that prints nothing is given up at its bound (3.0 s) and ended
+    PASS  a 100 MB Content-Length is answered 413 without reading the body
+    PASS  a request that stops mid-headers is dropped at the request timeout (1.0 s)
+    PASS  with 16 connections held, the next is closed at once
+    PASS  the serve listens on the address it advertises (127.0.0.2) and nowhere else
+    PASS  with something on 127.0.0.1 of the same port (the offline achievements proxy's 127.0.0.1:8080), the serve still comes up on the LAN address
+    PASS  a listremotes that fails stops the create (The sign-in worked, but your handheld's cloud settings couldn't be read.)
+    PASS  cloud_remote create refuses when the existing remotes cannot be listed (rc 2)
+    PASS  a taken port's recorded reason is words (Something else on this handheld is using the sign-in's connection. Restart it and try again.); the log keeps the port
+    PASS  a replaced attempt's failed remote creation leaves its successor's state alone
+    PASS  a collector whose serve's attempt no longer owns the state writes nothing to it
+    PASS  the serve's own teardown, killing rclone, is not recorded as a failed sign-in
+    PASS  with no route the serve listens on the loopback address it advertises and nowhere else
+    PASS  rclone's words in the same read as its link still say why the attempt died (That address had already expired — they are only good for a couple of minutes.)
+    PASS  a failed create passes rclone's reason on with the password taken out: 'Failed to create remote: bad option pass=<hidden>'
+    PASS  the serve turns the phone's Close page into an Escape press and release on its keyboard
+    PASS  cloud_remote providers, fields and choices run and list (providers: 'keys\twebdav\twebdav')
+    PASS  the cloud_oauth groups ran to the end (28 groups, python3 in a sandbox of its own)
+    PASS  text typed on the phone before the window opened reaches the field when it opens ("me@example.com")
+    PASS  and what is typed after it follows as usual
+    PASS  the waiting line names no button that is not there: "Not open yet -- choose CONTINUE on your handheld. You can type or paste here meanwhile; it goes across when the page opens."
+    PASS  abc, the Back button, d: the field and the box both hold abd
+    PASS  Back with the box empty still deletes on the handheld ("ab")
+    PASS  user, the Tab button, pw: the next field and the box both hold pw
+    PASS  the Enter button empties the box, as the Enter key does
+    PASS  a Backspace from the phone's own keyboard goes through the same model
+    PASS  characters the handheld cannot type are taken out of the box, and the page says so: "The handheld can't type 2 of the characters you entered, so they were left out."
+    PASS  the phone's box is masked, with a Show button that reveals it and hides it again
+    PASS  the page says its keystrokes cross the network unencrypted
+    PASS  the phone can close the page on the handheld after one question: Close page, then Close sends Escape; Keep sends nothing (#351)
+    PASS  with the box masked, the warning counts the characters it left out and names them only once Show is on: "The handheld can't type 2 of the characters you entered, so they were left out."
+    PASS  the page's CSS hides whatever carries hidden, whatever its class sets, and the Close control is not laid out as a row of keys (#351)
+    PASS  the phone page groups ran to the end (8 groups, node v24.21.0)
+    PASS  a poisoned id is healed (H700-937e3a53db) and the old one kept in .previous
+    PASS  with .previous unwritable, the poisoned id is kept as it is, not healed away unrecorded
+    PASS  the webkitgtk recipe builds no MiniBrowser (-DENABLE_MINIBROWSER=OFF)
+    PASS  webkitgtk-0001-DocumentLoader-include-EventLoop.patch says what it fixes before its first hunk
+    PASS  webkitgtk-0002-WebKit-includes-WebCore-platform-graphics-for-GStreamer-GL.patch says what it fixes before its first hunk
+    PASS  webkitgtk-0001-DocumentLoader-include-EventLoop.patch applies to webkitgtk 2.54.0
+    PASS  webkitgtk-0002-WebKit-includes-WebCore-platform-graphics-for-GStreamer-GL.patch applies to webkitgtk 2.54.0
+    PASS  cloud_oauth is committed executable
+    PASS  cloud_device_id is committed executable
+    PASS  cloud_remote is committed executable
+    PASS  cloud_setup is committed executable
+    PASS  focus_first adopts a field only when the body holds the focus -- a button the player reached keeps it (0 1 0)
+    PASS  the page file is not written for rclone's loopback redirect, which carries the code; a provider's own pages still are
+    PASS  the symbols key is built with the extras row and wired: osk_press toggles on it, osk_relabel draws OSK_SYMBOLS
+    PASS  the on-screen keyboard reaches every printable ASCII character, each layout's rows as long as the keys built for them
+  D. audit #307 stream D: the offline-achievements service -- the control script, its helpers, the client's patches, the unit and the emulators' cheevos scripts (#307 PL-013, 055, 057, 058, 059, 060; #308's sweep)
+    PASS  PL-013 cache-images: the CANCEL's SIGINT drops the queued downloads and the helper ends inside two seconds (SIGINT with 4 of 40 downloads started -- exit 130 after 0.00s, 4 started)
+    PASS  PL-013 cache-images: started with SIGINT ignored (a background job), the group's SIGINT still ends it inside two seconds
+    PASS  PL-013 ctl: CANCEL during a scan's image pass -- exit 130, why CANCELLED, stamped, the image helper ended (the whole scan 0.85s, jobs included)
+    PASS  PL-013 ctl: from the image pass's start to the run's exit: 0.02s, inside two seconds
+    PASS  PL-013 ctl: the cancelled run's image helper (pid 956579) is gone and the lock is free
+    PASS  #308 gpt F-RA-11: disable during a scan's image pass -- the helper (pid 956774) ended through the run's TERM trap, disable done in 1.06s (the scan exited 143)
+    PASS  the python3 shim fails a listing on demand (/run/listing-fail)
+    PASS  PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending; the run still does the recently played pass and ends COULDN'T FINISH, why LIBRARY_UNREADABLE (claude G-D-13) (rc 1)
+    PASS  PL-055: a listing cut by the deadline (124): TOOK_TOO_LONG, index-pending kept
+    PASS  PL-055: the next link event inside the half hour after a failed attempt waits (no probe, no listing), the marker still there
+    PASS  PL-055: past the half hour the marker's listing runs again, caches the games and removes the marker
+    PASS  PL-055: a failed game in the marker's pass: SOME_GAMES_NOT_SAVED, index-pending kept
+    PASS  PL-055: a marker's run stopped part-way (TERM, exit 143) keeps index-pending
+    PASS  PL-057 summary: a game cached by a launch alone (achievementsets row, no patch row) is listed from its core set -- 2 achievements, 15 points, both unlocked (one earned, one waiting to be sent)
+    PASS  PL-057 summary: a damaged unlock row (202) and a missing one (203) read unlocked null -- unknown, not none
+    PASS  PL-057 summary: a game with both rows is listed once; another account's launch rows are not listed
+    PASS  #308 gpt F-RA-09 summary: another account's waiting award (1002, u=Other) is not counted as this account's -- 102 reads 1 unlocked, none waiting
+    PASS  #308 gpt F-RA-09 pending-ids: only this account's waiting award (3002, u=QA in the body), not the other account's 1002
+    PASS  pending still counts every award the queue holds for sending (2): the service sends each with its own account
+    PASS  PL-058 refresh: a startsession row that could not be dropped makes the game failed -- re-read 0 game(s), 1 failed, exit 1
+    PASS  #308 claude F-RA-12 / gpt F-RA-19 refresh: three failures never two in a row -- every game tried (3 re-read, 3 failed)
+    PASS  #308 claude F-RA-12 / gpt F-RA-19 refresh: three failures in a row stop the run (REPEATED_FAILURES)
+    PASS  PL-059: a walk cut at the cap tells the page (note TRUNCATED) and the stamp (truncated=1)
+    PASS  PL-059: the second scan walks on from where the first stopped -- g09, g10 and g11, none of which can be cached, are its jobs
+    PASS  PL-059: two scans together have tried all thirteen uncacheable files
+    PASS  PL-059: a walk that fits under the cap says nothing of truncation and leaves no cursor
+    PASS  PL-060: a scan that cached its games and whose image pass left images behind ends COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED), the games still counted
+    PASS  PL-060: a scan with nothing new still runs the image pass, and its failure is the run's (rc 1, why SOME_IMAGES_NOT_SAVED)
+    PASS  PL-060: and once the pass fetches what was missing, the same scan reads COMPLETED with nothing new (rc 0)
+    PASS  PL-060: a top-up whose image pass left images behind ends rc 1, why SOME_IMAGES_NOT_SAVED
+    PASS  PL-060: a top-up whose verify slice did not come round the store (the helper's exit 3) finished (rc 0) -- the sweep takes several runs by design
+    PASS  a top-up whose image helper crashed (a traceback, exit 1, no protocol line) ends rc 1, why SOME_IMAGES_NOT_SAVED -- not read as a verify slice left
+    PASS  cache-images: a verify pass that stops with files left to verify and nothing missing exits 3 with note VERIFY_LEFT, no why (exit 3; >>> note VERIFY_LEFT 35)
+    PASS  #308 claude F-RA-06: a system an es_systems_<name>.cfg adds is read with the rest -- its indexed game is a job (rc 0)
+    PASS  #308 claude F-RA-06: a system whose <path> an es_systems_<name>.cfg moves is read at the new path
+    PASS  #308 gpt F-RA-14: a ROM whose game has a patch row and nothing else is a job again; one whose game is whole is passed over
+    PASS  the python3 shim's recently played pass can write rows (/run/smart-rows.py)
+    PASS  #308 claude F-RA-10: a game the recently played pass caches for the first time is added (cached=1 added=1)
+    PASS  #308 gpt F-RA-15: three games cached by the index, one a second dump of a game already ready -- added=2
+    PASS  #308 gpt F-RA-13: a game played in PPSSPP since the mark (ppsspp.ini newer, no RetroArch history) makes the link's return run the recently played pass (rc 0)
+    PASS  #308 gpt F-RA-13: and with ppsspp.ini older than the mark, nothing played: skipped before the probe
+    PASS  #308 gpt F-RA-18: a disable whose hardcore write fails exits 1 and keeps the record (hardcore_was=1)
+    PASS  #308 gpt F-RA-18: the next disable puts hardcore back to 1 from the kept record and then removes it
+    PASS  #308 gpt F-RA-18: a toggle that will not clear stops nothing -- the service, the marker and the record stay, exit 1
+    PASS  #308 claude F-RA-20 unit: StartLimitIntervalSec and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service] (the interval sized in D25)
+    PASS  #308 gpt F-RA-26 unit: ExecStartPost waits for the listener (raofflineproxy-ctl listening --wait N)
+    PASS  #308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and ::ffff:127.0.0.1:8080 in LISTEN read as listening; [::1]:8080 does not -- it cannot take the IPv4 connection the emulators make (gpt G-D-02) -- nor another port, nor 8080 only as a connection's end
+    PASS  #308 gpt F-RA-26 listening --wait 5 with nothing listening: five looks a second apart, then exit 1
+    PASS  #308 gpt F-RA-26 listening --wait 10: the listener that appears after 1.5 s is seen, exit 0 after 2.03s
+    PASS  stream D's d13a predicates ran (1 PASS / 0 FAIL)
+    PASS  #308 F-RA-27 upload opt-in: only a JSON true sends the report
+    PASS  stream D's d13b predicates ran (3 PASS / 0 FAIL)
+    PASS  #308 F-RA-13 patch 013: a whole PNG with bytes after its IEND is published
+    PASS  #308 F-RA-13 --verify: a cached PNG with bytes after its IEND is whole, never deleted
+    PASS  #308 F-RA-12 --verify: a cached PNG whose image data or a chunk's CRC is damaged is found; a whole one is not
+    PASS  stream D's d13c predicates ran (2 PASS / 0 FAIL)
+    PASS  #308 F-RA-20 patch 015: the connection's own lookup of a host the bounded lookup just resolved is answered at once from that answer (port 443), not from a resolver that has stopped
+    PASS  #308 F-RA-11 patch 015: the forwarder with a failed lookup returns network_error 503 at once and opens no connection
+    PASS  the patched client's tests/test_linux_network.py pass (Ran 23 tests)
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, two headers, a Token under each (claude's shape): one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, the seed's bare Token, then a second header (gpt's shape): one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, two sections apart, other sections and keys: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, an empty file: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, no file: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 F-EM-03/05/09 cheevos_armsx2.sh, the ordinary file: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing
+    PASS  #308 claude F-EM-04 cheevos_ppsspp.sh: 127.0.0.1:8080 in LISTEN in the socket table routes PPSSPP to the proxy (no netstat)
+    PASS  gpt G-D-02 cheevos_ppsspp.sh: [::1]:8080 alone in LISTEN (tcp6) is not the IPv4 endpoint PPSSPP is pointed at -- launched direct
+    PASS  gpt G-D-02 cheevos_ppsspp.sh: ::ffff:127.0.0.1:8080 in LISTEN (tcp6, an IPv4-mapped socket) routes to the proxy
+    PASS  #308 claude F-EM-04 cheevos_ppsspp.sh: nothing on 8080 launches direct, and the log says nothing is listening
+    PASS  #308 claude F-EM-04 cheevos_ppsspp.sh: a socket table it cannot read launches direct and says it couldn't tell -- not that nothing answers
+    PASS  #308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET names Python3, bash, busybox, coreutils, grep and systemd (toolchain Python3 bash busybox coreutils grep systemd raofflineproxy-rcheevos raofflineproxy-libchdr )
+    PASS  #308 gpt F-RA-10 cache-images: a pass of --seconds 1 returns at its bound with SOME_IMAGES_NOT_SAVED, not after the running downloads (--seconds 1 over five-second downloads -- exit 1 after 1.05s)
+    PASS  #308 gpt F-RA-10 ctl: the scan's image pass runs under a process bound (budget=300 --seconds 290)
+    PASS  #308 gpt F-RA-10 ctl: the images verb's helper runs under a process bound
+    PASS  #308 gpt F-RA-10 ctl: the refresh verb's helper runs under a process bound (budget=960 --seconds 900 --all)
+    PASS  #308 claude F-RA-07: pending, pending-ids, account and summary read a store the pinned client's Storage wrote (1 / 4242 1789400000 / score=1234 softcore=56 / exit 0), the token never printed
+    PASS  #308 claude F-RA-07 / gpt F-RA-28: the ctl's header names the pin package.mk pins (248ce5acae) as the schema it was read against
+    PASS  PL-060 follow-up, patch 016: download_static_image says what became of an image -- 404 and 410 absent, a 503 and a timeout transient, a whole PNG cached
+    PASS  PL-060 follow-up, patch 016: the outcome class, the HTTP status and the URL are logged
+    PASS  PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run
+    PASS  PL-060 follow-up: the next scan does not ask for the absent badges again (rc 0)
+    PASS  PL-060 follow-up: a badge that timed out and one the server answered 503 end the scan COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED)
+    PASS  PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes
+    PASS  #308 claude F-RA-17: the usage line names summary with the other verbs
+    PASS  #308 claude F-RA-17: --verify walks the store once, not once more to throw away
+    PASS  #308 claude F-RA-17: cache-images -h names --seconds and --verify (a docstring of its own)
+    PASS  #308 claude F-RA-17: the four scripts under sources/ are mode 100755 in the tree
+  y. audit #307 / #308, stream B: backuptool, wifictl, the settings writer and lock, factoryreset, chksysconfig, rocknix-evidence, rocknix-corekeep, runemu and automount
+    PASS  #307 PL-004: a location named 'my games/' and a collection 'custom-Best Games.cfg' are in the archive (rc 0)
+    PASS  #307 PL-004: the standard list's theme folder 'My Theme' is in the archive
+    PASS  #307 PL-004: a location find cannot read ends the backup with nothing written (rc 1, why: THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS)
+    PASS  #307 PL-004: a collector that silently leaves a file out is caught by the member count (rc 1, nothing written)
+    PASS  #307 PL-036: a legacy zip whose member 'my link.cfg' is a live symlink: skipped by its whole name, the restore completes (rc 0), the link kept
+    PASS  #307 PL-036: a sanitiser that dies part-way ends the backup with nothing written (rc 1)
+    PASS  #307 PL-035: /storage/./.config/system/configs/system.cfg is canonicalised, so the Wi-Fi key is stripped as for the plain spelling
+    PASS  #307 PL-035: an empty LOCATIONS falls back to the standard list, and says so
+    PASS  #307 PL-038: /flash/x in LOCATIONS ends the backup with the refusal (rc 1, why: YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY)
+    PASS  #307 PL-008: LOCATIONS=(/storage/roms) archives the ROMs but nothing under the backup folder
+    PASS  #307 PL-008: LOCATIONS=(/storage/.config) with the backup folder inside it holds no member under the backup folder
+    PASS  #307 PL-009: a copy that cannot be taken (an unreadable file) ends the restore before anything is written (rc 1)
+    PASS  #308 4-backup-restore claude F-BR-17: a selection that is all the image's own says there is nothing to back up yet, without TRY AGAIN (why: THERE'S NOTHING TO BACK UP YET)
+    PASS  #308 4-backup-restore gpt F-BR-19: LOCATIONS=(system.cfg) alone writes an archive holding its sanitised copy (rc 0)
+    PASS  #307 PL-005: a pass = line in the selection ends the backup (rc 1, why: A SIGN-IN WAS FOUND IN THE BACKUP); the last archive is the only one, unchanged, no partial left, the log counts one line
+    PASS  #307 PL-006: Password=<long literal> in a custom location is caught
+    PASS  #307 PL-006: a WireGuard PrivateKey line is caught
+    PASS  #307 PL-006: a ClientSecret= line is caught
+    PASS  #307 PL-006: a private-key block in a .txt is caught (the push guard's shape)
+    PASS  #307 PL-006: an OAuth access_token in a .json is caught (the push guard's shape)
+    PASS  #307 PL-006: a translation catalogue under lang/ and keys that only end in key, pass or Password are not sign-ins: the backup completes (rc 0)
+    PASS  #307 PL-007: a restore cut part-way puts back a member outside the device's own list (other/x.cfg ORIGINAL), removes one it created (other/new.cfg), and says unchanged truthfully
+    PASS  #307 PL-007: and the mark the boot reads names the file the restore would create, for the boot's own revert
+    PASS  #307 PL-007: at boot, chksysconfig puts the copy back and removes the file the cut restore created ('new cfg.cfg')
+    PASS  #307 PL-007: a mark with no copy (every member was new) still removes what the cut restore created, and says reverted
+    PASS  #307 PL-039: an unwritable restore mark ends the restore before the extraction and the restart (rc 1)
+    PASS  #307 PL-010: a tar archive carrying rclone.conf and a device id leaves the device's own (rc 0)
+    PASS  #307 PL-010: so does a legacy zip (rc 0)
+    PASS  #307 PL-010: and a backup of /storage/.config does not carry the device id
+    PASS  #307 PL-037: es_settings.cfg, left out of the backup as the image's own, is reset to it by the restore
+    PASS  #307 PL-037: and the list of such files is not left on the device
+    PASS  #307 PL-077 / #308 F-BR-15: a backup while another holds the backup folder's lock is refused (why: A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING)
+    PASS  #307 PL-077: two backups in one second leave two archives
+    PASS  #308 claude F-BR-08 / gpt F-BR-15: with the clock behind three archives' dates the fresh copy survives the trim and the cut restore is undone
+    PASS  #308 claude F-BR-07: ARCHIVED_*.zip left at the root by the old code moves under archive/, where nothing uploads it
+    PASS  #308 claude F-BR-12: the closing line names the tier: BACK UP SETTINGS TO THE CLOUD
+    PASS  #308 claude F-BR-12: a damaged backup says to restore from the cloud again or back up to replace it
+    PASS  #308 claude F-BR-12(e) / gpt F-BR-20: a failing extraction's own error goes to the log, not the screen
+    PASS  #308 claude F-BR-13: with a second folder in RATOKENDIRS, neither folder's files are put back from a zip
+    PASS  #308 gpt F-BR-13: es_systems.cfg and '[x] link.cfg', symlinks the OS provides, stay symlinks when a tar archive holds regular copies, and the screen says two were kept
+    PASS  #308 gpt F-BR-14: a zip with a damaged member and an intact directory is refused as damaged before anything is written
+    PASS  #308 gpt F-BR-16: the sanitised system.cfg keeps its 0600, and the archive carries no directory entries to impose on a restore
+    PASS  #308 claude F-BR-09: a backup stages once, on the storage card (not in RAM), and makes no second copy to scan
+    PASS  #308 gpt F-BR-17: a snapshot's .partial and a staging folder left by a killed run are cleared by the next run
+    PASS  #308 claude F-BR-18: SETTINGS_BACKUPS="${CONTENTPATH}/backup" falls back to the standard folder
+tools/last-good-scripts-test: line 7850: /tmp/tmp.bWfYvLJfnw/p7/storage/.p7-sleeps: No such file or directory
+    PASS  #308 claude F-BR-19: with no terminal on stdout (the interface's pipe) neither the outcome nor a failure sleeps
+    PASS  #307 audit G-B-01 (claude): system.cfg.backup, system.cfg.tmp and es_settings.cfg.backup -- the last-good records and a writer's temporary -- are held back like the files they copy, and the planted key is in no member
+    PASS  #307 audit G-B-01 (claude): a .backup copy of another config is scanned like a config
+    PASS  #307 audit G-B-03 (claude): a theme file naming a kebab-case asset with 24 characters after its sk- backs up; sk- counts only at a word's start
+    PASS  #307 audit G-B-03 (gpt) / G-B-10 (claude): a credential scan whose walk fails refuses the backup (rc 1, nothing written)
+    PASS  #307 audit G-B-03 (gpt) / G-B-10 (claude): a file the scan cannot read refuses the backup (rc 1)
+    PASS  #307 audit G-B-02 (gpt): an archive whose listing prints every member and then fails is not named (rc 1)
+    PASS  #307 audit G-B-02 (gpt): a pre-restore copy whose listing fails ends the restore before anything is written
+    PASS  #307 audit G-B-01 (gpt): a member listing that fails after the archive checked whole ends the restore before anything is written (why: THIS DEVICE'S SETTINGS BACKUP IS DAMAGED)
+    PASS  #307 audit G-B-04 (gpt): when the backup folder cannot be filtered out, nothing is written (rc 1)
+    PASS  #307 audit G-B-12 (claude): LOCATIONS=(/storage/.cache) carries other.cfg and no core dump, note or evidence bundle
+    PASS  #307 audit G-B-11 (claude): four upstream-era zips leave the root and all four are kept -- the first backup after the update deletes none of them
+    PASS  #307 audit G-B-06 (gpt): an upstream-era zip that cannot be moved off the root ends the backup before anything is written (rc 1), so the chain uploads nothing
+    PASS  #307 audit G-B-02 (claude) / G-B-09 (gpt): an un-migrated conf with BACKUPFOLDER alone puts the backup in that folder, where the upload reads
+    PASS  #307 audit G-B-13 (gpt): a sanitised copy whose original mode cannot be given to it ends the backup (rc 1)
+    PASS  #307 audit G-B-16 (gpt): a seed reset that fails is undone and its cp error goes to the log, not the screen (rc 1)
+    PASS  #307 audit G-B-16 (gpt): a sanitiser's own error goes to the log, not the screen
+    PASS  #307 audit G-B-09 (claude): an archive holding test/seed and a stale seed list naming it restores the archive's copy
+    PASS  #307 audit G-B-08 (claude): with a folder where the mark goes, the image's mv -fT refuses to move the mark into it and the restore stops before the extraction
+    PASS  #307 PL-003: a passphrase with ':' and '\' (ab:cd\ef12345) reaches wifi.key byte for byte
+    PASS  #308 2-wifi claude F-WF-02: when the key cannot be read after the join, the device is joined and the settings are left as they were, never wifi.key=""
+    PASS  #307 PL-031: joining B while B is up on another adapter brings it up on this one (ifname wlan0) and says joined only once wlan0 is on B
+    PASS  #308 2-wifi claude F-WF-12 / gpt F-WF-03: joining the profile 'Home profile' (SSID 'Home Wi-Fi') writes wifi.ssid=Home Wi-Fi, which the settings-driven connect can find
+    PASS  #308 2-wifi claude F-WF-01 / gpt F-WF-07: forgetting another network leaves wifi.ssid and wifi.key alone
+    PASS  #308 2-wifi claude F-WF-01 / gpt F-WF-07: forgetting the network wifi.ssid names removes wifi.ssid and wifi.key, so no settings-driven connect rebuilds it
+    PASS  #308 2-wifi claude F-WF-07: forget with NetworkManager not answering exits 2, as join and current do
+    PASS  #308 2-wifi claude F-WF-05: list prints 'Cafe: Guest' as current and saved do, not nmcli's escaped 'Cafe\: Guest'
+    PASS  #308 2-wifi claude F-WF-06 / gpt F-WF-04: a profile named 'a<TAB>b' -- which saved lists and the interface accepts -- joins and is forgotten
+    PASS  #307 audit G-B-11 (gpt): when the settings naming the network cannot be cleared, forget refuses before deleting the profile (rc 1)
+    PASS  #307 audit G-B-11 (gpt): a profile whose SSID cannot be read is not forgotten on a guess (exit 2, nothing deleted)
+    PASS  #307 audit (E2's picker): saved --ssid prints name<TAB>SSID<TAB>active|saved, a tab or backslash inside a field escaped as \t / \\
+    PASS  #307 audit (E2's picker): and saved without the flag is unchanged, for the interface's parser and join and forget
+    PASS  #307 audit (E2's picker): an SSID that cannot be read makes saved --ssid print nothing and exit 1, never a list short of one
+    PASS  #318 D-UI-118: connect with wifi.ssid=Cafe and no key brings the saved profile up (connection up id Cafe), deletes nothing and rebuilds nothing -- the key the profile holds is kept
+    PASS  #318 D-UI-118: a keyed connect of a network with no profile goes straight to device wifi connect (no connection up tried) and then sets wifi-sec.psk-flags 0 on the new profile, which holds the key
+    PASS  #318 D-UI-118: a keyed connect of a saved network (the picker's WI-FI KEY page for a network whose key changed) replaces its profile with the typed key: deleted, device wifi connect, psk-flags 0, the profile holds the new key
+    PASS  #307 PL-011: set_setting whose write cannot land (a read-only folder) exits non-zero (rc 1) and the file is as it was
+    PASS  #308 10-packages-and-build gpt F-PB-16: set_setting foo.bar default removes foo.bar alone, not foo_bar or fooXbar
+    PASS  #307 PL-041 / #308 claude F-PB-08: two waiters reaping one stale lock hold it one after the other, never at once (the reap re-reads and removes under flock on <lock>.reap)
+    PASS  #308 10-packages-and-build claude F-PB-06: a lock whose folder is missing ends the wait in 3s (rc 1), writes nothing and says why
+    PASS  #307 PL-040: root.password=&example-value, x.password=&y=QAKEY9 and token=;semi are redacted whole
+    PASS  #307 PL-040: and a value still ends at the & that starts the next parameter (devpassword=<redacted>&softname=es)
+    PASS  #308 10-packages-and-build claude F-PB-18: ScreenScraperPass=hunter2 and RA_Pass = hunter2 are redacted
+    PASS  #308 10-packages-and-build claude F-PB-18: 'disk-full' and 'task-manager' lines take the fast path (no sed)
+    PASS  #307 audit G-B-07 (claude): 'test passed' and 'bypass' lines take the fast path, and ScreenScraperPass= is still redacted
+    PASS  #307 audit G-B-13 (claude): a stale lock in a read-only folder, which no reap can remove, ends the wait in 3s (rc 1) and says why
+    PASS  #307 PL-045 / #308 claude F-PB-11: a copy under the roms folder while that folder is not a mountpoint (its internal-card directory present) leaves the mark for the later check and says nothing
+    PASS  #307 PL-064 (upgrade half, E1): a cut system.cfg with no .backup and a whole system.cfg.tmp beside it takes the .tmp at boot, and says so
+    PASS  #307 PL-064 (upgrade half, E1): with a good .backup the record wins over a .tmp, which is swept
+    PASS  #307 PL-044: a retroarch folder that cannot be removed ends the reset (rc 1) with the sentence, and the defaults are not copied inside it
+    PASS  #307 audit G-B-15 (gpt): the evidence collector runs under the image's find, tar, flock, date, and mktemp
+    PASS  #307 PL-046: exec.log, whose filtered copy could not be moved into place, is left out -- not archived raw -- and the summary counts it left out
+    PASS  #307 PL-046: when the raw file can be neither replaced nor removed, no archive is written (rc 1)
+    PASS  #307 PL-077 (evidence half): two collections in one second leave two archives
+    PASS  #307 audit G-B-15 (gpt): the core keeper runs under the image's head, flock, find, mkdir, mv, rm, df, and date
+    PASS  #308 10-packages-and-build claude F-PB-16: disarmed, the keeper exits without reading the dump (65536 of 67108864 bytes taken before the pipe closed)
+    PASS  #308 10-packages-and-build claude F-PB-16: a dump one byte over a 3000-byte cap is noted CUT under the image's head (which reads ahead past the cap)
+    PASS  #308 10-packages-and-build claude F-PB-16: and one of exactly the cap is noted whole
+    PASS  #308 10-packages-and-build gpt F-PB-15: the newest crash (the interface's, epoch 4000) is kept and the oldest (1000) goes, whatever the names sort to
+    PASS  #308 10-packages-and-build gpt F-PB-15: five crashes refused for space leave at most three notes, the newest kept
+    PASS  #308 10-packages-and-build gpt F-PB-20: a crash reported as 'emulationstatio' (the kernel's 15-character name) from /usr/bin/emulationstation gets the interface's 1 GiB cap
+    PASS  #308 10-packages-and-build gpt F-PB-21: a second crash's handler waits while the first is still writing, then keeps its own
+    PASS  #308 10-packages-and-build gpt F-PB-17: a ROM named 'Demo -state_slot 2 - Part' launched with -state_slot 7 reads slot 7, and 'Game -autosave 0 x' with -autosave 1 reads 1
+    PASS  #308 8-es-menus-and-core (E2): a launch carrying -Psnes and a later --nick 'My-Player' reads the platform snes
+    PASS  #308 10-packages-and-build claude F-PB-13: /storage on /dev/sda2 and no other disk: no external card is present (rc 1)
+    PASS  #308 10-packages-and-build claude F-PB-13: and a 32 GB mmcblk1 beside it is one (rc 0)
+    PASS  #308 10-packages-and-build claude F-PB-13: a handheld's /storage on mmcblk0p2 still reads mmcblk0 as internal (rc 1)
+  A. audit #307/#308, stream A: the cloud scripts against the image's rclone
+    rclone: rclone v1.75.1 -- a copy of /workspace/repos/rocknix.worktrees/conflict-resolution/../generic-x64/build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/bin/rclone
+    A0. #352: the pre-tier rows list only folders this device has or systems it supports; --content-location names the folder that holds the games
+    PASS  #352: with the content root at the cloud's root, the scan lists gb (a folder this device has) and neither Photos nor Documents (rc 0)
+    PASS  #352: with nothing of ours at the configured root, --content-location names /Rasteratops/Content, where the ROMs folder is, and reads found-elsewhere
+    PASS  and with the root configured where the games are, FOUND is empty and the state ok
+    A1. PL-001: --match --apply enforces the preview, and a failed listing plans nothing
+    PASS  a preview whose nes listing fails (5) plans nothing for nes, exits non-zero and leaves no plan (rc 5)
+    PASS  a clean preview plans nes as sync|0|0 and writes the plan
+    PASS  an apply whose nes listing fails (5) removes nothing from nes and ends non-zero with a why (rc 5)
+    PASS  a system previewed as sync and found absent at apply is refused, not removed (rc 1)
+    PASS  an apply that matches its preview runs gb with --max-delete 1, the preview's count, and removes B.gb only (rc 0)
+    PASS  a system with more to remove at apply than the preview counted (a ROM added since) is refused whole (rc 1)
+    PASS  an apply with no preview behind it removes nothing (rc 1)
+    PASS  a plan is spent by the apply that used it: a second apply is refused (rc 1)
+    A2. PL-012: --all restores every system and BIOS, each its own unit
+    PASS  --all brings BIOS down, subfolders and all (rc 0)
+    PASS  and every system the cloud holds, exit 0
+    PASS  a system's scraper folder stays in the cloud under ROMs alone: the media exclude is anchored at the system, as for --selected
+    PASS  each system and BIOS is announced as a unit of its own, as the journey page counts them
+    PASS  a folder beside the content folder (the owner's Photos) is not a system and is not restored
+    PASS  a ROMs listing that fails (5) restores nothing and ends non-zero with a why (rc 5)
+    PASS  a cloud with no ROMs and no BIOS yet is nothing to restore, not a failure (rc 0)
+    A3. PL-020: an incomplete rules file is never installed, and never synced with
+    PASS  the helper ran, and a whole merge is installed, catch-all and all (rc 0)
+    PASS  a merge whose defaults were cut short (the write failed at line 20) is not installed; the live file is as it was
+    PASS  and the helper says so in the log
+    PASS  a rules file cut after its database lines ('- /**/*.db' present, '- /**' not) does not replace the good .bak
+    PASS  cloud_backup with a rules file that has no catch-all sends nothing and ends Couldn't finish (rc 1)
+    PASS  cloud_restore with the same file brings nothing down and ends Couldn't finish (rc 1)
+    PASS  with the catch-all in place the same backup sends the save and not the ROM (rc 0)
+    A4. PL-021: pruning keeps the folder and the archive this run wrote, whatever other clocks say
+    PASS  a future-dated sibling folder (2099) does not outrank the run's own: the copy this run replaced is still kept (rc 0)
+    PASS  and the other folder is the one pruned: one record at rest, this run's
+    PASS  the archive this run uploaded survives the retention though three future-dated ones sort after it (rc 0)
+    PASS  and the kept history is still CLOUD_BACKUP_KEEP (3): the upload and the two newest others
+    PASS  cloud_restore keeps the local copy it replaced though a future-dated folder sorts after its own (rc 0)
+    A5. the layout migration moves each tier whole, to its own place, and resumably
+    PASS  PL-027: against an endpoint that answers nothing, --apply changes no pointer and ends non-zero (rc 1)
+    PASS  PL-027: one failed listing (the backups folder's) stops the run with that tier's pointer where it was (rc 1)
+    PASS  PL-025: nothing lands under Saves/backup or Saves/Content (rc 0)
+    PASS  PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS
+    PASS  PL-025: and the three pointers follow them (rc 0)
+    PASS  --check plans backups, saves and content into /Rasteratops on one line, and lists the content move it would make (rc 0)
+    PASS  a device whose saves and backups are current plans the content folder alone (rc 0)
+    PASS  and with nothing stored there the plan is none: a setting alone would change, and the row stays away (rc 0)
+    PASS  no QA tool seeds a superseded default by its literal name (ROCKNIX/..., GAMES/...)
+    PASS  cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default
+    PASS  PL-026: a migration killed at its second move (rc 137) is finished by the next run (rc 0)
+    PASS  PL-026: a device an earlier build left moved but not repointed is repointed, and its content moved, by the next run (rc 0)
+    PASS  PL-053: a save another device writes into the old folder after the check survives the move (rc 0)
+    PASS  PL-071: a content move that fails ends the run non-zero, with CONTENT_REMOTE where it was (rc 5)
+    PASS  F-CS-23: every rclone call the migration makes against the cloud carries a bound
+    PASS  F-CS-23: --apply while another cloud transfer holds the lock is skipped (75), nothing moved (rc 75)
+    PASS  F-CS-23: on a remote with no hashes every verification compares content (--download), not sizes
+    PASS  F-CS-23: with a saves/ folder in the working directory the saves subfolder is still found and moved as the saves (rc 0)
+    A6. PL-028: saves 9 beside a failed settings phase is a run that couldn't finish
+    PASS  cloud_backup: saves 9 and the archive's upload failing (5) end Couldn't finish, exit 5, stamp 5
+    PASS  and the saves phase did return 9 (the case is the one it names)
+    PASS  cloud_restore: saves 9 and the archive's download failing (5) end Couldn't finish, exit 5, stamp 5
+    A7. PL-030: --set-systems refuses a name that is not a system folder's
+    PASS  system folder names are taken as given (gb nes pc-88 mame2003_plus 3do.v2)
+    PASS  refused whole, selection unchanged: --set-systems 'gb a$(touch /tmp/x)b' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'gb `id`' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'nes *' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'gb ..' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'gb -rf' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'gb a"b' (rc 1)
+    PASS  refused whole, selection unchanged: --set-systems 'gb a;b' (rc 1)
+    PASS  and the refusal says what it wanted, in a sentence
+    PASS  a selection an earlier build wrote with a bad name in it is read past that name (--systems: gb nes)
+    PASS  and cloud_content_backup --selected acts on gb alone
+    A8. cloud_capture: retire, the commit lock, the clock query, the quarantine, adopt
+    PASS  PL-052: --retire --unlink with a relative path is refused and removes nothing, here or in the saves folder (rc 1)
+    PASS  PL-052: an absolute path under the saves folder is retired and unlinked there, and only there (rc 0)
+    PASS  PL-067: a capture whose commit meets another's lock waits for it (3s against a 4 s holder) and then records (rc 0)
+    PASS  PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC (rc 0: the capture ran its GC)
+    PASS  F-CS-20: a clock service that never answers holds the exit capture 3s, not its 30, and the version records clock_synced false (rc 0)
+    PASS  gpt F-CS-21: a --full pass that set an unreadable manifest aside and wrote nothing keeps the set-aside copy (rc 0)
+    PASS  and the next run that writes a good manifest removes it (rc 0)
+    PASS  gpt F-CS-22: a copy adopted --from another game's state is filed under its own game, not the source's (rc 0)
+    PASS  gpt F-CS-22: an adopt for a game with nothing on disk answers 3, not a member, rather than 0 (rc 3)
+    A9. PL-066: a failed game-list pass is a unit that couldn't finish
+    PASS  cloud_content_restore: the game-list pass failing (5) ends the unit Couldn't finish, exit 5, stamp 5
+    PASS  and the pass before it still moved the ROM
+    PASS  cloud_content_backup: the same, exit 5, stamp 5
+    PASS  and with the pass working the same backup completes (rc 0)
+    A10. PL-070: a zip whose member is damaged is not a whole archive
+    PASS  the damaged zip still lists (its central directory is whole), so the case is the one the finding names
+    PASS  a whole zip is whole
+    PASS  a zip whose member's bytes are damaged is not whole: the failed -t stands
+    A11. PL-012's sibling: --selected with no system picked restores BIOS alone
+    PASS  a selection with no system and BIOS in the cloud restores BIOS alone, exit 0 (rc 0)
+    PASS  the placeholder 'bios' line an earlier interface wrote reads as BIOS wanted: one unit, from BIOS/, never ROMs/bios (rc 0)
+    PASS  with no system picked and no BIOS in the cloud there is still nothing to do, and it says so (rc 1)
+    A12. #308 claude F-CS-04: cloud_restore under --yes waits for nobody
+    PASS  a --yes --saves-only restore takes 1s, not the seven of console pauses (rc 0)
+    PASS  its summary says the settings phase was skipped, not COMPLETED
+    PASS  the remote is read from rclone.conf (no rclone start for listremotes), and the saves phase is the reachability probe
+    PASS  and a --system-only run's saves line says SKIPPED - SETTINGS ONLY (rc 3)
+    A13. #308 claude F-CS-08: the partial-file sweep runs only after a transfer that may have left one
+    PASS  the first run with no record that the last transfer finished sweeps the litter a cut one left (rc 0)
+    PASS  a clean run after a clean run walks nothing: a partial planted between them is not looked for (rc 0)
+    PASS  a transfer that failed is swept after (rc 7)
+    A14. PL-015 (script half): no content folder derived inside a top-level saves folder
+    PASS  an upgraded /GAMES config gains no CONTENT_REMOTE inside the saves folder (""), and the log says why
+    PASS  a deeper saves folder still gets its sibling (/Custom/Saves -> /Custom/Content)
+    PASS  a /GAMES/Content an earlier build derived is left as it stands
+    PASS  cloud_backup warns about a ROMs and BIOS folder nested in the saves folder, in the log and on a deliberate run's screen (rc 0)
+    A15. PL-051 (script half): a command written into the conf's folder values never runs
+    PASS  cloud_backup: a $( ) in SAVES_REMOTE runs nothing and moves nothing; exit 1 with YOUR CLOUD SYNC SETTINGS COULDN'T BE READ on the why line, which the card reads as COULDN'T FINISH (rc 1)
+    PASS  cloud_restore: a $( ) in SAVES_REMOTE runs nothing and moves nothing; exit 1 with YOUR CLOUD SYNC SETTINGS COULDN'T BE READ on the why line, which the card reads as COULDN'T FINISH (rc 1)
+    PASS  cloud_content_backup: a command in CONTENT_REMOTE runs nothing (rc 1)
+    PASS  cloud_content_restore: a command in CONTENT_REMOTE runs nothing (rc 1)
+    A16. #308 claude F-CS-17 / gpt F-CS-37: the shipped configs describe the shipped behaviour
+    PASS  cloud_sync.conf: no comment calls sync the backup default
+    PASS  cloud_sync.conf: RCLONEOPTS ships no --delete-excluded the scripts strip before every run
+    PASS  cloud_sync.conf.defaults: no comment calls sync the backup default
+    PASS  cloud_sync.conf.defaults: RCLONEOPTS ships no --delete-excluded the scripts strip before every run
+    PASS  cloud_restore's comment no longer says backup keeps --delete-excluded
+    A17. #308 claude F-CS-11: a rule that sat below the catch-all stays inert across the upgrade
+    PASS  an upstream device's rules below the catch-all (+ /roms/**, + /**) are kept commented out, not promoted above the defaults
+    PASS  and they stay that way on the next merge
+    PASS  a rule the player adds after the upgrade, at the end, is promoted above the catch-all as before
+    A18. #308 claude F-CS-18: a helper run with nothing to change writes nothing
+    PASS  a second run over a settled config leaves the conf and the rules file untouched and takes no .bak (rc 0)
+    PASS  a run that does add a missing key still takes its .bak first and adds it
+    A19. #308 gpt F-CS-29: the oldest automatic bound reaches today's in one run
+    PASS  one helper run takes the first-cut bound to --max-duration 90s with five retries and one transfer, and the ceiling to 90
+    A20. #308 claude F-CS-21: the settings phase's listings carry the listing bound
+    PASS  cloud_backup's size check of the uploaded archive carries three low-level retries, not the transfer's (rc 0)
+    PASS  cloud_restore's listing of the settings folder carries three low-level retries, not the transfer's (rc 0)
+    A21. #308 gpt F-CS-35: an undated legacy archive does not outrank a dated one
+    PASS  the dated archive is restored, not the undated ROCKNIX_BACKUP.zip that sorts after it (rc 0)
+    PASS  and with nothing dated there, the undated archive is still restored (rc 0)
+    A22. #308 claude F-CS-25: a saves folder at the root backs up without a replaced-saves folder
+    PASS  a backup to a saves folder at the root completes, replaces the cloud's copy, and logs that no replaced-saves folder is kept (rc 0)
+    A23. #308 gpt F-CS-20: the saves-root record is written by a good run, and a failed write says so
+    PASS  record and accept whose write cannot land exit non-zero (record 1, accept 1)
+    PASS  a saves backup whose transfer failed (7) records no card (rc 7)
+    PASS  and the next run that moves the saves records it (rc 0)
+    A24. #308 gpt F-CS-26: a match reports what it removed, not what it planned
+    PASS  the preview plans two removals from gb (B.gb, sub/C.gb; 7 bytes)
+    PASS  one of the two could not be removed: >>> removed says 1 file, 3 bytes, not the plan's 2 (rc 1)
+    A25. gpt F-CS-02: an N64 .fla save is the saves tier's, never content's
+    PASS  a content backup of n64 sends the ROM and not its .fla save (rc 0)
+    PASS  a match of n64 against a cloud without it plans the ROM alone (n64|remove|1|4) and leaves the .fla save (rc 0)
+    A26. #308 gpt F-CS-30: after a restore, the scan reads the same files on both sides
+    PASS  the restore brings a game folder's README, leaves BIOS's setup note in the cloud, and never touches the device's own VMU save (rc 0)
+    PASS  and --scan reads dc, scummvm and bios as matching their cloud copies (0 and 0 differing files)
+    A27. #308 claude F-CS-15: a content backup with nothing to send completes
+    PASS  cloud_content_backup --selected with nothing here to send exits 0, says so, and stamps completed (rc 0, stamp 0)
+    PASS  cloud_content_backup --all with nothing here to send exits 0, says so, and stamps completed (rc 0, stamp 0)
+    A28. #308 claude F-CS-24: a run cut by the network after it moved files is not a skip
+    PASS  a content restore that landed gb before the network went exits 69 and stamps '69 gaps <why>', not a bare skip (stamp: 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    PASS  a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    PASS  while a run the network ends before any unit completed is still the skip: a bare 69 (rc 69, stamp 69)
+    A29. #308 gpt F-CS-34: the automatic ceiling covers the probe, and nothing runs past it
+    PASS  an automatic --system-only run whose reachability probe hangs ends at the conf's 3 s ceiling (3s, rc 124)
+    PASS  after the ceiling ends the saves copy, no further rclone call is started (0 after it, rc 124, 3s)
+    PASS  and the why is the ceiling's own, not a probe's guess at the network
+    A30. claude F-CS-13: a listing that keeps growing is progress to the stall ceiling
+    PASS  a copy that lists for 8 s with the Listed count climbing is not ended by a 3 s stall ceiling (rc 0, 9s)
+    PASS  gpt G-D-01 / claude G-D-02: a scan whose jobs were all skipped still runs the image pass, and its failure is the run's (rc 1, SOME_IMAGES_NOT_SAVED)
+    PASS  gpt G-D-01 / claude G-D-02: and with the pass fetching what was missing, that scan completes (rc 0)
+    PASS  gpt G-D-01: a top-up with seven seconds left at its image pass ends rc 1, why TOOK_TOO_LONG -- the images were not checked
+    PASS  claude G-D-03: under the real timeout the group's SIGINT reaches the ctl, not the helper; the run is CANCELLED (rc 130) 0.02s after the pass began and the helper is ended by SIGTERM through timeout
+    PASS  claude G-D-04: against a real HTTP server and the real fetcher, 404, 410 and a 301 to a 404 are absent; a 503 and a refused connection transient; a whole PNG cached
+    PASS  claude G-D-12: an image already in the cache returns cached
+    PASS  claude G-D-05: the start limit's interval (300s) holds its burst of failed starts (5 x (wait 30s + RestartSec 5s) = 175s)
+    PASS  claude G-D-06: a scan cancelled after its listing does not move the cursor -- the next scan takes the same slice
+    PASS  gpt G-D-06: a truncated walk whose cursor cannot be saved ends rc 1, why SOMETHING_WENT_WRONG, and promises no continuation (no note TRUNCATED)
+    PASS  gpt G-D-06: when the new cursor cannot be written the run ends rc 1 and the cursor the last scan kept stays (g08.gbc)
+    PASS  claude G-D-07: listening --wait abc -- usage on stderr, exit 64
+    PASS  gpt G-D-04: a game a launch had already cached (sets and unlocks, no patch row) is cached by the index and not counted as added -- cached=3 added=2
+    PASS  claude G-D-08: the walk's rule is the same -- patch and unlocks with no sets row is a job; a sets row whose GameId lies past the head still makes the game whole
+    PASS  gpt G-D-05: games_made_ready with a before file that cannot be read prints nothing and fails, so the caller keeps its own count
+    PASS  gpt G-D-03: a marker an index writes while a top-up is at its jobs outlives that top-up (it was not the one the run listed for)
+    PASS  claude G-D-10: the log line says the marker's listing is repeated when a run does not finish
+    PASS  claude G-D-11: cheevos_ppsspp.sh names the PPSSPP commit ppsspp-sa pins (afbc66a3) where it cites the source
+    PASS  claude G-D-11: the pinned PPSSPP source reads AchievementsHost from [Achievements] and hands it to rc_client_set_host (ppsspp-sa-afbc66a318b86432642b532c575241f3716642ef)
+    PASS  claude G-D-14: an absent badge found two days ago is asked for again; one found an hour ago is not (asked ['9401.png'], exit 0)
+    PASS  gpt G-F2-07 cheevos_armsx2.sh: a rename that fails leaves no temp file, secrets.ini as it was, and says so in the log
+    A31. G-A-01 (gpt): a check that found 10 differences is a failed check
+    PASS  G-A-01: a check that found 10 differences keeps all ten saves and SAVES_REMOTE where they were (rc 5)
+    PASS  G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc 4)
+    A32. G-A-02 (gpt): a pointer that could not be written stops the run before the delete
+    PASS  G-A-02: with the settings unwritable the backups stay in the old folder, the pointer where it was, nothing else moved (rc 5)
+    PASS  G-A-02: and the run says why, in the player's words
+    A33. G-A-05 (gpt): nothing in a conf that passes conf_valid runs when it is sourced
+    PASS  G-A-05: each of the seven refused shapes, sourced, does run its command (the fixtures are real)
+    PASS  G-A-05: cloud_backup's conf_valid refuses all seven shapes that run a command when sourced
+    PASS  G-A-05: cloud_backup's conf_valid still passes the shipped conf, a fresh device's, and a hand edit's comment, single quotes, bare number, empty value and ${NAME} append
+    PASS  G-A-05: cloud_restore's conf_valid refuses all seven shapes that run a command when sourced
+    PASS  G-A-05: cloud_restore's conf_valid still passes the shipped conf, a fresh device's, and a hand edit's comment, single quotes, bare number, empty value and ${NAME} append
+    PASS  G-A-05: cloud_sync_helper's conf_valid refuses all seven shapes that run a command when sourced
+    PASS  G-A-05: cloud_sync_helper's conf_valid still passes the shipped conf, a fresh device's, and a hand edit's comment, single quotes, bare number, empty value and ${NAME} append
+    PASS  G-A-05: cloud_backup with the seat's counterexample in its conf runs nothing and refuses (rc 1)
+    A34. a rules file the player names themselves is theirs: honoured as written
+    PASS  cloud_backup with the player's own --filter-from (no catch-all) runs by their rules: the save goes, the file they excluded stays (rc 0)
+    PASS  cloud_restore with the same file brings the save down and leaves the excluded one in the cloud (rc 0)
+    PASS  the device's own allowlist without its catch-all is still refused (rc 1)
+    A35. an apply with no check behind it says the check is missing; checked first, every chosen system is an item
+    PASS  --match --apply with no preview removes nothing and says to check first, not that something changed (rc 1)
+    PASS  checked first, --match --apply announces both chosen systems as ITEM i OF 2 and says Nothing to remove for the one with nothing to do (preview rc 0, apply rc 0)
+    A36. G-A-09 (gpt): a backup that can keep no record of what it replaced says so where it is read
+    PASS  a backup to a saves folder at the root says on the console that no replaced cloud saves are kept (rc 0)
+    PASS  and its outcome line says it too: 'Completed. Your saves folder is your cloud's top folder, so no replaced cloud saves are kept.'
+    PASS  a saves folder with a sibling keeps its record and says nothing of the kind (rc 0)
+    A37. G-A-12 (gpt) and G-A-11 (claude): the tidy's lines say what is true, in the player's words
+    PASS  a saves copy that stopped part-way (one file unreadable) says the new folder may already hold some files, not that both are as they were (rc 5)
+    PASS  a check that failed says nothing was removed from the old folder, not that both are as they were (rc 5)
+    PASS  a tier that moved is named in words, not by its config key (rc 0)
+    A38. G-A-11 (gpt) / G-A-10 (claude): the migration's hash query carries the listing bound
+    PASS  the migration's backend features call carries a connect timeout and a retry bound (rc 0)
+    A39. G-A-06 (gpt) / G-A-02 (claude): the content scripts read CONTENT_REMOTE as source would, or refuse
+    PASS  a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc 0)
+    PASS  a single-quoted CONTENT_REMOTE is the folder it names (rc 0)
+    PASS  of two CONTENT_REMOTE lines the first counts, as the duplicate cleanup keeps it (rc 0)
+    PASS  a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc 1)
+    A40. G-A-07 (gpt) / G-A-03 (claude): every listing --all stands on is read fail-closed
+    PASS  --all on the flat layout whose root listing fails (5) ends Couldn't finish, not Nothing to restore (rc 5, stamp 5)
+    PASS  --all whose legacy root listing fails (5) ends Couldn't finish too (rc 5, stamp 5)
+    PASS  and with nothing failing the flat layout's nes comes down (rc 0)
+    A41. G-A-10 (gpt): a nested game list is game content in the count as in the transfer
+    PASS  after a ROMs-only restore the scan counts the same ROMs on both sides: the nested game list is not in the cloud's ROMs total (restore rc 0)
+    PASS  and under game content alone the same list is counted, on both sides, once it has come down
+    A42. G-A-04 (gpt): a capture that cannot have the commit lock does not commit
+    PASS  an exit capture against a lock held past its waits commits nothing and records lock-busy (rc 1, 11s)
+    PASS  and once the lock is free the next capture records what that one could not (rc 0)
+    A43. G-A-08 (gpt) / G-A-13 (claude): progress is files moved, not units completed
+    PASS  a restore whose unit landed its ROM and then lost the network in its game-list pass stamps '69 gaps', not a bare skip (rc 69, stamp 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    PASS  a content backup that sent its ROM and then lost the network stamps '69 gaps' (rc 69, stamp 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    PASS  a restore whose first unit had nothing to move, then lost the network, is the skip: a bare 69 (rc 69, stamp 69)
+    A44. G-A-01 (claude): an automatic run cut by the network after it sent a save is not a skip
+    PASS  an automatic backup whose saves phase sent a file before the network went stamps '69 gaps <why>' (rc 69, stamp 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    PASS  and one whose saves phase had nothing new to send stamps the bare 69 (rc 69, stamp 69)
+    A45. G-A-09 (claude): a probe the automatic ceiling ended is worded as the ceiling
+    PASS  cloud_backup --automatic --system-only: a probe the ceiling ended says THE CLOUD TOOK TOO LONG, not a sign-in problem (3s, rc 124)
+    PASS  cloud_restore --automatic --system-only: a probe the ceiling ended says THE CLOUD TOOK TOO LONG, not a sign-in problem (3s, rc 124)
+    A46. G-A-08 (claude): a saves folder at the root is not warned about as a nesting
+    PASS  SAVES_REMOTE="/" with SETTINGS_REMOTE="/Backups": no nesting warning on the screen or in the log (rc 0)
+    A47. G-A-14 (claude): a conf the duplicate cleanup rewrote is checked before it is sourced
+    PASS  cloud_backup: a cleanup that leaves a command in the conf runs nothing; the conf from before it is put back and the run goes on (rc 0)
+    PASS  cloud_restore: a cleanup that leaves a command in the conf runs nothing; the conf from before it is put back and the run goes on (rc 0)
+    A48. the duplicate cleanup removes a repeated value whole, continuation and all
+    PASS  a repeated three-line RCLONEOPTS is removed whole; the first stays whole and the file parses
+    PASS  cloud_backup --yes with that conf cleans it and goes on (rc 0)
+    A49. G-A-07 (claude): a content transfer's leftovers are swept and never sent
+    PASS  after a content restore was cut, the next saves restore sweeps the tree (the record said clean before it: yes)
+    PASS  a content backup never sends a transfer's leftover as a ROM (rc 0)
+    PASS  a content restore that completes leaves the tree recorded clean as it found it (rc 0)
+    A50. claude G-A-04: the round-trip reads a settings run's last line with its gate's reader
+    PASS  the tool's reader takes 'Completed.' from a real --system-only run's output, plain and coloured (rc 0)
+    PASS  #307 audit G-B-06 (claude) / G-B-05 (gpt): a created file the boot cannot remove -- a dangling link in a read-only folder -- makes the revert say failed, not reverted
+    PASS  #307 audit G-B-08 (gpt): a mark with no copy whose created files are under the roms folder waits for its mount too
+    PASS  #307 audit G-B-04 (claude): once the roms folder IS mounted -- a bind on the same filesystem, as on a one-card device -- the mark is consumed and the created file removed
+    PASS  #307 audit G-B-04 (claude): a copy on a one-card device's roms folder -- mounted as a bind on the same filesystem -- is put back at the check after the mount
+    PASS  #307 audit G-B-04 (claude), as the audit of the fix round's PL-016 has it: with no readable mount table the boot waits and says so -- it does not fall back to the folder test
+    PASS  #307 audit G-B-10 (gpt): when the whole .tmp cannot be moved into place it is kept, not deleted
+    PASS  #307 audit G-B-07 (gpt): a filter whose file list cannot be made whole writes no archive (rc 1)
+    PASS  #307 audit G-B-15 (claude): a collection killed before its filter leaves pieces the next collection clears
+    PASS  #307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why
+  F1r. The audit of the fix round, stream F1 (#309 PL-024; the gpt seat's G2-F1 leads): each check names its item
+    PASS  #309 PL-024: with the previous boot's 'Autostart complete' already in boot.log, the rehearsal waits until this boot's autostart has finished (poll 4 of 4)
+    PASS  #309 PL-024: an autostart that never finishes runs the wait to its bound and the rehearsal's check FAILs, the stale line notwithstanding
+    PASS  #309 PL-024: a reading that carries the boot id from before the reboot does not end the wait
+    PASS  #309 PL-024 (control): an autostart already finished on the first poll ends the wait at once, and the check passes
+    PASS  G2-F1-02's premise (control): under the old quirks an owner's edit of 20-x64-fd-improvements.conf, and emergency.target unmasked by hand, are both undone at the next boot
+    PASS  the downgrade to the prev old quirks writes the 16 files and the four masks again (the fixture holds what a guest holds)
+    PASS  G2-F1-01: after a downgrade to the prev old quirks and back, the first boot takes back every file they wrote again, and says so on the journal
+    PASS  G2-F1-01: and by the boot after it the four masks are gone too, and both take-backs are stamped again
+    PASS  and a boot after that changes nothing and says nothing
+    PASS  the downgrade to the first old quirks writes the 16 files and the four masks again (the fixture holds what a guest holds)
+    PASS  G2-F1-01: after a downgrade to the first old quirks and back, the first boot takes back every file they wrote again, and says so on the journal
+    PASS  G2-F1-01: and by the boot after it the four masks are gone too, and both take-backs are stamped again
+    PASS  and a boot after that changes nothing and says nothing
+    PASS  G2-F1-01 (control): after the take-back, an owner's file under a retired name and a mask of their own stay, silently, boot after boot
+    PASS  G2-F1-01: a boot that takes the masks and stamps, and finds the old files too, takes both and keeps the fresh stamp
+    PASS  G2-F1-03: a hand-set 640x0 or 0x480 -- neither a shipped pair -- is left as somebody's
+    PASS  G2-F1-03 (control): the shipped 0x0 and 640x480 still follow the mode, record or not
+    PASS  the fixture's live socket answers a connection before the start (the probe can see a live guest)
+    PASS  G2-F1-04: a start refuses a socket a running guest still listens on, names it, and the guest keeps it
+    PASS  G2-F1-04: a start refused at its serial path removes nothing -- the monitor's stale socket is still there
+    PASS  G2-F1-04 (control): a socket nobody listens on is still cleared, and QEMU starts
+  CF. the audit of the fix round, stream C (D-WORKFLOW-060)
+    PASS  PL-009: the seat's /Mine/Backups/. is refused (a remote configured: yes), the config untouched, with the folder to use: Your cloud folder can't have an empty part, or a part called . or .., in its path.
+    PASS  PL-009: the seat's /Mine/Backups/. is refused (a remote configured: no), the config untouched, with the folder to use: Your cloud folder can't have an empty part, or a part called . or .., in its path.
+    PASS  PL-009: --check-syncpath refuses it too, where the folder is typed
+    PASS  PL-009: /Mine/./Saves is refused, the folder offered /Mine/Saves
+    PASS  PL-009: /Mine//Saves is refused, the folder offered /Mine/Saves
+    PASS  PL-009: /Mine/Saves/.. is refused, the folder offered /Mine/Saves
+    PASS  PL-009: /a/b/../Content is refused, the folder offered /a/Saves
+    PASS  PL-009: /. names no folder at all, and is refused as empty
+    PASS  PL-009 (a control): /Mine/.hidden/Saves is a folder like any other, stored with its siblings beside it
+    PASS  PL-009 (a control): /Mine/..x/Saves is a folder like any other, stored with its siblings beside it
+    PASS  PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: /Rasteratops/Saves
+    PASS  PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: /Rasteratops/Content
+    PASS  gpt G2-C-01 (a control): the scripts' own readers refuse SAVES_REMOTE=/Mine/'My Saves' (conf_valid rc 1, the content reader rc 2)
+    PASS  gpt G2-C-01: --info names no folder for it, rather than /Mine/'My
+    PASS  gpt G2-C-01: --seed-folders writes nothing to the cloud on a folder it cannot read (rc 1): Your cloud sync settings couldn't be read, so no folders were made.
+    PASS  gpt G2-C-01: --check-syncpath of the stored folder says the settings couldn't be read (rc 1)
+    PASS  gpt G2-C-01: cloud_setup and the content scripts read nine value forms alike, refusals included
+    PASS  PL-014: the scrub leaves no planted credential in cloud_sync.log, its trim leftover or its rotation (rc 0)
+    PASS  PL-014: an old cloud_remote line now reads as this build writes it (rclone config create failed (1)), rclone's words after cloud_oauth's are <redacted>, every other line is byte for byte as it was, and boot.log is untouched
+    PASS  PL-014: the stamp under /storage/.cache records it: scrubbed=1790921311 files=3 lines=6
+    PASS  PL-014 (the interface's log): a planted cloud_remote create: record in es_log.txt and in a rotation reads cloud_remote create: <redacted>, the raw lines of its output after it <redacted>, OK=qa and every other record byte for byte, a line count unchanged
+    PASS  PL-014 (the interface's log): the stamp records the interface's logs on a line of their own: es_log_scrubbed=1790921311 files=2 lines=3
+    PASS  PL-014: once: with the stamp there, a second run reads nothing and writes nothing
+    PASS  PL-014 (the interface's log; a control -- the scrub before it never read them): once, for the interface's logs too
+    PASS  PL-014 (the interface's log): a device whose stamp has only the cloud log's line gets its es_log files scrubbed, the cloud log not read again, and the second line added
+    PASS  PL-014 (a control, the fix's own guard): without its credential filter it fails closed -- nothing rewritten, no stamp, so the next boot tries again (rc 1)
+    PASS  PL-014: a clean install -- no log folder -- is recorded as done and nothing is made
+    PASS  PL-014: the rclone package installs cloud_log_scrub
+    PASS  PL-014: 102-cloud-saves runs it at boot, in the foreground, before the capture pass -- which writes the cloud log -- starts
+    PASS  PL-032 (gpt G2-C-02): a serve whose attempt died while it bound its port leaves the state failed and ends (rc 2), not waiting on a dead attempt
+    PASS  PL-032 (gpt G2-C-02): a restarted attempt that dies at once reads failed, and the phone is not told it is ready
+    PASS  PL-032 (claude G2-C-04): a restart whose rclone offers no link reads failed, not waiting with nothing left to finish it
+    PASS  PL-032 (gpt G2-C-03, claude G2-C-03): a replaced attempt that finishes late leaves its successor's state, writes no signed-in marker, and takes its remote away again
+    PASS  PL-032 (S-25): an attempt timed out while its remote was being made stays failed: no signed-in marker, and the remote it made is taken away again
+    PASS  PL-032 (S-25): an attempt cancelled while its remote was being made stays idle: no signed-in marker, and the remote it made is taken away again
+    PASS  PL-032 (a control): a success that still owns the state is published: signed-in, the marker written, the remote kept
+    PASS  PL-032: the serve's closing write, which may move only from starting or waiting, leaves a signed-in as it is
+    PASS  claude G2-C-01: the probe says loading while no field has had the caret, open (with the page's token) once one has, waiting with no window
+    PASS  claude G2-C-01: the window is given CLOUD_SIGNIN_FIELD_FILE, a stale one is removed before it starts, and a reset clears it
+    PASS  the audit of the fix round's cloud_oauth groups ran to the end (9 groups)
+    PASS  claude G2-C-01 (a control): text typed before the window opens is held while its page loads and lands in the field once it has the caret
+    PASS  claude G2-C-01: the phone's Tab and arrows reach the handheld while its page has nothing with the caret
+    PASS  claude G2-C-01: typed while the next page loads, held, then into that page's field once it has the caret (A 'abc', B 'xyz')
+    PASS  the phone page's groups ran to the end (3 groups, node)
+    PASS  claude G2-C-01: the window records a field with the caret in CLOUD_SIGNIN_FIELD_FILE, from the probe's text: answer, once per page
+    PASS  claude G2-C-01: every new page's load removes the record, and forgets it was made, before it writes the page's name
+  D (the fix round). stream D's leads of the audit of the fix round: G2-D-01 (claude), G2-D-01, G2-D-02 and G2-D-03 (gpt), S-24 and S-26 (PL-031, PL-033)
+    PASS  gpt G2-D-01 / claude G2-D-08: ready_games_into reads 153 (its GameId cut at the 512th character) and 160 (a nested set's GameId first), and invents neither 15 nor 9160
+    PASS  gpt G2-D-01 / claude G2-D-08: the walk passes over i.gb (153) and k.gb (160) and lists h.gb (15) and l.gb (9160), which have no sets row of their own
+    PASS  gpt G2-D-02 / S-24: a top-up whose before-read of the store failed stamps added=unknown, not its three cache operations
+    PASS  gpt G2-D-02 / S-24: and one whose after-read failed says unknown too, in the stamp and the log
+    PASS  gpt G2-D-02 / S-24: a scan whose before-read failed stamps added=unknown, not write_stamp's default of its cached count
+    PASS  gpt G2-D-02 / S-24: a cancelled scan whose before-read failed stamps added=unknown why=CANCELLED
+    PASS  gpt G2-D-02 / S-24: a scan that cached nothing stamps added=0 whether or not the store could be read
+    PASS  gpt G2-D-03: an index that writes its marker between the top-up's token check and its removal keeps it -- the older run removed only its own
+    PASS  gpt G2-D-03: and the top-up still says it removed the marker it listed for
+    PASS  claude G2-D-01 / S-26: the pinned client's run-service, in a network namespace of its own, is listening where the ctl's listening check reads (ctl=1 ppsspp=1 looks=2; tcp 0100007F:1F90|)
+    PASS  claude G2-D-01 / S-26: and cheevos_ppsspp.sh's reader agrees -- PPSSPP is routed to it
+    PASS  claude G2-D-01 / S-26: the proxy listens on IPv4 alone -- no tcp6 line on 8080, so the readers' leaving out :: turns nothing away
+  F2-20. the generators read a literal #elif as the compiler does: #elif 0 never compiled, #elif 1 taken, any other #elif live (audit of the fix round PL-020)
+    PASS  FBA #if 0 / #elif 0 / #else: the #elif arm gives no row, the #else does
+    PASS  MAME #if 0 / #elif 0 / #else: the #elif arm gives no row, the #else does
+    PASS  FBA #if 0 / #elif 1 / #else: the #elif arm is taken, its turn kept, the #else never read
+    PASS  MAME #if 0 / #elif 1 / #else: the #elif arm is taken, its turn kept, the #else never read
+    PASS  FBA #if X / #elif 0 / #else: the #elif 0 arm gives no row, the #if and #else arms do
+    PASS  MAME #if X / #elif 0 / #else: the #elif 0 arm gives no row, the #if and #else arms do
+    PASS  FBA #if 0 / #elif X / #else: an #elif the build decides is live, and its #else (the control)
+    PASS  MAME #if 0 / #elif X / #else: an #elif the build decides is live, and its #else (the control)
+    PASS  FBA #if 1 / #elifdef X: the #elifdef arm after a taken #if 1 gives no row
+    PASS  MAME #if 1 / #elifdef X: the #elifdef arm after a taken #if 1 gives no row
+  F2-21. the gstreamer overrides fail unless each name WebKit loads resolves to a file in what they keep (audit of the fix round G2-F2-03)
+    PASS  gst-plugins-bad as meson installs it (a file and two links) passes, and its soname resolves in what it keeps (the control)
+    PASS  gst-plugins-bad with libgstmpegts-1.0's links and no file fails the package
+    PASS  gst-plugins-base as meson installs it passes, and the libraries and appsink resolve in what it keeps (the control)
+    PASS  gst-plugins-base whose libgstapp-1.0 is links without a file fails the package
+    PASS  gst-plugins-base whose appsink plugin is a dead link fails the package
+    PASS  gst-plugins-base with only a libgstapp.so.debug beside the plugins fails the package -- the name is the plugin's, not a prefix of it
+  F2-22. 0018 answers from the configuration the load read, not from a second read of the files (audit of the fix round G2-F2-02)
+    PASS  a launch's -1, its file rewritten to slot 3 after the load read it: the load applies -1 and the answer is Auto
+    PASS  a launch's -1, its file removed after the load read it: the answer is still Auto
+    PASS  a -1 left in the main config is not the launch's; a launch's -1 over a numbered main slot is (the controls)
+    PASS  config_load_file notes the main config's state_slot entry before the append files, records from the entries after them and before the overrides, and the block opens no file
+  F2-23. the generators read a number whole, so a separator after a hex digit hides no comment opener (gpt G2-F2-04)
+    PASS  FBA: a driver inside a /* */ opened after 0xFF'00 gives no row; one after a '/*' character literal does
+    PASS  MAME: a GAME() inside a /* */ opened after 0xAB'CD gives no row
+  F2-24. the FBA generator finds a driver's end outside its strings (claude G2-F2-10)
+    PASS  FBA: a }; inside a driver's title does not end the driver, and a '"' character literal opens no string
+  A (the audit of the fix round): the cloud scripts, stream A
+    A51. PL-002: a control character but a tab anywhere in the conf is refused, by all five readers
+    PASS  PL-002: each of the six control-byte shapes, sourced, runs its command (the fixtures are real)
+    PASS  PL-002: cloud_backup's conf_valid refuses all six
+    PASS  PL-002: and cloud_backup's still passes a tab before a comment
+    PASS  PL-002: cloud_restore's conf_valid refuses all six
+    PASS  PL-002: and cloud_restore's still passes a tab before a comment
+    PASS  PL-002: cloud_sync_helper's conf_valid refuses all six
+    PASS  PL-002: and cloud_sync_helper's still passes a tab before a comment
+    PASS  PL-002: cloud_backup with the seat's line in its conf runs nothing and refuses (rc 1)
+    PASS  PL-002: cloud_restore with the seat's line in its conf runs nothing and refuses (rc 1)
+    PASS  PL-002: cloud_content_restore refuses a conf with a CR on its own line (rc 1)
+    PASS  PL-002: cloud_content_restore refuses a conf with a CR on another line (rc 1)
+    PASS  PL-002: cloud_content_backup refuses a conf with a CR on its own line (rc 1)
+    PASS  PL-002: cloud_content_backup refuses a conf with a CR on another line (rc 1)
+    A52. PL-015: bash's escapes inside double quotes are accepted, and a refusal says why in the log
+    PASS  PL-015: the three refused escapes run their command when sourced, and the five accepted ones source cleanly (the fixtures are real)
+    PASS  PL-015: cloud_backup's conf_valid accepts \" \\ \$ and \` inside double quotes, on one line or continued
+    PASS  PL-015: cloud_backup's conf_valid still refuses an escape that closes the quote or opens a $(, a backslash before anything else, and an escape in a folder value
+    PASS  PL-015: and cloud_backup's refusal names the line and its shape (CONF_WHY)
+    PASS  PL-015: cloud_restore's conf_valid accepts \" \\ \$ and \` inside double quotes, on one line or continued
+    PASS  PL-015: cloud_restore's conf_valid still refuses an escape that closes the quote or opens a $(, a backslash before anything else, and an escape in a folder value
+    PASS  PL-015: and cloud_restore's refusal names the line and its shape (CONF_WHY)
+    PASS  PL-015: cloud_sync_helper's conf_valid accepts \" \\ \$ and \` inside double quotes, on one line or continued
+    PASS  PL-015: cloud_sync_helper's conf_valid still refuses an escape that closes the quote or opens a $(, a backslash before anything else, and an escape in a folder value
+    PASS  PL-015: and cloud_sync_helper's refusal names the line and its shape (CONF_WHY)
+    PASS  PL-015: cloud_backup runs with RCLONEOPTS="--exclude \"*.tmp\" ..." in its conf (rc 0)
+    PASS  PL-015: cloud_restore runs with RCLONEOPTS="--exclude \"*.tmp\" ..." in its conf (rc 0)
+    PASS  PL-015: a conf still refused ends the run as before, and the log names the line and the shape (rc 1)
+    PASS  PL-015: cloud_content_backup reads RCLONE_NET_OPTS with an escaped quote in it, and its copy carries --timeout 7s (rc 0)
+    A53. G2-A-03 (gpt): a content folder set in a form the reader does not read is refused, never read as the root
+    PASS  G2-A-03 (gpt): cloud_content_backup refuses '  CONTENT_REMOTE="/Rasteratops/Content"' and sends nothing (rc 1)
+    PASS  G2-A-03 (gpt): cloud_content_backup refuses 'export CONTENT_REMOTE="/Rasteratops/Content"' and sends nothing (rc 1)
+    PASS  G2-A-03 (gpt): cloud_content_backup refuses 'declare -x CONTENT_REMOTE="/Rasteratops/Content"' and sends nothing (rc 1)
+    PASS  G2-A-03 (gpt): cloud_content_backup refuses 'CONTENT_REMOTE+="/Rasteratops/Content"' and sends nothing (rc 1)
+    PASS  G2-A-03 (gpt): and cloud_content_restore refuses the same file (rc 1)
+    PASS  G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /Rasteratops/Content (rc 0)
+    A54. PL-004: a safety copy that is not whole never replaces the conf, and no cleanup runs without one
+    PASS  PL-004: cloud_backup: a safety copy cut at 40 bytes whose cp fails leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc 0)
+    PASS  PL-004: cloud_backup: a safety copy cut at 40 bytes whose cp says it worked leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc 0)
+    PASS  PL-004: cloud_restore: a safety copy cut at 40 bytes whose cp fails leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc 0)
+    PASS  PL-004: cloud_restore: a safety copy cut at 40 bytes whose cp says it worked leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc 0)
+    A55. PL-001: a pointer that names the new folder in another spelling is the new folder
+    PASS  PL-001: rclone's copy of qa:/Rasteratops/Saves/ onto qa:/Rasteratops/Saves exits 0 and changes nothing, and its check is clean (list 0 copy 0 check 0 files 2 clean 1): rclone does not refuse it
+    PASS  PL-001: SAVES_REMOTE="/Rasteratops/Saves/" is the current layout: --apply copies and removes nothing, leaves the pointer as written, and says so (rc 3)
+    PASS  PL-001: and --check offers nothing, so the row is never shown (rc 3)
+    PASS  PL-001: SAVES_REMOTE="Rasteratops/Saves" is the current layout too: nothing moved, the pointer left (rc 3)
+    PASS  PL-001: SAVES_REMOTE="/Rasteratops//Saves" is the current layout too: nothing moved, the pointer left (rc 3)
+    PASS  PL-001: SAVES_REMOTE="/Rasteratops/./Saves" is the current layout too: nothing moved, the pointer left (rc 3)
+    PASS  PL-001: SAVES_REMOTE="//Rasteratops/Saves//" is the current layout too: nothing moved, the pointer left (rc 3)
+    PASS  PL-001: the backups and content pointers are compared as folders as well (rc 3)
+    PASS  PL-001: a pointer with a .. in it is refused, nothing moved, the why the card knows (rc 4)
+    PASS  PL-001: on a case-insensitive cloud /rasteratops/saves is /Rasteratops/Saves: nothing moved (rc 3)
+    PASS  PL-001: and so it is when the cloud's features cannot be read -- the safe side (rc 3)
+    PASS  PL-001: on a cloud that keeps case apart, /rasteratops/saves is another folder, and its saves are moved (rc 0)
+    PASS  PL-001: relocate refuses qa:/Rasteratops/Saves/ onto qa:/Rasteratops/Saves: nothing copied, removed, or repointed (rc 1)
+    PASS  PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /Rasteratops/Content is not moved onto itself (rc 0)
+    PASS  D-CLOUD-165: the move from /ROCKNIX carries the set-aside to /Rasteratops/Saves-replaced, leaves nothing of ours under /ROCKNIX, and writes the marker (rc 0)
+    A56. G2-A-04 (gpt): an apply that cannot spend its plan removes nothing
+    PASS  G2-A-04 (gpt): an apply whose plan cannot be removed removes nothing and ends with a why (rc 1)
+    PASS  G2-A-04 (gpt): and once the plan can be spent, the preview and the apply go through as before (rc 0)
+    A57. G2-A-02 (claude): a migration cut at the content's copy is finished by the next run
+    PASS  G2-A-02 (claude): killed at the content's copy (rc 137, pointers then: /Rasteratops/Saves /GAMES/Content ), the next run moves the content and repoints it (rc 0)
+    A58. G2-A-06 (claude): the stage's collection under the commit lock costs one stat, not one per seal
+    PASS  G2-A-06 (claude): 301 more seals in the stage cost the commit 0 more stat call(s), not one each (12 against 12, rc 0)
+    PASS  G2-A-06 (claude): and it collects as before: the unclaimed seal older than ten minutes goes, a fresh one and a claimed one stay
+    A59. PL-034: a capture the launch was let over commits nothing, and writes no save
+    PASS  PL-034: a capture blocked on the commit lock gives up in 11s -- far under the interface's 120 -- and commits nothing (rc 1)
+    PASS  PL-034: an exit capture records with the saves folder read-only: it writes no save the next game owns (rc 0)
+    PASS  PL-034: past its bound when it gets the lock (6 s here, the holder's 8), an exit capture commits nothing and says so (rc 1, 8s)
+    PASS  PL-034: within its bound the same wait ends in a record, on the re-run (rc 0, 8s)
+  z. the audit of the fix round, stream B: the conf read as text, a flag's password redacted, the restore's lists and its own control files, a quoted password, the roms mount, the upstream-era move, a zip's stored members, members outside storage/, the lock's path, the seed list, the Wi-Fi pair
+    PASS  audit of the fix round PL-003: a conf with a command on a line of its own -- nothing runs, and the backup lands in the folder SETTINGS_BACKUPS names (rc 0)
+    PASS  audit of the fix round PL-003: a command inside the value is not run -- the standard folder is used and the log says why
+    PASS  audit of the fix round PL-003: of two SETTINGS_BACKUPS lines the first is read, as cloud_sync_cleanup_duplicates.sh keeps it (a trailing comment allowed)
+    PASS  audit of the fix round PL-003: a single-quoted and a bare value are read as the shell would read them
+    PASS  audit of the fix round PL-005: 'launcher --pass qa-value', 'x --RA_Pass qa-value' and 'x -pass qa-value' are redacted in argument mode as in stream mode
+    PASS  audit of the fix round PL-005: and 'test passed', 'bypass mode' and '--passes' still take the fast path (no sed)
+    PASS  audit of the fix round (PL-005's sibling): Passphrase=, iwd's key, and --passphrase are redacted in both modes
+    PASS  audit of the fix round PL-006: the copy's worklist that cannot be made (KEEP's mktemp fails) refuses the restore before it writes -- not 'nothing to protect' (4)
+    PASS  audit of the fix round PL-006: a worklist made and then not written (every append to KEEP fails) refuses the restore
+    PASS  audit of the fix round PL-006: the list of files the restore would create that cannot be written (NEWLIST) refuses the restore
+    PASS  audit of the fix round PL-006: the worklist's final write (the de-duplicated list moved into place) that fails refuses the restore
+    PASS  audit of the fix round PL-006: the member list's own temporary that cannot be made refuses the restore in the player's words
+    PASS  audit of the fix round PL-006: a selection with nothing on the device yet is still 'no copy needed' (4), and the restore runs
+    PASS  audit of the fix round PL-006: a backup whose file list cannot be made writes nothing and says so in the player's words
+    PASS  audit of the fix round PL-006: a backup whose held-back list cannot be written (system.cfg would go whole) is a collection that failed, said as one
+    PASS  audit of the fix round PL-007: a tar archive carrying .restore-in-progress and a file at the copy's own path writes neither -- the fresh mark and the copy stand through the extraction, and the cut restore is undone
+    PASS  audit of the fix round PL-007: so does a legacy zip
+    PASS  audit of the fix round PL-007: and a backup of /storage/.config never carries the restore's mark or the other one-shot markers a restore leaves
+    PASS  audit of the fix round PL-008: password = " leading-text" in a custom location is caught
+    PASS  audit of the fix round PL-008: and a quoted value of spaces alone is not a sign-in: the backup completes
+    PASS  audit of the fix round PL-016: with the mount table unreadable, a mark whose files are under the roms folder is left for a later check, nothing removed, and the log says why
+    PASS  audit of the fix round PL-016: and a copy under the roms folder waits the same way
+    PASS  audit of the fix round G2-B-02 (claude): the mark records whether the roms folder was a mount when the restore ran (here it was not: roms-mounted=no)
+    PASS  audit of the fix round G2-B-02 (claude): a mark saying the roms folder was not a mount is acted on by its folders, though that folder is not a mount now -- it never waits for a mount that was never there
+    PASS  audit of the fix round G2-B-02 (claude): and one saying it was a mount still waits for the mount
+    PASS  audit of the fix round PL-017: a root ARCHIVED_*.zip whose name archive/upstream-era/ already holds is kept beside it under a dated name, and the one there is untouched
+    PASS  audit of the fix round PL-022 (the measurement, BS-3): the image's busybox unzip passes a damaged STORED member (-t rc 0, -p rc 0) and fails a damaged DEFLATED one (-p rc 1)
+    PASS  audit of the fix round PL-022: a legacy zip whose STORED member's bytes do not match its listed CRC is refused as damaged before anything is written
+    PASS  audit of the fix round PL-022: a legacy zip with a damaged DEFLATED member is refused as damaged
+    PASS  audit of the fix round PL-022: a whole legacy zip -- stored and deflated members, a stored name with brackets, a star and a space, an empty stored file -- restores (rc 0)
+    PASS  audit of the fix round PL-028: a tar archive with a member outside storage/ is refused before anything is written, and says so
+    PASS  audit of the fix round PL-028: so is a legacy zip
+    PASS  audit of the fix round PL-028: and so is one whose member walks out of storage/ through ..
+    PASS  audit of the fix round G2-B-03 (gpt): with a folder at the lock's path, wait_lock takes nothing (rc 1, 4s), links nothing into the folder, and says why
+    PASS  audit of the fix round G2-B-09 (gpt): a seed list that cannot be read ends the restore before it writes -- never a restore that says it finished with the defaults not put back
+    PASS  audit of the fix round G2-B-11 (gpt): set_settings wifi.ssid B wifi.key b-key writes both in one rename (rc 0)
+    PASS  audit of the fix round G2-B-11 (gpt): a pair that cannot be written leaves both as they were and says so (rc 1)
+    PASS  audit of the fix round G2-B-11 (gpt): set_settings k default removes both keys' lines in the one write
+    PASS  audit of the fix round G2-B-11 (gpt): system.hostname default keeps its empty line, as set_setting does (D-NET-009)
+    PASS  audit of the fix round G2-B-11 (gpt): an odd number of arguments writes nothing (rc 1)
+    PASS  audit of the fix round G2-B-11 (gpt): a join whose second settings write would fail never leaves B's SSID with A's key (the pair is B/b-key)
+    PASS  audit of the fix round G2-B-11 (gpt): a join whose settings cannot be written says joined (it is), leaves the pair as it was, and logs that the settings were not saved
+    PASS  audit of the fix round G2-B-11 (gpt): a forget whose profile delete fails and whose settings cannot then be put back refuses (rc 1) and logs what state the settings are in
+    PASS  audit of the fix round (stream C's lead): key =, key=, b2.key =, access_key_id =, --b2-key and --s3-access-key-id are redacted in both modes
+    PASS  audit of the fix round (stream C's lead): and hotkey, keyboard and a sentence about a key take the fast path, unchanged
+    PASS  audit of the fix round (E1's lead G2-E-core-03): a set_setting onto a system.cfg cut mid-line, with no whole copy beside it, drops the half line (wifi.key=ab) rather than completing it, and says so
+    PASS  audit of the fix round (E1's lead G2-E-core-03): so the record the boot then writes carries no half line either
+    PASS  audit of the fix round (E1's lead G2-E-core-03): with a whole last good copy beside it, the write keeps the cut file's whole lines (a=5) and takes the rest from the copy (wifi.key=abcdef, z=9)
+    PASS  audit of the fix round (E1's lead G2-E-core-03): chksysconfig backup never records a system.cfg whose last line is cut (valid() alone passed wifi.key=ab), and says why
+    PASS  audit of the fix round (E1's lead G2-E-core-03): and the boot's sort_settings, which ran before that backup, repairs the cut the same way instead of completing it
+    PASS  audit of the fix round (E1's lead G2-E-core-03): keys removed from the end on purpose stay removed through the boot's verify and backup
+  S315. #315: the size-only remote gets --update on every saves pass; every other remote nothing; the detection's edges
+    PASS  webdav/other, the recent set: --max-age with --update once, no --ignore-times, no --modify-window
+    PASS  webdav/other, --recent with no backup on record (a full pass): --update once
+    PASS  webdav/other, the deliberate saves backup: --update once, no window
+    PASS  webdav/other, the startup pair's --update given: --update once, not twice
+    PASS  webdav/other, cloud_restore's saves pass: --update (the cloud's upload time against this device's copy)
+    PASS  webdav/other, the startup restore (--update given): --update once
+    PASS  webdav/sharepoint (no modtime setting, no hashes): --update, like other (claude F-SS-02)
+    PASS  webdav/nextcloud (modtimes and checksums): the recent set as before, no --update
+    PASS  webdav/nextcloud, cloud_restore: no --update (the manual row's shape kept)
+    PASS  webdav/fastmail (modtimes and hashes per rclone's docs): no --update
+    PASS  dropbox: the recent set as before, no --update
+    PASS  dropbox, the deliberate backup: no --update
+    PASS  remote_compares_by_size and its reader are one text in cloud_backup and cloud_restore
+    PASS  the name with rclone's trailing colon, webdav/other: by size
+    PASS  a second section, webdav/owncloud: not by size (the section, not the file, is read)
+    PASS  a dotted name matches its own section only: qa.prod by size, qaxprod (nextcloud) not (gpt F-SS-03)
+    PASS  crypt over a sharepoint-ntlm WebDAV: by size, one hop through remote = (claude F-SS-04)
+    PASS  alias over an Infinite Scale WebDAV: not by size
+    PASS  an alias that names itself ends after three hops: not by size
+    PASS  webdav with no vendor line: by size
+    PASS  a remote the file does not name: not by size (no flags added on a guess)
+    PASS  an unreadable config: not by size
+    PASS  a name with a character outside rclone's: not by size
+    PASS  RCLONE_CONFIG, rclone's own override, is honoured (claude F-SS-10)
+  S3F. the audit of the fixes: shell-owned names and NUL bytes refused by the grammar; the sorter's pipeline gates its rename; the ZIP listing's CRC column asserted; the restore gate's mount state; the migration's reader; the scrubber's truncated line; the ack's rename
+    PASS  conf_valid is one text in cloud_backup, cloud_restore and cloud_sync_helper
+    PASS  RANDOM=... is refused as a name the shell owns (the seat's canary ran when sourced on the host)
+    PASS  PATH=... is refused
+    PASS  a backslash-dollar-paren inside double quotes is refused (a literal dollar-paren a shell context could run)
+    PASS  PL-015's escapes still pass: an escaped quote, a doubled backslash, a backslash-dollar before an ordinary character
+    PASS  a NUL byte in the file is refused before awk reads a truncated record (claude G3-D-02)
+    PASS  none of the canaries ran while being judged
+    PASS  a producer that fails after the hostname line installs nothing: the live file is untouched, no temporary left
+    PASS  zip_stored_ok refuses a listing with no CRC column (the image's busybox prints one; a lesser build would pass every member)
+    PASS  finish_restore: a restore that ran with no roms mount waits when a mount is there now, or the table cannot be read
+    PASS  a single-quoted and a bare pointer read as their values, not as the whole line
+    PASS  a truncated config line masks a quoted value whole, key by key (a quoted value with a space left its tail readable)
+    PASS  a line cut inside a quoted value masks it to the end
+    PASS  an ack for token A over a marker holding B keeps B in place and leaves no aside file
+    PASS  an ack for token A over a marker holding A removes it
+  aa. cloud_migrate_layout --state, --keep and --follow (#353, D-CLOUD-160/161): the layout as facts, a kept folder, the fleet followed
+    PASS  --state reads current on the current layout (rc 0)
+    PASS  --state reads own on a folder the player chose
+    PASS  a carried /GAMES with nothing in it reads superseded-empty (D-CLOUD-161)
+    PASS  a /GAMES holding saves reads superseded-with-files (D-CLOUD-160)
+    PASS  the fork's earlier /ROCKNIX layout reads superseded-with-files, no current folder, no marker
+    PASS  --check offers the move for /ROCKNIX rather than calling it a layout of your own (rc 0)
+    PASS  --follow does nothing while no device has made /Rasteratops (rc 3)
+    PASS  --state sees the current folder and the marker once they exist
+    PASS  --follow re-points all three pointers once the current folder exists, with a journal line (rc 0)
+    PASS  --follow leaves a content folder the player chose (rc 0)
+    PASS  --keep records the folder kept (rc 0)
+    PASS  after --keep, --state reads kept
+    PASS  a kept folder is not followed even when the current one exists (rc 3)
+    PASS  a carried /GAMES with an empty content root follows to all three (rc 0)
+    PASS  a device set to /GAMES whose cloud holds /ROCKNIX/Saves reads superseded-with-files from /ROCKNIX/Saves (the Nova's case)
+    PASS  --check for that device offers the move from /ROCKNIX/Saves, not the creation of /Rasteratops (rc 0)
+    PASS  --follow refuses a device whose old folder still holds files, even with the current folder there (rc 3)
+    PASS  and follows once the old folder is empty (rc 0)
+    PASS  --check lists the set-aside of conflict losers among what moves (D-CLOUD-165)
+    PASS  a current folder with no marker is somebody's own: the move is refused with its why and nothing is copied (rc 4)
+    PASS  --check on the fleet's folder says the tiers merge and changes nothing (rc 0)
+    PASS  --apply onto the fleet's folder merges the saves: copy --update with the shelf as --backup-dir, the old folder removed after the presence check, the pointer moved, the item announced (rc 0)
+    PASS  with nothing differing, nothing is shelved from the old folder
+    PASS  a file that differs is shelved from the old folder before the update copy (rc 0)
+    PASS  --join points a fresh device at the earlier folder holding the saves, with its backups and content (rc 0)
+    PASS  and the joined device then reads superseded-with-files, so the move is offered from there (D-CLOUD-160)
+    PASS  --join leaves a content folder the player chose (rc 0)
+    PASS  a current folder the seeding made, holding only its README, is joined past (rc 0)
+    PASS  a current folder that holds saves is never joined away from (rc 3)
+    PASS  with /GAMES and /ROCKNIX/Saves both holding saves, the fork's newer folder is the one joined (rc 0)
+    PASS  an empty cloud has nothing to join (rc 3)
+    PASS  --join points a carried, empty /GAMES at the /ROCKNIX/Saves that holds the saves (rc 0)
+    PASS  and KEEP USING after it keeps /ROCKNIX/Saves, the folder the dialog names (rc 0)
+    PASS  a /GAMES that holds saves is not joined away from (rc 3)
+    PASS  nor a /GAMES the player chose to keep (rc 3)
+    PASS  --settle points a carried /GAMES with nothing anywhere at the current folders (rc 0)
+    PASS  and leaves a device already on them alone (rc 3)
+    PASS  and a folder the player chose (rc 3)
+    PASS  --settle joins rather than resets when an earlier folder holds the saves (rc 0)
+    PASS  no listing helper of cloud_migrate_layout runs inside $(...), where its stop would end only a subshell (blindspot 72)
+    PASS  --state on a carried /GAMES whose /ROCKNIX listing fails ends non-zero and states nothing (rc 1)
+    PASS  --join stops the same way and changes nothing (rc 1)
+    PASS  and --check for that /GAMES device stops rather than planning from a guess (rc 1)
+    PASS  --superseded lists both defaults this project once shipped, with no conf and no network
+    PASS  --needs-step: an earlier /ROCKNIX with a remote set up needs the step, and rclone never starts (rc 0)
+    PASS  --needs-step: and so does a carried /GAMES (rc 0)
+    PASS  --needs-step: the current folder does not (rc 1)
+    PASS  --needs-step: nor a folder the player chose (rc 1)
+    PASS  --needs-step: nor an earlier folder the player kept (rc 1)
+    PASS  --needs-step: nor a device with no remote set up, whose way in is the setup wizard (rc 1)
+    PASS  --needs-step: a conf it cannot read answers 2, which the interface takes as no step (rc 2)
+    PASS  --needs-step: names compared as written: a hand-typed /rocknix/saves is not asked about at every boot, whatever the cloud folds (rc 1)
+    PASS  cloud_backup runs no folder check before its sync (D-CLOUD-170)
+    PASS  cloud_restore runs no folder check before its sync (D-CLOUD-170)
+  ab. cloud_scan (#350, D-CLOUD-156): the opening scan's three items, the content scan's one, the quiet follow, the facts written, the failures said
+    PASS  the opening scan announces CLOUD FOLDER, SETTINGS BACKUPS, GAME CONTENT in that order, each with its doing line, and exits 0 (rc 0)
+    PASS  its files hold the state, the root folders and the done stamp; no content listing yet, no follow on a current folder
+    PASS  the settings facts: this device's newest by label, the newest overall, the count, the label (D-CLOUD-162)
+    PASS  the archive listing is bounded and reads the Backups folder
+    PASS  no default route: exit 69, nothing announced, no done stamp (rc 69)
+    PASS  no remote: exit 1 with its why (rc 1)
+    PASS  a content listing is not the opening scan's to fail: the scan-fail flag leaves the opening scan at 0 (rc 0)
+    PASS  --content --with-media announces one item in the ticked classes, passes the flag to --scan, writes the rows, the systems and its own stamp (rc 0)
+    PASS  --content --media-only is the GAME CONTENT item with --scan --media-only (rc 0)
+    PASS  a content listing the cloud refused (5): the ROMS AND BIOS item, the why, no content stamp (rc 5)
+    PASS  a superseded, empty folder beside a current one that exists is followed in the scan, and the state re-read (rc 0)
+    PASS  the scan joins before it reads the state, and goes on (rc 0)
+    PASS  a join the cloud refused ends the scan with its why, before any state is written (rc 5)
+    PASS  and one that ran out its time says the cloud stopped answering (rc 124)
+    PASS  --folder announces the CLOUD FOLDER item alone, joins, and writes the state (rc 0)
+    PASS  --folder lists no archives and no root, and leaves the opening scan's files and done stamp as they were
+    PASS  --folder follows a superseded, empty folder beside a current one -- the one place it does, since no sync asks (rc 0)
+    PASS  --folder with a join the cloud refused ends with its why and no state, so the step offers nothing from a guess (rc 5)
+    PASS  --folder with no route exits 69, the page's SKIPPED - YOU'RE NOT ONLINE (rc 69)
+    PASS  an unknown mode is refused with the usage, which names --folder (rc 2)
+  ac. the Retroid Pocket Nova's ledcontrol (#332): LED BRIGHTNESS writes the LEDs, rgb with no colour set lights white, off zeroes
+    PASS  brightness max writes 255 to every LED's brightness file
+    PASS  brightness mid writes 128
+    PASS  brightness min writes 32 and is remembered as led.brightness
+    PASS  rgb with no colour set lights white at the remembered brightness (the helper got seven numbers)
+    PASS  rgb with a colour set hands the helper that colour
+    PASS  off zeroes every LED's brightness and colour
+  ad. a backup does not make a missing earlier-default saves folder (D-CLOUD-172, #363): the offer instead, nothing written
+    PASS  a backup on a carried /GAMES the cloud does not hold makes no /GAMES, sends nothing, and offers the folder (rc 0)
+    PASS  and so does the exit sync's run (--automatic --recent), where the copy itself used to make the folder (rc 0)
+    PASS  a /GAMES the cloud does hold is backed up into as before (rc 0)
+    PASS  the current folder, absent, is still made by the backup (rc 0)
+PASSED
