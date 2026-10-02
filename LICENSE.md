@@ -8,7 +8,7 @@ ROCKNIX is a Linux distribution that is made up of many open-source components. 
 
 ### Rasteratops Branding
 
-The name Rasteratops, the name Rasterabot and the project's logo are this project's marks; [`TRADEMARK.md`](TRADEMARK.md) says what they allow. The logo and the identity's artwork are copyright the project's maintainer, all rights reserved, with one grant: they may be redistributed, unmodified, as part of this project's unmodified builds and source tree.
+The name Rasteratops, the name Blitterbot and the project's logo are this project's marks; [`TRADEMARK.md`](TRADEMARK.md) says what they allow. The logo and the identity's artwork are copyright the project's maintainer, all rights reserved, with one grant: they may be redistributed, unmodified, as part of this project's unmodified builds and source tree.
 
 ROCKNIX's branding and images, which the ROCKNIX project licenses under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/), are not this project's and are not used by it; any that remain in this tree during the transition stay under ROCKNIX's terms and credit.
 

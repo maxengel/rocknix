@@ -1,6 +1,6 @@
 # Trademarks
 
-**Rasteratops**, **Rasterabot** and the project's logo are this project's marks.
+**Rasteratops**, **Blitterbot** and the project's logo are this project's marks.
 They say that a build came from this project and from nobody else, which is the
 one thing the code's licence cannot say. The code is free software under the
 GNU GPL version 2 (`LICENSE.md`); this file is about the name, not the code.
@@ -20,7 +20,7 @@ GNU GPL version 2 (`LICENSE.md`); this file is about the name, not the code.
   code's licence goes with you; the name and the logo do not.
 - Nothing may use the name or the logo in a way that suggests this project
   made, approved or endorses it.
-- "Rasterabot" names this project's automation and its accounts. Do not
+- "Blitterbot" names this project's automation and its accounts. Do not
   operate anything under that name.
 
 ## The artwork
