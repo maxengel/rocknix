@@ -19,7 +19,7 @@ work log and #383 before touching source. Older context is archived at
    `feature/conflict-resolution`. Its historical merges cannot be pushed
    (#371); integrate new commits into `next` by cherry-pick, not by merging
    its old history. The implementation commits are already integrated: `next` is clean at
-   3d7c075f63; feature source is at bd033f8adf. Do not cherry-pick them again.
+   f8816b4dc9; feature HEAD is9bcf46924d. Do not cherry-pick them again.
 3. Read #383, #365, #337/#344, #361/#362 and #384 through their last comments,
    with `gh --repo rasteratops/distribution ... --json body,comments`.
    #375/#382's initial cross-lab audit is complete. Its five product findings
@@ -40,13 +40,26 @@ work log and #383 before touching source. Older context is archived at
 ## Current focus
 
 Steps1/2 have host regression evidence and committed cloud fixes. Step3 is
-finishing identity and source preflight. The owner's answer to the pending
-#361/#362 pin question is still required before candidate acceptance. It was
-asked asynchronously at about20:51UTC; do not invent an answer or repeatedly
-ask it. `docs/rasteratops/candidate-source-plan.md` is the concrete proposal:
-keep proxy248ce5acae with its qualified caching behavior and the tested
-subset-award backport; keep libsoup3.6.6; take WebKitGTK2.54.1. Both retained
-pins need the owner's disposition under the candidate preflight rule.
+preparing refreshed source inputs. The owner answered the #361/#362 question:
+use current upstream proxy/libraries while preserving all functionality and
+contribute general-purpose improvements back to RAOfflineProxy (#168).
+D-WORKFLOW-138 replaces the old pin proposal; do not ask for that disposition
+again. See `docs/rasteratops/candidate-source-plan.md`. Current upstream proxy
+bdcd229b45 has a bulk queue/budget: the fork's unindexed helper must not count
+`queued=True` as ready offline. Eight of sixteen patches apply to the current
+source; eight need semantic review/rebase, some already upstream. Downloads
+in `/tmp/rasteratops-upstream-refresh-20261002/`; patch applicability and104-test
+pristine upstream PASS receipts in `docs/qa-logs/2026-10-02-upstream-refresh/`.
+libsoup recipe is now3.8.0, official hash verified, pkgcheck passed; its GLib
+minimum2.70 is already satisfied by2.89.3. WebKit remains2.54.1. No new runtime
+qualification or cold build yet. First upstream contribution prepared/tested
+(105PASS) at `docs/upstream/raofflineproxy/image-publication/`, not submitted.
+The optional scan-pacing question is pending; default preserves existing
+whole-library preparation. A three-way rebase experiment under the temp
+`rebased/` directory has unresolved conflicts and MUST NOT be copied as
+production patches. Current shipped proxy recipe/patches are unchanged.
+This source-refresh checkpoint follows feature9bcf46924d / next f8816b4dc9;
+use git log for its committed/integrated head. No distribution push is claimed.
 
 ## Completed and prepared
 
@@ -91,7 +104,7 @@ pins need the owner's disposition under the candidate preflight rule.
   theme displayName are the changed localization entries.
 - WebKitGTK2.54.1 released today. Official archive hash and both patch dry-runs
   passed; recipe bumped. GNU/Savannah freshness queries use HTTPS, resolving
-  dmidecode's earlier unknown. Freshness exits0, but pins still need acceptance.
+  dmidecode's earlier unknown. Previous freshness receipt predates the owner-directed refresh; rerun on its final inputs.
 - #384 reproduces subset awards mapped to the base game. Upstream1278ebcd47
   is patch017 against the existing proxy:23 award-parity tests pass after it.
   Image queued-award flush still required. Full suite now invokes these tests.
@@ -126,13 +139,13 @@ pins need the owner's disposition under the candidate preflight rule.
 
 1. Read the final passing host receipt; do not repeat the suite without a
    relevant source change. The import path and source-cache fixes are complete.
-2. The implementation inputs are already committed/integrated. Commit the
-   final receipts and updated handoff next. Preserve the separate cloud-epic
-   worktree's held changelog. Confirm the pin answer before updating #361/#362
-   and adding accepted rows; do not reinterpret a timeout as approval.
+2. The previous implementation inputs are committed/integrated. Finish and
+   qualify the proxy refresh before freezing the combined build inputs. Final prior receipts/handoff are already committed
+   as9bcf46924d and integrated as f8816b4dc9. Preserve the separate cloud-epic
+   worktree's held changelog. The owner selected refresh under D-WORKFLOW-138.
 3. Update `docs/releases/rc-accept.txt` against current facts: D-WORKFLOW-111's
    frozen-base row is corrected and the stale proxy acceptance removed; proxy/libsoup
-   choices need their disposition. Each fixed issue needs a code trace and
+   refresh now needs qualification, not another owner disposition. Each fixed issue needs a code trace and
    Already written line. #384's source trace is posted; add its integrated commit when logging QA.
 4. Cold-build GENERIC_X64 under `build.RASTERATOPS-GENERIC_X64.x86_64`.
    Build worktree `/workspace/repos/rocknix.worktrees/generic-x64`, branch

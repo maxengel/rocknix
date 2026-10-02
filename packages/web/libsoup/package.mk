@@ -2,9 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="libsoup"
-# freshness: pinned -- 3.8.0 is a new series (GNOME's 3.8, 2026-09) under the WebKitGTK the sign-in window is built on; the 3.6 series stays for 0.0.1 and moves with the next WebKitGTK bump (fork #362)
-PKG_VERSION="3.6.6"
-PKG_SHA256="51ed0ae06f9d5a40f401ff459e2e5f652f9a510b7730e1359ee66d14d4872740"
+PKG_VERSION="3.8.0"
+PKG_SHA256="bbf08fa3e03a88c31a3d27a0d87cb422e9490f2d08e149211103df6d638a2238"
 PKG_LICENSE="LGPL-2.1-or-later"
 PKG_SITE="https://libsoup.gnome.org/"
 PKG_URL="https://download.gnome.org/sources/${PKG_NAME}/${PKG_VERSION:0:3}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
@@ -14,6 +13,8 @@ PKG_LONGDESC="HTTP client/server library for GNOME; WebKit's network backend."
 pre_configure_target() {
   # No introspection, docs or tests in an image build; brotli, ntlm and
   # sysprof are all optional and unused by the WebKit network process.
+  # Keep 3.8's new optional zstd decoder explicit, independent of which
+  # other packages happen to have populated the shared sysroot (#362).
   PKG_MESON_OPTS_TARGET="-Dintrospection=disabled \
                          -Dvapi=disabled \
                          -Ddocs=disabled \
@@ -21,6 +22,7 @@ pre_configure_target() {
                          -Dsysprof=disabled \
                          -Dntlm=disabled \
                          -Dbrotli=disabled \
+                         -Dzstd=disabled \
                          -Dgssapi=disabled \
                          -Dtls_check=false"
 }
