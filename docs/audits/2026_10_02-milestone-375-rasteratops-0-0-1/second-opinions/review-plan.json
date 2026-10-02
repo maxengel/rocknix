@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "depth": "independent",
+  "primary": {
+    "harness": "Codex",
+    "model": "openai/gpt-6-astra",
+    "lab": "openai",
+    "identity_source": "Maintainer identifies Astra 6 in the 2026-10-02 request; Codex/OpenAI session context confirms the lab; exact harness model has no provider receipt."
+  },
+  "reviewers": [
+    {
+      "member": "claude",
+      "model": "anthropic/claude-fable-5.1",
+      "lab": "anthropic",
+      "effort": "xhigh",
+      "calls": [
+        {
+          "phase": "blind",
+          "output": "claude-fable-5.1-blind.md"
+        },
+        {
+          "phase": "refutation",
+          "output": "claude-fable-5.1-audit.md"
+        }
+      ]
+    }
+  ]
+}

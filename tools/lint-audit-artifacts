@@ -14,12 +14,88 @@ punch-list issue, and to verify the contract by hand where none exists. The
 
 Both are mechanically checkable. Manual verification is not.
 """
-import argparse, json, pathlib, re, subprocess, sys
+import argparse, hashlib, json, pathlib, re, subprocess, sys
 
 REQUIRED = ["01-research-notes.md", "02-forward-audit.md", "03-retrospective.md",
             "04-analysis.md", "05-punch-list.md"]
 ANALYSIS_SECTIONS = ["Executive summary", "Acceptance-criteria scorecard",
                      "Risk assessment", "Coverage boundary", "Quality self-check"]
+
+
+def check_review_plan(d, milestone, bad, ok):
+    """D-WORKFLOW-137: validate declared diversity against actual call receipts."""
+
+    def require(condition, detail):
+        if not condition:
+            raise ValueError(detail)
+    root = d / 'second-opinions'
+    try:
+        plan = json.loads((root / 'review-plan.json').read_text())
+        primary = plan['primary']
+        depth, reviewers = (plan['depth'], plan['reviewers'])
+        count = {'local': 0, 'independent': 1, 'extended': 2}[depth]
+        require(plan['schema_version'] == 1, 'unsupported review-plan schema')
+        require(isinstance(reviewers, list) and len(reviewers) == count, 'reviewer count does not match selected depth')
+        require(all(isinstance(primary[k], str) and primary[k].strip()
+                    for k in ('harness', 'model', 'lab', 'identity_source')),
+                'primary identity metadata is incomplete')
+        require(primary['lab'] not in ('unknown', ''), 'primary model lab is unknown')
+        if primary['model'] != 'unknown':
+            require(primary['model'].split('/', 1)[0] == primary['lab'], 'primary model and lab disagree')
+        if depth == 'local':
+            require('-issue-' in d.name, 'local-only cannot satisfy Epic/Milestone')
+        labs, members, outputs = ({primary['lab']}, set(), set())
+        for reviewer in reviewers:
+            member, model, lab = (reviewer[k] for k in ('member', 'model', 'lab'))
+            require(member in ('claude', 'gpt', 'gemini', 'kimi', 'muse'), 'reviewer is not an installed active member')
+            require(member not in members and lab not in labs, 'reviewers must be from distinct labs')
+            member_labs = {'claude': 'anthropic', 'gpt': 'openai', 'gemini': 'google',
+                           'kimi': 'moonshotai', 'muse': 'meta'}
+            require(member_labs[member] == lab, 'reviewer member and lab disagree')
+            require(isinstance(model, str) and model.startswith(lab + '/'), 'reviewer model and lab disagree')
+            require(isinstance(reviewer['effort'], str) and reviewer['effort'], 'reviewer effort is missing')
+            labs.add(lab)
+            members.add(member)
+            calls = reviewer['calls']
+            required_phases = ['blind', 'refutation'] if milestone else ['refutation']
+            require([c['phase'] for c in calls] == required_phases,
+                    'missing or reordered review pass')
+            for call in calls:
+                name = call['output']
+                require(isinstance(name, str) and pathlib.Path(name).name == name
+                        and name.endswith('.md'), 'output must be one Markdown filename')
+                require(name not in outputs, 'review passes must have distinct output files')
+                outputs.add(name)
+                output = root / name
+                require(output.resolve().parent == root.resolve(), 'output escaped evidence folder')
+                pf = root / (name + '.provenance.json')
+                require(pf.resolve().parent == root.resolve(), 'receipt escaped evidence folder')
+                receipt = json.loads(pf.read_text())
+                final = receipt['final']
+                verification = final['verification']
+                require(receipt['facilitator_version'].startswith('council-facilitator@'), 'missing Facilitator version')
+                require(receipt['member'] == member, 'receipt belongs to another reviewer')
+                require(receipt['declared_model'].split(' ', 1)[0] == model, 'declared model differs from review plan')
+                require(final['outcome'] == 'success' and verification['result'] == 'PASS', 'review call did not succeed and verify')
+                require(verification['model_identity_source'] == 'provider_response', 'model identity is not provider-observed')
+                observed = verification['observed']
+                # Allow the dated alias only after the Facilitator's semantic PASS.
+                require(re.fullmatch(re.escape(model) + r'(?:-\d{8})?', observed),
+                        'served model differs from review plan')
+                effort = final['effort_verification']
+                require(effort['result'] == 'PASS' and effort['declared'] == reviewer['effort'], 'effort differs from plan or did not verify')
+                if member == 'gpt':
+                    provider = final['provider_verification']
+                    require(provider['result'] == 'PASS', 'GPT provider pin did not verify')
+                    require(provider['observed_providers'] == ['OpenAI'], 'GPT served outside its OpenAI provider pin')
+                content = output.read_bytes()
+                require(content.strip(), 'empty reviewer output')
+                digest = hashlib.sha256(content).hexdigest()
+                require(receipt['output_file_sha256'] == digest == final['file_artifact_sha256'],
+                        'review output digest differs')
+        ok(f'review plan: {depth}, {1 + count} model perspectives, {len(outputs)} verified external calls')
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, AssertionError) as e:
+        bad(f"second-opinions/review-plan.json or its call evidence is invalid: {e or 'contract mismatch'}")
 
 
 def main():
@@ -56,12 +132,18 @@ def main():
         else:
             bad(f"04-analysis.md missing section: {sec}")
 
-    # Phase 4.6 (skill v1.11, 2026-09-24): an Epic or Milestone audit carries a
-    # second opinion from the council's GPT seat, graded against the artifact,
-    # with the run's provenance beside it. Audits from before the phase are
-    # not held to it; one from today on that lacks it skipped a phase.
+    # v1.12 (2026-10-02): cross-lab plans and all selected passes are verified.
+    # Completed older audits retain v1.11's historical GPT-only contract;
+    # their evidence is not rewritten to claim a different review occurred.
     m = re.match(r"(\d{4})_(\d\d)_(\d\d)-(milestone|epic|issue)-", d.name)
-    if m and m.group(4) in ("milestone", "epic") and (m.group(1), m.group(2), m.group(3)) >= ("2026", "09", "24"):
+    current_contract = (d / "second-opinions/review-plan.json").exists() or (
+        m and m.group(4) in ("milestone", "epic")
+        and m.group(1, 2, 3) >= ("2026", "10", "02"))
+    if current_contract:
+        check_review_plan(d, milestone, bad, ok)
+        if not re.search(r"^##+ Second opinion", analysis, re.M):
+            bad("04-analysis.md has no Second opinion section recording the selected depth/outcome")
+    elif m and m.group(4) in ("milestone", "epic") and m.group(1, 2, 3) >= ("2026", "09", "24"):
         if re.search(r"^##+ Second opinion", analysis, re.M):
             ok("04 § Second opinion (Phase 4.6)")
         else:

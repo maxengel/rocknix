@@ -1,5 +1,5 @@
 ---
-description: "Adversarial-analysis routing — never use the rubber-duck agent; use only the verified multi-model council process, with pinned Fable 5.1 and GPT-6 Astra seats. Read before requesting a challenge pass, independent adversarial analysis, or council deliberation."
+description: "Adversarial-review routing — code audits select a local, cross-lab two-model or extended three-model review; a formal council remains five verified seats. All external reviewers use the Facilitator. Read before an audit, challenge pass or council deliberation."
 paths:
   - "**"
 ---
@@ -22,13 +22,15 @@ PROVENANCE (owner-directed + adopted reference):
 
 1. **Never invoke the `rubber-duck` agent.** This includes the Task-tool
    `rubber-duck` type and any renamed one-model "challenge my work" substitute.
-2. **Use council for genuinely adversarial work.** The explicitly scoped
+2. **Use the requested review workflow.** A `code-auditor` review follows its
+   explicit levels and Phase 4.6 (D-WORKFLOW-137); it is not a council run.
+   Other formal adversarial deliberation uses the five-seat council. The explicitly scoped
    [three-model preliminary review](../../.claude/skills/council/references/review-formats.md)
    is limited to advisory readiness questions before authoring. It cannot decide
    contested claims, supply an approval, or replace a required council gate.
-   Independent adversarial challenge passes,
-   competing interpretations, pre-mortem-style critique, and structured disagreement
-   belong to the verified multi-model `council` process.
+   Competing design proposals and formal decision-making belong to the verified
+   five-seat `council` process. Code-auditor independently verifies implementation
+   claims against artifacts; it does not acquire council decision authority.
 3. **Do not build a pseudo-council.** Multiple ordinary subagents, one reviewer asked
    to role-play opposition, or unverified model calls do not satisfy this rule.
 4. **Fail closed when council is unavailable.** The session-skill substrate ships in
@@ -44,6 +46,22 @@ Routine evidence work is unchanged: use direct inspection, the `code-review` spe
 for focused diff bugs, and `code-auditor` for its defined Epic/Milestone methodology.
 Those are verification processes, not substitutes for a requested adversarial council.
 
+## Code audits are a separate workflow
+
+An ordinary independent code audit has the primary auditor plus one external
+reviewer from a different model lab; an explicitly extended audit adds a third
+lab. OpenAI-led audits prefer pinned Fable 5.1; Anthropic-led audits prefer
+pinned GPT-6 Astra. The two milestone passes are calls, not extra seats. Follow
+[code-auditor review levels](../skills/code-auditor/references/review-levels.md)
+and record the actual primary/reviewer identities. Unknown identity or an
+unavailable reviewer does not justify a same-lab substitution.
+
+These audits reuse the Facilitator's installed recipes and per-call provenance
+checks, not council genesis, voting, five-seat availability or formal council
+completion. Local Issue reviews make no independent-review claim. A release
+explicitly escalated to council still requires all five seats and its own full
+protocol. Version-based depth recommendations never waive VM or migration QA.
+
 ## Council model floor
 
 The seeded council preserves the verified model contract (binding now that the
@@ -58,7 +76,7 @@ skill family ships; #136 extends the same floor to CI review agents):
   GPT-5.6 Sol retired from them on 2026-09-09 (scaffold#562).
 - Each invocation must capture the served model from the provider response and pass the
   council's semantic identity gate before its output becomes input to the next stage.
-- All five seats are required. A missing or mismatched seat halts advancement for
+- For a formal council run, all five seats are required. A missing or mismatched seat halts advancement for
   diagnosis and repair per the council contract; never shrink the roster or silently
   substitute a reserve. See the canonical council roster reference.
 - Council stages remain serial-gated even when member calls within a stage run in
