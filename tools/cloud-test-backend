@@ -461,7 +461,7 @@ case "${1:-}" in
         s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
           echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
         echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}${CLOUD_QA_BWLIMIT:+ (throttled to ${CLOUD_QA_BWLIMIT} by a proxy; MinIO itself on 127.0.0.1:${S3_UPSTREAM_PORT})}"
-        echo "note: SAVES_REMOTE must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
+        echo "note: SAVES_REMOTE must start with the bucket, e.g. $("$0" saves-remote)"
         exit 0
         ;;
 
@@ -493,7 +493,7 @@ case "${1:-}" in
         docker logs "${SMB_NAME}" 2>&1 | grep -q "ready to serve connections" || {
           echo "error: smbd never reported ready; try: docker logs ${SMB_NAME}" >&2; exit 1; }
         echo "up: smb share //${GUEST_HOST}/${SMB_SHARE} serving ${DATA} on port ${PORT}"
-        echo "note: SAVES_REMOTE must start with the share, e.g. /${SMB_SHARE}/GAMES"
+        echo "note: SAVES_REMOTE must start with the share, e.g. $("$0" saves-remote)"
         exit 0
         ;;
 
@@ -516,7 +516,7 @@ case "${1:-}" in
               "${SFTP_USER}@127.0.0.1" >/dev/null 2>&1 || {
           echo "error: sftp is listening but the QA key cannot log in; see ${LOGFILE}" >&2; exit 1; }
         echo "up: sftp serving ${DATA} at ${SFTP_USER}@127.0.0.1:${PORT} (guest: ${GUEST_HOST}:${PORT})"
-        echo "note: this sshd cannot chroot unprivileged, so the remotes are absolute: ${DATA}/GAMES"
+        echo "note: this sshd cannot chroot unprivileged, so the remotes are absolute: $("$0" saves-remote)"
         exit 0
         ;;
 
@@ -803,7 +803,7 @@ EOF
     # S3 - so the shipped "/GAMES" is rejected outright (issue #38). rclone will
     # create the bucket itself once the name is valid. On SFTP every path is
     # absolute, because an sshd running as an ordinary user cannot chroot.
-    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/GAMES"
+    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)$("$0" shipped-default SAVES_REMOTE)"
     ;;
 
   settings-remote)
@@ -814,7 +814,7 @@ EOF
     # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION
     # set to no) removes the archives and puts nothing back. Verified both
     # ways: nested, --saves-only leaves 0 archives; sibling leaves them intact.
-    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/BACKUPS"
+    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)$("$0" shipped-default SETTINGS_REMOTE)"
     ;;
 
   shipped-default)
@@ -826,7 +826,7 @@ EOF
     # literals stayed, run 96 read PASS against a cloud laid out by the
     # previous build's names, and the frames carried a TIDY UP row for it
     # (2026-10-01, blindspot 71). Exits 2 when the key has no default.
-    defaults="$(dirname "$(readlink -f "$0")")/../projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf.defaults"
+    defaults="${CLOUD_QA_DEFAULTS:-$(dirname "$(readlink -f "$0")")/../projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf.defaults}"
     v=$(sed -n "s|^DEFAULT_${2:-}=\"\([^\"]*\)\"$|\1|p" "${defaults}" 2>/dev/null | head -1)
     [ -n "${v}" ] || { echo "shipped-default: no DEFAULT_${2:-} in ${defaults}" >&2; exit 2; }
     echo "${v}"

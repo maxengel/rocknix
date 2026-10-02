@@ -82,6 +82,7 @@ makeinstall_target() {
   # cloud_scan: the restore flow's scan page runs it first and offers only
   # what it found (D-CLOUD-156, fork #350); reads only, no lock.
   cp cloud_scan ${INSTALL}/usr/bin/
+  cp rasteratops-settings-archive ${INSTALL}/usr/bin/
   # No game-end event hook. EmulationStation runs the save sync itself now
   # (FileData::launchGame), so it can show the result on the progress card
   # instead of backgrounding the work into /dev/null where nobody could tell

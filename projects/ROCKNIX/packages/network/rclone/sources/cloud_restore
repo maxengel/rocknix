@@ -793,12 +793,20 @@ outcome_word() {
 # Whether the cloud is bucket-based (S3 and compatibles, GCS, Swift, B2):
 # rclone's own word, asked once, locally.
 BUCKET_BASED=""
+# Return 0 for bucket, 1 for path, 2 when the provider could not answer.
+# Only a successful features read is cached; a failed read stays retriable.
 bucket_based() {
+    local features
     if [ -z "${BUCKET_BASED}" ]; then
-        if rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true'; then
+        features=$(rclone backend features "${REMOTENAME}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); BUCKET_READ_RC=$?
+        [ "${BUCKET_READ_RC}" -eq 0 ] || return 2
+        if printf '%s\n' "${features}" | grep -q '"BucketBased": *true'; then
             BUCKET_BASED=1
-        else
+        elif printf '%s\n' "${features}" | grep -q '"BucketBased": *false'; then
             BUCKET_BASED=0
+        else
+            BUCKET_READ_RC=1
+            return 2
         fi
     fi
     [ "${BUCKET_BASED}" = "1" ]
@@ -808,12 +816,16 @@ bucket_based() {
 # marker or by objects under it. The remote's root always exists; a bucket
 # is listed at the root. Listing the folder itself proves nothing there
 # (#141), so this never does.
+# Return 0 present, 1 absent, 2 unknown. The caller must never turn 2
+# into a create-folder offer. Preserve the provider's error for reporting.
 bucket_dir_listed() {
-    local path="${1%/}" parent name
+    local path="${1%/}" parent name listing
     name="${path##*/}"
     [ -n "${name}" ] || return 0
     parent="${path%/*}"
-    rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qx "${name}/"
+    listing=$(rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); BUCKET_READ_RC=$?
+    [ "${BUCKET_READ_RC}" -eq 0 ] || return 2
+    printf '%s\n' "${listing}" | grep -qxF -- "${name}/"
 }
 
 why_for() {
@@ -1488,14 +1500,6 @@ device_label() {
     [ -n "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
 }
 
-# Does a cloud folder hold a settings archive at its top level? The same
-# match the transfer below uses, so a folder this says yes to is one the
-# restore can take from. Anything else -- unreachable, absent, only
-# subfolders -- is no.
-folder_has_archives() {
-    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -q .
-}
-
 # The OS name the archive's name ends with. backuptool has OS_NAME from
 # /etc/profile; this script is started by systemd and by EmulationStation,
 # where no profile has run, so it is read from the file the profile reads it
@@ -1673,9 +1677,19 @@ restore_game_saves() {
     # and the same rule judges the parent below, which is how a mistyped
     # root fails on a bucket exactly as on a path-based cloud (2026-09-12,
     # the maintainer's marker question). The features call is local.
-    if [ ${remote_check_status} -eq 0 ] && bucket_based && ! bucket_dir_listed "${SAVES_REMOTE}"; then
-        log_message "bucket-based cloud: ${SAVES_REMOTE} is not listed by its parent (no marker, no objects), which on a bucket is the folder not existing" "false"
-        remote_check_status=3
+    local remote_presence_unknown=0
+    if [ "${remote_check_status}" -eq 0 ]; then
+        local bucket_rc
+        bucket_based; bucket_rc=$?
+        if [ "${bucket_rc}" -eq 0 ]; then
+            bucket_dir_listed "${SAVES_REMOTE}"; bucket_rc=$?
+            case "${bucket_rc}" in
+                1) remote_check_status=3 ;;
+                2) remote_check_status="${BUCKET_READ_RC}"; remote_presence_unknown=1 ;;
+            esac
+        elif [ "${bucket_rc}" -eq 2 ]; then
+            remote_check_status="${BUCKET_READ_RC}"; remote_presence_unknown=1
+        fi
     fi
     if [ $remote_check_status -ne 0 ]; then
         network_lost_during_run "$remote_check_status" "the saves restore"
@@ -1709,8 +1723,19 @@ restore_game_saves() {
         local saves_parent="${saves_path%/*}"
         [ "${saves_parent}" = "${saves_path}" ] && saves_parent=""
         local missing_name="${saves_path##*/}"
-        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1 \
-           && { ! bucket_based || bucket_dir_listed "${saves_parent}"; }; then
+        # Only a proved missing folder can lead to a creation offer. A
+        # timeout/permission failure on the child remains a failure even if
+        # its parent happens to answer the next request.
+        local parent_present=0 parent_kind
+        if [ "${remote_presence_unknown}" -eq 0 ] && { [ "${remote_check_status}" -eq 3 ] || [ "${remote_check_status}" -eq 4 ]; } \
+           && rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; then
+            bucket_based; parent_kind=$?
+            case "${parent_kind}" in
+                1) parent_present=1 ;;
+                0) bucket_dir_listed "${saves_parent}" && parent_present=1 ;;
+            esac
+        fi
+        if [ "${parent_present}" -eq 1 ]; then
             local near
             near=$(rclone lsf --dirs-only "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
                    | sed 's|/$||' | near_names "${missing_name}" | head -1)
@@ -2015,77 +2040,32 @@ restore_system_files() {
         # SETTINGS_REMOTE, and they are still someone's only backup -- a device
         # that upgrades must keep finding them. Nothing is moved or deleted:
         # the root copy may belong to another device that has not updated yet.
-        local own_name device_src legacy_src restore_src=""
-        own_name=$(device_folder)
-        device_src="${REMOTENAME}${SETTINGS_REMOTE}/${own_name}"
-        legacy_src="${REMOTENAME}${SETTINGS_REMOTE}"
-
-        # The folder this device would have used before the name became
-        # readable. An existing device keeps its stored identity and never
-        # moves, but a reflashed one regenerates -- which is the point of
-        # seeding from the hardware address -- and under the new rule it
-        # generates a different name. Without this it would find nothing and
-        # report that it has no backup, while its backups sat one folder away.
-        local prior_name="" id_tool
+        local restore_src="" legacy_src="${REMOTENAME}${SETTINGS_REMOTE}" id_tool archive_tool archive_rc
         id_tool=$(device_id_tool)
-        [ -n "${id_tool}" ] && prior_name=$("${id_tool}" --legacy 2>/dev/null \
-                                            | tr -cd 'A-Za-z0-9_.-')
-        local prior_src="${REMOTENAME}${SETTINGS_REMOTE}/${prior_name}"
-
-        # The folders this device may have written under while its id ended
-        # in the shared constant (#86): until 2026-09-08 every device whose
-        # kernel builds in the sit tunnel hashed the same string, so the RG SP
-        # backed up to Anbernic-RG-SP-ee5013fc56 and the RG35XX SP to
-        # ROCKNIX-ee5013fc56. cloud_device_id heals such an id on the first
-        # run that sees a real hardware address and lists the old names under
-        # --previous; the archives are still there, and still someone's only
-        # backup. Nothing is moved: the same name was produced by every device
-        # of that model or hostname, so a folder here may hold another
-        # device's archives too, and the log says so when one is taken.
-        local previous_names=""
-        [ -n "${id_tool}" ] && previous_names=$("${id_tool}" --previous 2>/dev/null \
-                                                | tr -cd 'A-Za-z0-9_.\n-')
-
-        # In order: this device's own folder, its pre-label name, the folders
-        # it was healed away from, and the root where archives sat before
-        # folders existed. The first that holds an archive wins.
-        if folder_has_archives "${device_src}"; then
-            restore_src="${device_src}"
-            log_message "Restoring from this device's own cloud folder (${own_name})" "false"
+        archive_tool="$(dirname "$(readlink -f "$0")")/rasteratops-settings-archive"
+        [ -r "${archive_tool}" ] || archive_tool=/usr/bin/rasteratops-settings-archive
+        if [ ! -r "${archive_tool}" ]; then
+            report_rclone_error 1 "Reading settings backups"
+            return 1
         fi
-        if [ -z "${restore_src}" ] && [ -n "${prior_name}" ] && folder_has_archives "${prior_src}"; then
-            restore_src="${prior_src}"
-            log_message "Using the backups saved under this device's old name (${prior_name})." "true"
+        . "${archive_tool}"
+        select_settings_archives "${legacy_src}" "${id_tool}"; archive_rc=$?
+        if [ "${archive_rc}" -ne 0 ]; then
+            report_rclone_error "${archive_rc}" "Reading settings backups"
+            return "${archive_rc}"
         fi
-        if [ -z "${restore_src}" ] && [ -n "${previous_names}" ]; then
-            local previous_name
-            while IFS= read -r previous_name; do
-                [ -n "${previous_name}" ] || continue
-                # Already tried above. A cloud_device_id from before --previous
-                # existed answers it with the current id, so this also keeps
-                # an older helper from sending the restore round the same
-                # folder twice.
-                [ "${previous_name}" = "${own_name}" ] && continue
-                [ "${previous_name}" = "${prior_name}" ] && continue
-                if folder_has_archives "${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"; then
-                    restore_src="${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"
-                    log_message "using backups saved under ${previous_name}, a folder this device may have written to while its id was the shared constant (#86); another device of the same model or hostname may have written there too" "false" "WARN"
-                    log_message "Using backups from a folder this device may have shared with another of the same model, so they may not all be from this device." "true" "WARN"
-                    break
-                fi
-            done <<< "${previous_names}"
-        fi
-        if [ -z "${restore_src}" ] && folder_has_archives "${legacy_src}"; then
-            restore_src="${legacy_src}"
-            log_message "Using a backup saved before this device had its own cloud folder" "false"
-        fi
+        restore_src="${SETTINGS_ARCHIVE_SOURCE}"
         if [ -z "${restore_src}" ]; then
-            # Say what is actually there. Other devices' folders are not this
-            # device's to restore silently, but "no backup found" when the
-            # cloud plainly holds several is the kind of dead end that sends
-            # someone looking in the wrong place.
-            local others
-            others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d '/' | tr '\n' ' ')
+            # Other devices' folders are useful context, never candidates for
+            # a silent restore. Keep the existing explanation without turning
+            # a failed directory listing into a claim that the cloud is empty.
+            local others others_rc
+            others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); others_rc=$?
+            case "${others_rc}" in
+                0|3|4) ;;
+                *) report_rclone_error "${others_rc}" "Reading settings backups"; return "${others_rc}" ;;
+            esac
+            others=$(printf '%s' "${others}" | tr -d '/' | tr '\n' ' ')
             if [ -n "${others}" ]; then
                 log_message "There's no settings backup for this device yet. The cloud has backups from: ${others}" "true" "WARN"
             else
@@ -2093,6 +2073,10 @@ restore_system_files() {
             fi
             RESTORE_SYSTEM_STATUS=0
             return 0
+        fi
+        log_message "Restoring settings from ${restore_src} (${SETTINGS_ARCHIVE_KIND} device folder)" "false"
+        if [ "${SETTINGS_ARCHIVE_KIND}" = previous ]; then
+            log_message "Using backups from a folder this device may have shared with another of the same model, so they may not all be from this device." "true" "WARN"
         fi
 
         # The newest one, not all of them. The cloud keeps a dated history now
@@ -2117,12 +2101,12 @@ restore_system_files() {
         # taken for this device's own; the label cannot tell them apart.
         local osn listing label mine newest
         osn=$(os_name)
-        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null)
+        listing="${SETTINGS_ARCHIVE_LISTING}"
         label=$(device_label)
         mine=""
         if [ -n "${label}" ]; then
             mine=$(printf '%s\n' "${listing}" \
-                   | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" | sort | tail -1)
+                   | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-(${osn}|ROCKNIX|RASTERATOPS)_SETTINGS\.tar\.gz$" | sort | tail -1)
         fi
         if [ -n "${mine}" ]; then
             newest="${mine}"
@@ -2140,7 +2124,7 @@ restore_system_files() {
                 # The label is what sits between the stamp and -ROCKNIX_; an
                 # archive from before the label has nothing there.
                 made_by=$(printf '%s\n' "${newest}" \
-                          | sed -nE "s/^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-(.*)-${osn}_(SETTINGS|BACKUP)\.(tar\.gz|zip)\$/\1/p")
+                          | sed -nE "s/^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-(.*)-(${osn}|ROCKNIX|RASTERATOPS)_(SETTINGS|BACKUP)\.(tar\.gz|zip)\$/\1/p")
                 case "${made_by}" in
                     '') made_by="made before backups were named after the device" ;;
                     *)  made_by="made on ${made_by}" ;;

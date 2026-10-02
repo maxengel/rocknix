@@ -20,6 +20,32 @@ document is asking for help with.
 
 ---
 
+
+## Cloud-folder preparation and settings archive compatibility (2026-10-02)
+
+Implementation under #383, with host production-script regressions passed.
+The combined candidate's VM and device qualification is still pending; this
+section does not claim that an image has passed those checks.
+
+- **Settings backups remain discoverable after the identity change.** The
+  cloud scan and restore use the same current, legacy and healed device-folder
+  search. Existing ROCKNIX archives remain readable, including local recovery
+  snapshots; new archives retain their persisted naming contract (#376/#381,
+  D-WORKFLOW-123).
+- **Moving save pointers preserves independent choices.** Populated settings
+  backup folders remain reachable, and an explicit cloud-root choice for ROMs
+  and BIOS stays at the root (#379/#380). Failed settlement makes no folders,
+  and a failed bucket listing cannot produce a create-folder offer (#377).
+- **Boot prepares the folder before transfers and waits for cards before
+  opening setup.** Eligible legacy configurations run the existing folder scan
+  first, bounded to30 seconds. The setup question follows the startup worker
+  and the outcome card's fade (#363/#365, D-CLOUD-173). A setup README alone
+  does not outrank actual saves in another earlier folder.
+- **Exit backups retain the legacy-folder safety check.** The check uses one
+  parent listing; a proved-absent old default is not recreated. Guest timing
+  remains to be measured against #364's existing criterion (D-CLOUD-172).
+
+
 ## Setting up a cloud remote, on the device
 
 Previously the only way to configure rclone was to SSH in and run `rclone

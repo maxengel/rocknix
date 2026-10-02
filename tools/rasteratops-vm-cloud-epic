@@ -238,7 +238,7 @@ say "  guest conf: $(conf /GAMES /GAMES/backup '')"
 to_page restore B
 steps B2 'key x' 'wait-for-change' 'wait 1' 'shot B-create-running' 'settle 120 3' 'shot B-rescan' 'settle 90 3' 'shot B-options-after-create' 'dismiss-dialogs'
 say "  cloud after CREATE IT: $(host_tree)"
-[ -d "$DATA/Rasteratops/Saves" ] && [ -d "$DATA/Rasteratops/Backups" ] && [ -d "$DATA/Rasteratops/Content" ]; check $? "B: /Rasteratops with its three folders exists after CREATE IT"
+[ -d "$DATA/Rasteratops/Saves" ] && [ -d "$DATA/Rasteratops/Backups" ] && [ -d "$DATA/ROMs" ] && [ -d "$DATA/BIOS" ] && [ ! -e "$DATA/Rasteratops/Content" ]; check $? "B: CREATE IT makes saves/backups and preserves the explicit cloud content root"
 G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/Rasteratops/Backups\"' $CONF"; check $? "B: the carried /GAMES setting is re-pointed at the current layout"
 fi
 

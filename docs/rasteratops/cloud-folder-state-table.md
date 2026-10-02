@@ -1,8 +1,9 @@
 # Cloud folder states and actors
 
-Review baseline: distribution `b2378d9c33` (run 101), current scripts unchanged;
+Review baseline: distribution `b2378d9c33` (run 101), scripts at the original audit baseline;
 EmulationStation `e108699ea`. Written for #365 and #375, 2026-10-02.
-This describes the code that exists. Proposed changes are called out separately.
+The table preserves the audited baseline. Implemented changes and their receipts
+are recorded below; guest qualification is a separate result.
 D-CLOUD-170 through D-CLOUD-172 remain in force (D-WORKFLOW-134).
 
 ## State dimensions
@@ -110,3 +111,32 @@ centralize the result vocabulary (present/empty/absent/unknown; permitted writer
 and explicitly suppress or defer automatic writes while settlement is pending.
 This last behavior is a proposal requiring reconciliation with D-CLOUD-171/172,
 not an already-approved change. Do not add a broader per-sync network scan.
+
+## Remediation under #383 (2026-10-02)
+
+`tools/rasteratops-cloud-layout-test` is the host regression runner. Every invocation uses
+whole production scripts, real image rclone1.75.1, independent config/cloud/cache
+fixtures, and saved command transcripts, pointer snapshots and synthetic bytes.
+`--ref` supplies the old production scripts without changing the assertions.
+The baseline58 cases failed22 assertions; the first fixed67 cases passed67.
+The additional apply/discovered-source tests pass2 and fail2 against the baseline.
+These results are host evidence, not acceptance of a candidate image.
+
+| Cells/seam | Implemented change | Executable coverage / remaining proof |
+| --- | --- | --- |
+| T01–T16, T22 | Existing classification, kept/custom boundaries and configured-first precedence retained | Named classification cases assert unchanged pointers and bytes; direct script and UI image runs remain qualification work. |
+| T08/T11/T12 | ES startup calls the existing folder scan before its transfer pair on eligible legacy configurations; the dialog remains after the worker | `tools/rasteratops-vm-cloud-epic --case T08`, T11, T12 construct distinct old/fleet/local bytes and capture boot frames; not yet run on the new image. |
+| T17 | Seeding stops when settlement fails or times out; no mkdir, README or marker follows | `T17-seed-timeout`, `T17-seed-failed`, `T17-unreadable`; failed provider image cases still required. |
+| T18 | Bucket parent discovery has present/absent/unknown outcomes; unknown never creates an absence offer | Both production scripts with failed parent listings (codes3/4/5/7) and failed features read; S3 image proof remains required. |
+| T20 | Pointer-only transitions keep populated or custom backup tiers; discovery of another saves source preserves the independent backup tier before applying the move | follow/settle/default/custom and apply/discovered-source cases verify archive bytes at the resulting pointer; guest upgrade proof still required. |
+| T21 | Only an omitted CONTENT_REMOTE is unset; an explicit empty value remains the cloud root | join/follow/settle/apply × omitted/root/derived/custom cases; root sentinel bytes unchanged. The older contradictory fixture now explicitly omits the key. |
+| T23 | Existing tier-by-tier completion is retained; a later content collision refuses without overwriting unrelated bytes | Content-collision case records the partially advanced pointers. Retry/fleet image recovery remains required. |
+| T24 | Scan and restore share device-folder discovery; archive readers accept both display identities; new local archives retain the persisted ROCKNIX suffix | production writer→scan→restore, current/legacy/healed/flat/foreign folders, local restore and pre-restore snapshots under the renamed OS. |
+| T25 | Folder-only scan does not require cloud-root listing | Restricted-prefix host case; provider permissions still need image coverage. |
+| Card lifetime | Boot dialog waits for Window's actual async notification list to empty, including linger/fade | ES compile check passed; guest E frame sequence must prove no overlap. |
+| #364 cost | Backup determines earlier-folder presence with one parent listing, retaining inconclusive-read fallback | Five-sample guest benchmark still required; the30ms criterion is unchanged. |
+
+The promoted guest runner resets each lettered case and exits nonzero on any
+failed assertion. C/F/G include fact assertions, and B explicitly checks that
+creation preserves a chosen cloud-root content location. A constructed failure
+has demonstrated exit1. No cell is marked image-qualified by these host results.
