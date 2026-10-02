@@ -21,8 +21,8 @@ model:
   - "Claude Fable 5.1 (copilot)"
 argument-hint: "Describe the problem or topic the council should deliberate on"
 metadata:
-  version: 1.4.0
-  revision_note: "v1.4.0 (2026-09-28): Muse Spark 1.3 replaces Mistral in the definitive fifth seat; Grok 4.7 and DeepSeek V4 Pro 0813 shadow every definitive council until five runs complete all three arms, then the owner reviews the seat (scaffold#915). Every member result also records the provider that served it, and a pinned seat served outside its pin fails verification (scaffold#917)."
+  version: 1.4.1
+  revision_note: "Rasteratops v1.4.1 (2026-10-02, D-WORKFLOW-135): use the installed five-seat roster; future fifth-seat changes come through reviewed imports from the other projects. Provider attestation and all five-member verification gates remain required."
   origin: Promoted from `.github/agents/trio-council.agent.md` (M64.P1.5 Epic 1 / #2826). Absorbs the dangling `research/prompts/trio-process-v2.md` reference into `references/context-loading.md`. Historically generalized the trio to a variable roster. Owner direction 2026-09-23 supersedes reduced-roster fallback; all five verified members are required.
 ---
 
@@ -102,14 +102,14 @@ Run when **any** of these is true:
 10. **Pause for user decision** after a majority winner emerges
 11. **Hand off** to execution per Step 6
 
-## The fifth-seat evaluation (shadow arms)
+## The installed roster
 
-The definitive council's fifth seat is Muse Spark 1.3 (scaffold#915). Every definitive
-council also runs the `grok-shadow` and `deepseek-shadow` arms until five definitive runs
-have all three arms complete; the owner then reviews the seat. Follow
-[`references/shadow-experiments.md`](references/shadow-experiments.md). The shadow arms are
-separate non-binding five-seat runs, never definitive replacements or fallback. All normal
-stage and identity gates remain required in every arm.
+Rasteratops uses Claude Fable 5.1, Gemini 3.8 Flash, GPT-6 Astra, Kimi K3 and
+Muse Spark 1.3 (D-WORKFLOW-109, D-WORKFLOW-135). Future fifth-seat changes come
+through reviewed imports from the other projects. Until an update is adopted,
+use these five seats. The import procedure is in
+[`IMPORTED-FROM.md`](IMPORTED-FROM.md); a roster change starts a fresh run under
+[`references/member-roster.md`](references/member-roster.md).
 
 ## Coordinator — the model that runs this skill
 
@@ -180,7 +180,7 @@ file at the moment you need it; do not pre-load everything.
   halt advancement, preserve the evidence and diagnose the cause. Repair
   and retry that member under the verification rules; never proceed with
   four. All five must complete every member stage and submit valid votes.
-  Reserve models require explicit selection and a fresh run per
+  Roster updates require recorded adoption and a fresh run per
   `references/member-roster.md`.
 
 ## Cross-references

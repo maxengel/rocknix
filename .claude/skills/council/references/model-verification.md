@@ -223,18 +223,16 @@ by default (`--provider openrouter` is the explicit equivalent; use
 seat through OpenRouter's OpenAI-compatible endpoint with a single
 `OPENROUTER_API_KEY`. Each seat is pinned to one model slug
 (`anthropic/claude-fable-5.1`, `google/gemini-3.8-flash`,
-`openai/gpt-6-astra`, `moonshotai/kimi-k3`, `meta/muse-spark-1.3`; the shadow arms
-pin `x-ai/grok-4.7` and `deepseek/deepseek-v4-pro-0813`; Mistral, outside every
-profile since scaffold#915, keeps its env-overridable slug) with **no `models[]` fallback array** — OpenRouter may route across
+`openai/gpt-6-astra`, `moonshotai/kimi-k3`, `meta/muse-spark-1.3`)
+with **no `models[]` fallback array** — OpenRouter may route across
 providers of the SAME model (infra backup), but a request can never resolve to
 a DIFFERENT model. Each reasoning seat also requests its declared reasoning
 effort via OpenRouter's unified `reasoning.effort` (`max` for GPT-6 Astra —
 operator direction 2026-09-09 — and for Kimi K3, its own default once output
 budgets sit at the model maximum (2026-09-03 limits audit); `xhigh` for
 Fable 5.1, the evidence-based ceiling on bounded corpora; `high` for Gemini,
-the maximum it advertises; `max` for Muse Spark 1.3 and the DeepSeek shadow and
-`xhigh` for the Grok shadow, each its model's highest). Pins of record:
-`OPENROUTER_SEATS` and `SHADOW_OPENROUTER_SEATS` in `scripts/council-invoke.ts` — canonical in the
+the maximum it advertises; `max` for Muse Spark 1.3). Pins of record:
+`OPENROUTER_SEATS` in `scripts/council-invoke.ts` — canonical in the
 scaffold corpus (scaffold#571) and checked against the pinned catalog snapshot
 by `scripts/lint-council-seat-efforts.ts`; each run additionally attests
 reasoning evidence (`effort_verification` in the provenance sibling).

@@ -125,8 +125,8 @@ Rules:
   still runs verification and never implies a current-contract upgrade.
 - `created_at` is the UTC timestamp captured at Setup.
 - `roster` uses member short names only: `claude`, `gemini`, `gpt`,
-  `kimi`, `muse` for a definitive run; a shadow arm names `grok` or `deepseek`
-  in the fifth place. Runs sealed before scaffold#915 name `mistral`.
+  `kimi`, `muse` for the installed `definitive` profile.
+  Runs sealed before scaffold#915 name `mistral`.
 - `provenance_contract` declares the provenance shape the run expects.
   New runs use the installed `FACILITATOR_VERSION` (1.6.0 for this adoption),
   not a hard-coded old example. `roster_contract` is `rosterIdentity()` from
@@ -196,8 +196,8 @@ the harness profile's preference (`SKILL.md` § Coordinator):
 | User tie-break decision   | `peer_votes/user-decision-r{N}.md` (only when max-round cap hit) |
 | Model verification log    | `model-verification-log.md` (per-break gate results)             |
 
-Member short names: `claude`, `gemini`, `gpt`, `kimi`, `muse` (shadow arms:
-`grok`, `deepseek`; historical runs: `mistral`). Use
+Member short names: `claude`, `gemini`, `gpt`, `kimi`, `muse`
+(historical runs: `mistral`). Use
 lowercase; do not include version suffixes (`claude-4`, `kimi-26`,
 `mistral-3`) in filenames — version provenance lives in the
 `.provenance.json` sibling.
@@ -477,13 +477,3 @@ orchestrator writes it.
   names used in filenames
 - [`model-verification.md`](model-verification.md) — defines the
   per-break gate procedure that populates the model-verification log
-
-## Shadow experiment identity
-
-A shadow arm sets `council_profile` to `grok-shadow` or `deepseek-shadow`, names
-its five actual member IDs, and carries the `experiment` block in
-[shadow experiments](shadow-experiments.md). Derive `roster_contract` from
-`rosterIdentity(repoRoot, profile)`; the definitive default has Muse in the fifth seat.
-The profile, campaign, baseline and fixed non-binding authority enter genesis.
-Each arm uses its own output directory, ledger and seals. Summaries label shadow
-results non-binding; neither a winner nor a PASS changes decision authority.

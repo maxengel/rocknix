@@ -74,11 +74,10 @@ table is the authority and this table mirrors it — scaffold#571):
   Meta-only route (owner ruling, scaffold#915; Facilitator 1.12.0). Mistral's 262,144-token
   window could not take a complete council request (one research Phase 4 Step 1 measured
   356,630 tokens), and no Mistral model lists more; the other four seats read about
-  1,000,000. Grok 4.7 and DeepSeek V4 Pro 0813 (CoreWeave only) run as the two
-  non-binding shadows, and the owner reviews the seat after five definitive runs whose
-  three arms all complete (§ Shadow profiles). Mistral returns "until the next version of
-  Mistral comes out" only after it qualifies again; the owner's preference for its EU
-  origin is why it comes back for evaluation then.
+  1,000,000.
+- **2026-10-02** — Rasteratops keeps the installed five seats. Future fifth-seat
+  changes come through reviewed imports from the other projects (D-WORKFLOW-135),
+  following the refresh procedure in [`IMPORTED-FROM.md`](../IMPORTED-FROM.md).
 
 ## Coordinator (not a seat)
 
@@ -90,7 +89,7 @@ records what actually ran ([`output-conventions.md`](output-conventions.md)
 § Run manifest, `coordinator` block).
 
 Mistral sits in no run profile since scaffold#915; its recipe remains for runs sealed
-before that change and for a future re-qualification. That recipe pins `mistral/eu`
+before that change. That recipe pins `mistral/eu`
 with provider fallback disabled: September 25 controls isolated shared-pool 429s on
 `mistral/zdr` (the
 canonical recovery record (scaffold's forge, docs/planning/council-five-seat-794/recovery-20260924.md)).
@@ -183,31 +182,15 @@ genesis and restart independent Step 1 for all five; do not append a late
 fifth opinion to a reduced-roster result. For council-research, restart at
 Phase 1 (after any required Phase 0).
 
-## Shadow profiles
+## Future roster updates
 
-The installed `grok-shadow` and `deepseek-shadow` profiles keep Claude, Gemini, GPT
-and Kimi and put their named candidate in the fifth seat: Grok 4.7, or DeepSeek V4 Pro
-0813 on CoreWeave. Both are non-binding by construction; Muse stays in the definitive
-profile. The owner authorized them as a standing evaluation on 2026-09-27
-(scaffold#915): every definitive council runs both shadow arms until five definitive
-runs have all three arms complete, and then the owner reviews which model holds the
-fifth seat. See [shadow experiments](shadow-experiments.md) for the campaign record,
-pinned recipes, capacity gates and comparison procedure. A shadow is not an enabled
-reserve, and a shadow result never changes the definitive decision it shadows.
-
-## Reserve models
-
-No reserve is enabled by this policy. A standby model may be evaluated
-without giving it a sixth vote. Before it can replace an unavailable member,
-the owner must select it and the canonical Facilitator must carry its exact
-model, provider, effort, capacity and identity checks with tests and pins.
-Evaluate source-grounded criticism and useful dissent on representative
-tasks; vendor benchmarks alone do not establish equivalence.
-
-Record any approved replacement and reason **before** locking a fresh
-five-member roster. Keep the reserve out of formal deliberation until
-selected; never silently substitute it or disclose prior rejected outputs
-to just one member. A replacement is a new roster, not a continuation.
+Use the installed `definitive` profile: Claude, Gemini, GPT, Kimi and Muse.
+Rasteratops takes future fifth-seat changes through reviewed imports from the
+other projects (D-WORKFLOW-135). Importing a candidate's tooling does not select
+it for this fork. An adopted replacement records the decision and brings its
+exact model, provider, effort, capacity and identity checks together with tests
+and accountable pins. Then lock a fresh five-member roster and restart from
+Step 1; for council-research, restart from Phase 1 after any required Phase 0.
 
 ## Roster invariants
 

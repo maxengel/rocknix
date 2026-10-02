@@ -19,8 +19,7 @@ authority, implementation correctness or deployed behavior.
 A request for a formal council always uses five. Time, price, context pressure
 or a failed Kimi/Muse request cannot convert it into a preliminary review.
 Historical three-member evidence retains its actual scope; adding two later
-opinions does not retrospectively complete the formal pipeline. Five-seat
-shadow experiments also remain separate and non-binding under their own rule.
+opinions does not retrospectively complete the formal pipeline.
 
 ## Shared seats and identity
 

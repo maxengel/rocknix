@@ -190,8 +190,8 @@ recursion round.
 ## Request-size and transport recovery
 
 This section began with the Mistral seat, which left the roster over its 262,144-token
-window (scaffold#915). Its rules apply to any seat whose window binds a request, such
-as Grok 4.7's 500,000 tokens in the `grok-shadow` arm, and to Mistral if it returns.
+window (scaffold#915). Its rules apply to any installed seat whose window binds
+a request.
 
 Use the retained recovery examples (scaffold's forge, docs/planning/council-five-seat-794/recovery-20260924.md)
 and the existing output-budget bug (the source estate's issue 4971)
