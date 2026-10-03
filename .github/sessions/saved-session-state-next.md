@@ -50,17 +50,52 @@ byte checks passed. Immutable new bundle:
 Image SHA25688afd2ac9720bcdf14cde20cc5814733b339be87b76aa3c4a16d3c0439240abc.
 Receipts `docs/qa-logs/2026-10-03-m7-replacement-01/`.
 
-**ACTIVE replacement default/upgrade QA since21:02:57UTC:** owner
-`/workspace/tmp/rasteratops-m7-replacement-qa-01/`, immutable run.sh and
-check-payload.py, waiter43904, runner2258294/watcher2258295. Shared status
-in the frozen build tree `.build-runs/20261003T210257Z-d8c294b9/build.status`;
-console owner/console.log, test logs owner/artifacts. Independent owned pair
-and backend directories. All15 default suites, then clean payload/policy
-readback, RC2 upgrade and upgraded payload/policy readback, then custody
-verification. No other a/b guest or endpoint work until it exits. Exact
-ES_SRC/RETROARCH_SRC/QA_SYSTEM_ROOT and harness hashes are in run.sh.
-Check status within60s; five-second recorder, suspected inactivity5min;
-announce failures/terminal before unrelated work. No disconnected alert.
+**Replacement default/upgrade COMPLETE:**14PASS/1SKIP (the launcher omitted
+WALK_BASELINE). The separate78-frame comparison found one live statistics
+line at t05; #406 now has a narrow claim, absent/undersized negative controls,
+and a passing comparison without changing the baseline. Actual RC2 upgrade
+passed21:38:09. Outer waiter43904 returned1 because final payload readback
+ran after the rehearsal stopped its guests. Preserve that original failure.
+Restarted the same retained upgraded disk under watcher2784310; exact full
+BUILD_ID and five policy/content hashes/modes PASS, custody PASS, rc0 at
+21:47:29. Guest stopped. Owner `/workspace/tmp/rasteratops-m7-upgrade-readback-01/`;
+receipts `docs/qa-logs/2026-10-03-m7-replacement-qa/`.
+
+**Provider qualification COMPLETE:** owner
+`/workspace/tmp/rasteratops-m7-replacement-link-01/`, waiter46328 finished.
+All7 WebDAV cases PASS477s, all7 S3 PASS463s. Frozen build run
+`.build-runs/20261003T214755Z-2b4c865d/` recorded child/watcher rc0 at22:04:52;
+candidate custody PASS and a/b guests/endpoints stopped. Outer tool waiter
+reported143 despite that record; preserve the discrepancy under#395. A
+separate throttled-S3 lifecycle probe at9032 records child/watcher/outer/tool
+rc0. Cause remains unproved; do not relabel the original outer result.
+Receipts `docs/qa-logs/2026-10-03-replacement-links/`.
+
+**Independent UI capture COMPLETE:** owner
+`/workspace/tmp/rasteratops-m7-release-ui-01/`, waiter32800 finished0;
+feature run `.build-runs/20261003T215847Z-b2b036ec/`, terminal22:05:29.
+Guest-d and WebDAV9030 stopped. First run75889 captured English640 then
+failed a PIL import; six retained frames pass direct PNG-header checks.
+Continuation captured French640 then EN/FR1280x960 (six frames each).
+Offline explanation/cloud hub/tier pages visually reviewed in all four
+language/panel combinations; additional game-settings/provider frames
+remain to inspect. Site screenshot updated locally on the existing
+`/home/max/Development/rocknix.org` docs/cloud-saves-native-wizard branch,
+not committed/pushed yet. #327 frames under docs/qa-frames/2026-10-03/327.
+
+**First archive runtime proof COMPLETE:** owner
+`/workspace/tmp/rasteratops-m7-archives-01/`, waiter12990 finished0. Frozen
+run `.build-runs/20261003T220641Z-d2b9febe/`, terminal22:07:36. Uses new
+COW overlay of the actual stopped RC2-upgraded replacement disk at
+`/workspace/tmp/rasteratops-m7-replacement-qa-01/pair/vm-a.qcow2`; preserve
+that base. Actual inherited archive restored locally and via cloud; original
+bytes kept. New production writer→scan→restore and settings-only /ROCKNIX
+and /GAMES follow/settle pass. Source and24 assertions in
+`docs/qa-logs/2026-10-03-archives-runtime/`. These are partial criteria: setup,
+archive selection/retention/revert/UI, explicit content root, S3 denied-listing
+and repeated timing remain. No VM currently running. Next extend this
+archive proof on its owned overlay; use another immutable launcher and
+record outer.rc as well as the watcher. No disconnected alert is configured.
 
 Input manifest SHA2569da8a37468c3b65490cde4c88c8f8e611718ea9e853337fa35ad4cac0aee8315
 records6,611 file hashes plus180 raw symlink targets, including root
@@ -79,10 +114,34 @@ corrects that preflight; original script/log preserved. An earlier inventory
 attempt encountered an existing broken symlink; final manifest records all
 symlink targets, hashing file contents where present. No source changed.
 
-Next: observe active default/upgrade QA, then affected WebDAV/S3
-interruption/retry and remaining P3 proofs. Custody is verified before/after
+Next: extend the completed archive proof, then remaining S3 fault, content-root, timing and RA checks. Custody is verified before/after
 QA; retain all original failure reports. No RC claim. Do not move this new frozen build HEAD for documentation.
 #402/#403/#404/#405 closed from published evidence, live readbacks verified.
+
+## Follow-up preparation (current running state is above)
+
+- The completed provider job: `/workspace/tmp/rasteratops-m7-replacement-link-01/run.sh`
+  runs all7 WebDAV then all7 S3 link cases sequentially on retained replacement
+  bundlefc6b9774f79d. Separate provider pair/backend owners,200k rate, immutable
+  harness.sha256 and shared runner copies prepared. Launch under its runner
+  from the frozen build tree with activity-dir owner/artifacts and recursive
+  activity; use a new active waiter and record actual PIDs. No parallel pair reset.
+- `/workspace/tmp/rasteratops-m7-release-ui-01/` holds a fresh16GiB replacement
+  guest-d disk and dedicated QA identity for later EN/FR panel checks. Watched
+  preparation completed rc0, disk check PASS at21:22UTC; the capture continuation is now complete as described above.
+  Prepare run record in feature `.build-runs/20261003T212206Z-6b089f07/`.
+  seed.py asserts full134e89 BUILD_ID and actual homebrew ROM hashes.
+- `/tmp/m7-archive-proof.py` is an UNRUN prototype for guest-d production
+  archive proof: inherited RC2 local/cloud recovery, writer/scan/restore,
+  settings-only follow/settle. Syntax checked only; do not claim its assertions
+  pass. It needs a stopped retained RC2-upgraded disk (use a new COW overlay,
+  preserve original), SSH identity, and separately owned synthetic WebDAV.
+  Removes cached root archives from the selection into a retained subfolder
+  before cloud restore, preventing a cached-file false positive. Review actual
+  source/arguments and lifecycle setup before running; promote once proven.
+- Watcher death/monitor-loss probes completed, both PASS; active conversation
+  received the expected failure notices. Receipts `2026-10-03-watch-delivery`.
+  Disconnected destination/delivery-failure handling remains #395.
 
 ## Completed source and diagnostic proof
 
@@ -170,12 +229,15 @@ Distribution feature commits integrated onto `next` by exact cherry-picks:
 | c3f0e88b7c | c3f0c75661 | process/hook/recorder |
 | 33faa33c27 | 939e73a1d4 | Mesa/SDL memory cleanup and evidence |
 
-Frozen build source is published next503e24e10dde6a59aa6c631f789b88b89f8e92e1
-(feature pin commit3c6ee8e94eee55a69a8ea54c6730e316924c6c6c). Normal hooks and
-remote readbacks pass. Later documentation commits must not advance or mutate
-the frozen build worktree; its exact source stays503e24e10d. Inspect live
-HEAD/status on primary/feature for documentation progress. Integrate exact new
-single commits, never the feature's historical merges. Preserve unrelated work.
+Original cold01 source was published next503e24e10dde6a59aa6c631f789b88b89f8e92e1
+(feature pin commit3c6ee8e94eee55a69a8ea54c6730e316924c6c6c). The explicit
+replacement freeze above advances the dedicated build to published134e89c4fc
+for #397/#401. Later documentation commits must not move that new freeze.
+Normal hooks and remote readbacks pass; the evidence-only next commit is
+7f4b03a167 (feature143f3145e6). Its unpublished next message was amended to
+add the issue citation required by the push guard; no force push or source
+change. Integrate exact single commits, never historical feature merges.
+Preserve unrelated work.
 
 CI wordlist passes. Record CI initially caught #376 automatically closed by
 historical commitf864baac02a5d9c819bbfe71931d3213e29b1ddd's closing keyword.
@@ -217,13 +279,13 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The completed guest-d matrix/memory and active replacement QA are detailed here. Product work remains P3 image
+The completed guest-d matrix/memory/default/upgrade and completed provider/UI and partial archive QA are detailed here. Product work remains P3 image
 qualification and the #397 replacement, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
 ## Immediate next actions
 
-1. Observe replacement default/upgrade QA above; its explicit frozen134e89 inputs supersede
+1. Continue remaining archive/fault/timing qualification above; the explicit frozen134e89 inputs supersede
    the historical503e build checkout, not the retained503e artifact/evidence.
 2. Retain and qualify replacement clean/default, RC2 upgrade and affected
    content/link cases. Remaining archives/pending awards/UI/timing/identity
@@ -346,15 +408,12 @@ or claim RA PASS without reply and live availability recheck. No credentials
 printed. Receipt `docs/qa-logs/2026-10-03-m7-qa-01/ra-fixture-preflight.json`.
 Continue independent tests. No physical device/personal cloud touched.
 
-**New product gate #397:** actual SYSTEM has no fork branding licence or
-trademark policy under /usr/share/licenses. Source terms already existed.
-Feature d43d31a4a4 / next0159cb3235 (published, exact remote hashes verified)
-adds only policy installation to image assembly; staged bytes/modes and
-missing-input failure controls pass4/4. Root LICENSE.md and TRADEMARK.md must
-be included in the next explicit input inventory. A replacement retained
-image with clean/upgrade readback is still owed; do not mark the old image
-qualified. Preserve its bundle, input manifest and receipts. The replacement build worktree is now frozen134e89; the original503e bundle
-and input manifest remain retained, and generated documentation was preserved.
+**Product gate #397:** original503e SYSTEM lacked the fork branding licence
+and trademark policy. Published image assembly fix passes4/4 staged controls;
+both root files are now in the explicit replacement inventory and installed
+byte-identically in assembled134e89 SYSTEM. The replacement bundle is retained;
+its clean/upgrade guest readbacks pass exact bytes/modes. Original503e is not qualified by
+this new evidence. Preserve both bundles, manifests and generated documentation.
 
 #396 host-only correction is feature96ccdb16e5 / next4f0dcdfcaf, published.
 It has16/16 assertion controls (original14/16), and full VM proof above.

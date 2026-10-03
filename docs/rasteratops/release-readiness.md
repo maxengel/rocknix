@@ -35,10 +35,10 @@ and guest menu reselection pass. Process/hook controls and the six armature
 retests pass. Receipts are under `docs/qa-logs/2026-10-03-{proxy-refresh,
 dependencies,launch-memory,led,process,push-hook}/`.
 
-**Current:** the cold engineering build completed642/642 tasks and image
+**Original503e evidence:** the cold engineering build completed642/642 tasks and image
 assembly from frozen distribution503e24e10d. The corrected watcher recorded
 rc0. Image/update checksums and immutable candidate-store custody pass.
-**Current qualification:** all15 default suites now have passing evidence
+**Original503e qualification:** all15 default suites have passing evidence
 on the unchanged candidate:14 passed in the first run; #396 corrected the
 host archive-name assertion and the complete round-trip rerun passed81s.
 All16 visual walks and frame comparison pass. Source/candidate custody was
@@ -61,15 +61,23 @@ passes30s, peak total RSS292788KiB (not provider authentication). RA award100359
 is already earned; the owner reset/alternate-QA-account question is pending.
 Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
 `docs/qa-logs/2026-10-03-archive-harness/rerun/`.
-**New image gate #397:** SYSTEM lacks the approved branding licence and
-trademark policy. Image-assembly correction passes byte/mode/failure staging
-controls; a replacement immutable image and clean/upgrade readback are owed.
+**Image gate #397:** original503e SYSTEM lacks the approved branding licence
+and trademark policy. The correction passes byte/mode/failure staging controls
+and exact assembled134e89 payload checks. The immutable replacement exists;
+clean and actual RC2-upgraded guest readbacks now pass exact bytes/modes.
+Receipts: `docs/qa-logs/2026-10-03-m7-replacement-qa/`.
 **Next:** published #397/#401 corrections completed the replacement
 from next134e89c4fc, with6,611 file hashes and180 raw symlink targets frozen.
-The original immutable bundle remains retained. Replacement default/RC2-upgrade
-and installed policy/content readback are running since21:02:57UTC. Qualify clean/upgrade
-and affected provider paths, then complete remaining P3 preservation/UI/timing
-and RA proofs. #402/#403/#404/#405 are closed from their own published evidence. Shared recorder and
+The original immutable bundle remains retained. Replacement default has14PASS/1SKIP; the omitted baseline was compared
+separately, finding one live-statistics sample expectation (#406). Its narrow
+claim and negative controls pass all78frames without changing the baseline.
+RC2 upgrade passed; a separate restart of its retained upgraded disk verified
+policy/content bytes after the original wrapper tried reading a stopped guest.
+WebDAV/S3 full link matrices pass477/463s. EN/FR640x480 and1280x960
+captures complete; offline/cloud/tier pages are visually reviewed. Actual
+RC2 archive local/cloud recovery, new-writer recovery and settings-only
+follow/settle pass24 assertions. Complete remaining archive selection/UI,
+S3 failed-listing, content-root, repeated timing and RA proofs. #402/#403/#404/#405 are closed from their own published evidence. Shared recorder and
 active waiter delivered failure and success without a status request; no
 disconnected alert is configured (#395, D-WORKFLOW-143).
 #393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names

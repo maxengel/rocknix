@@ -1,0 +1,61 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/m7-generic-x64/.build-runs/20261003T214755Z-2b4c865d
+tools/vm-qa: OK
+tools/vm-pair: OK
+tools/cloud-test-backend: OK
+tools/cloud-round-trip: OK
+tools/vm-serial: OK
+tools/watch-build: OK
+tools/watch-job: OK
+/workspace/tmp/rasteratops-m7-replacement-link-01/run.sh: OK
+PASS candidate bundle /workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5
+START replacement webdav full link-loss matrix
+ready: a on 134e89c4fc over ssh :10022 (answered after 0s)
+ready: b on 134e89c4fc over ssh :10023 (answered after 0s)
+link: PASS in 477s
+
+# vm-qa on 134e89c4fc
+
+started 2026-10-03 21:48 UTC, guest a at :10022, cloud webdav (port 9010, hash=none modtime=no commit=partial bucket=no), image /workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5/RASTERATOPS-GENERIC_X64.x86_64-0.0.1-from-ROCKNIX.img.gz, display: GL through virgl on /dev/dri/renderD128
+
+| suite | result | time | log |
+| --- | --- | --- | --- |
+| link | PASS | 477s | `link.log` |
+
+**PASSED** -- every suite that ran passed.
+
+finished 2026-10-03 21:56 UTC
+
+renderer: (no RetroArch launch log on the guest) -- the guest's Mesa, from the launch log; display: GL through virgl on /dev/dri/renderD128
+
+report: /workspace/tmp/rasteratops-m7-replacement-link-01/artifacts/rocknix-images/qa-134e89c4fc-webdav-a-20261003-2148/report.md
+down: a (pid 2789163)
+down: b (pid 2789221)
+down
+PASS replacement webdav full link-loss matrix
+START replacement s3 full link-loss matrix
+ready: a on 134e89c4fc over ssh :10022 (answered after 0s)
+ready: b on 134e89c4fc over ssh :10023 (answered after 1s)
+link: PASS in 463s
+
+# vm-qa on 134e89c4fc
+
+started 2026-10-03 21:57 UTC, guest a at :10022, cloud s3 (port 9012, hash=md5 modtime=yes commit=atomic bucket=yes), image /workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5/RASTERATOPS-GENERIC_X64.x86_64-0.0.1-from-ROCKNIX.img.gz, display: GL through virgl on /dev/dri/renderD128
+
+| suite | result | time | log |
+| --- | --- | --- | --- |
+| link | PASS | 463s | `link.log` |
+
+**PASSED** -- every suite that ran passed.
+
+finished 2026-10-03 22:04 UTC
+
+renderer: (no RetroArch launch log on the guest) -- the guest's Mesa, from the launch log; display: GL through virgl on /dev/dri/renderD128
+
+report: /workspace/tmp/rasteratops-m7-replacement-link-01/artifacts/rocknix-images/qa-134e89c4fc-s3-a-20261003-2157/report.md
+down: a (pid 2829293)
+down: b (pid 2829319)
+down
+PASS replacement s3 full link-loss matrix
+PASS candidate bundle /workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5
+PASS replacement WebDAV/S3 link-loss matrices
+down
