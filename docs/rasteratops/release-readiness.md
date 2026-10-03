@@ -42,13 +42,15 @@ rc0. Image/update checksums and immutable candidate-store custody pass.
 on the unchanged candidate:14 passed in the first run; #396 corrected the
 host archive-name assertion and the complete round-trip rerun passed81s.
 All16 visual walks and frame comparison pass. Source/candidate custody was
-verified before and after the default run. RC2 upgrade rehearsal is active
-since18:56UTC. Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
+verified before and after the default run. RC2 upgrade passed18:57UTC, S3 round-trip passed107s, and mixed-install
+pair migration passed42/42 at19:04UTC. First WebDAV link run exposed the extended-stamp host assertion (#398);
+14 corrected parser controls pass and the complete rerun is active. Strict
+S3 coverage must replace the existing WebDAV LINK5 fixture skip. Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
 `docs/qa-logs/2026-10-03-archive-harness/rerun/`.
 **New image gate #397:** SYSTEM lacks the approved branding licence and
 trademark policy. Image-assembly correction passes byte/mode/failure staging
 controls; a replacement immutable image and clean/upgrade readback are owed.
-**Next:** consume RC2 upgrade, complete remaining P3 tests, then assemble
+**Next:** consume link-loss results, complete remaining P3 tests, then assemble
 and qualify the replacement with all observed fixes. Shared recorder and
 active waiter delivered failure and success without a status request; no
 disconnected alert is configured (#395, D-WORKFLOW-143).

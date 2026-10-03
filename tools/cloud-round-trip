@@ -5451,9 +5451,12 @@ class Link:
                 check(True, f"{s} unchanged ({after.get(s) or 'absent'})", "")
                 continue
             parts = after.get(s, "").split()
-            code = parts[1] if len(parts) == 2 else "?"
-            f += not check(code not in ("0", "?"), f"{s} records the failure ({after.get(s)})",
-                           f"{s} records success ({after.get(s)}) for a run the network left")
+            # A failure stamp may carry an outcome token and reason after
+            # its return code (#398); validate the prefix, not total fields.
+            code = (int(parts[1]) if len(parts) >= 2 and parts[0].isdecimal()
+                    and parts[1].isdecimal() and int(parts[1]) <= 255 else None)
+            f += not check(code not in (0, None), f"{s} records the failure ({after.get(s)})",
+                           f"{s} does not record a valid failure ({after.get(s)}) for a run the network left")
         if upload_marker:
             m0, m1 = before.get("settings-backup.uploaded", ""), after.get("settings-backup.uploaded", "")
             complete = all(got.get(r) == src for r, src in sources.items())

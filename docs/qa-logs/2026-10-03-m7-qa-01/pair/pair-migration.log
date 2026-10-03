@@ -1,0 +1,106 @@
+=== 19:02:03 backend: not running
+up: webdav serving /workspace/tmp/rasteratops-m7-pair-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+reset: endpoint is empty
+=== 19:02:04 pair up from ROCKNIX-GENERIC_X64.x86_64-20260929.img.gz, then b rebuilt from RASTERATOPS-GENERIC_X64.x86_64-0.0.1-from-ROCKNIX.img.gz
+up: a (pid 924581, ssh :10022, serial /tmp/rocknix-qemu-serial.sock, mac 52:54:00:52:4E:58)
+up: b (pid 924608, ssh :10023, serial /tmp/rocknix-qemu-serial-b.sock, mac 52:54:00:52:4E:59)
+ready: a on 69e6039f8f over ssh :10022 (answered after 0s)
+ready: b on 69e6039f8f over ssh :10023 (answered after 0s)
+down: b (pid 924608)
+up: b (pid 926883, ssh :10023, serial /tmp/rocknix-qemu-serial-b.sock, mac 52:54:00:52:4E:59)
+ready: b on 503e24e10d over ssh :10023 (answered after 0s)
+=== 19:03:13 a on 69e6039f8f (previous), b on 503e24e10d (new)
+PASS the two guests run two different builds
+=== 19:03:13 the QA remote on both; the automatic syncs off, so only the steps below write
+=== 19:03:13 a's folders: /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content   b's folders: /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content
+PASS the previous build's default (/ROCKNIX/Saves) is one the new build lists as superseded -- the premise of this test
+PASS the fresh install starts on the shipped folders
+=== 19:03:13 1. a (previous build) backs up a save and its settings to /ROCKNIX; a ROM is put there too
+saves backup rc=0
+settings backup rc=0
+put: ROCKNIX/Content
+PASS 1: a's save is in /ROCKNIX/Saves
+PASS 1: a's settings backup is in /ROCKNIX/Backups
+=== 19:03:19 2. b (fresh) is set up as the wizard does it: the cloud folder step's scan, NOT NOW, then --seed-folders
+folder scan rc=0
+PASS 2: the wizard's folder step reads the move from /ROCKNIX/Saves, not CREATE IT (D-CLOUD-170)
+OK /ROCKNIX/Saves
+OK /ROCKNIX/Backups
+OK /ROCKNIX/Content/ROMs
+OK /ROCKNIX/Content/BIOS
+seed rc=0
+PASS 2: the fresh install joined the folder the saves are in, with its backups and content (D-CLOUD-158)
+PASS 2: nothing was made at /Rasteratops beside them
+restore rc=0
+PASS 2: b's restore brought a's save, byte for byte
+PASS 2: and the step comes again at b's next boot (--needs-step 0)
+=== 19:03:23 3. a is updated in place to RASTERATOPS-GENERIC_X64.x86_64-0.0.1-from-ROCKNIX.tar
+PASS 3: a runs the new build after the update
+PASS 3: a's conf still names the folder it was set to (the configured root wins on update)
+=== 19:04:18 4. a's scan, then MOVE
+scan rc=0
+PASS 4: a's scan reads the move
+move rc=0
+>>> unit SETTINGS BACKUPS|1|3
+>>> doing copy
+>>> doing verify
+>>> doing remove
+>>> unit SAVES|2|3
+>>> doing copy
+>>> doing verify
+>>> doing remove
+>>> unit ROMS, BIOS, AND GAME CONTENT|3|3
+>>> doing copy
+>>> doing verify
+>>> doing remove
+PASS 4: each unit was copied and verified before anything of it was removed
+PASS 4: the saves are at /Rasteratops/Saves
+PASS 4: the settings backups are at /Rasteratops/Backups
+PASS 4: the ROM is at /Rasteratops/Content
+PASS 4: the fleet's marker is at /Rasteratops
+PASS 4: nothing is left under /ROCKNIX/Saves
+PASS 4: a's conf points at the current folders
+=== 19:04:23 5. b's step at its next boot follows the fleet; its new save goes up; a restores it
+folder scan rc=0
+PASS 5: b's step followed: its conf points at the current folders
+PASS 5: and its journal says so, with no question asked (D-CLOUD-160)
+PASS 5: the step's scan then reads the current folder, so it goes straight on
+PASS 5: settled: no step at b's next boot (--needs-step 1)
+backup rc=0
+PASS 5: b's new save is at /Rasteratops/Saves
+PASS 5: and nothing was written back under /ROCKNIX/Saves
+restore rc=0
+PASS 5: a's restore brought b's save, byte for byte
+=== 19:04:28 5m. a device that missed its step: b's pointers set back by hand (staged); its backup re-makes nothing; its step follows
+PASS 5m: (staged) b's pointers are back on /ROCKNIX, as on a device that never ran its step
+backup rc=0
+PASS 5m: its backup made no /ROCKNIX/Saves again, sent nothing and offered the folder (D-CLOUD-172)
+folder scan rc=0
+PASS 5m: its step's scan followed the fleet with no question
+backup rc=0
+PASS 5m: and its next backup sent the save to /Rasteratops/Saves, byte for byte
+=== 19:04:31 5n. a device on an older build that kept writing to /ROCKNIX after the move (stood in: a save put there directly); its step's MOVE merges
+put: ROCKNIX/Saves
+PASS 5n: (stood in) /ROCKNIX/Saves holds a save an older build wrote after the move
+folder scan rc=0
+PASS 5n: its step's scan reads the move with the fleet's folder already there, so the step asks MOVE
+merge rc=0
+>>> unit SAVES|1|1
+>>> doing copy
+>>> doing verify
+>>> doing remove
+PASS 5n: MOVE onto the fleet's folder ends 0
+PASS 5n: every save is at /Rasteratops/Saves: a's, b's, and the one the older build wrote
+PASS 5n: a's save untouched by the merge, and the merged one byte for byte
+PASS 5n: nothing is left under /ROCKNIX/Saves
+PASS 5n: and b's conf points at the current folders
+=== 19:04:36 6. both devices on the shipped folders
+PASS 6: both confs read /Rasteratops/Saves, /Rasteratops/Backups and /Rasteratops/Content
+=== 19:04:36 7. a provider error is not an absence: b against a dead endpoint
+scan rc=5
+PASS 7: the scan against a cloud that refuses ends non-zero
+PASS 7: and writes no state the interface could offer from
+PASS 7: and nothing in b's conf moved
+=== 19:04:37 RESULT PASS: 42 passed, 0 failed (log /workspace/artifacts/rocknix-images/qa-bcd9877d21-pair-migration-from-69e6039f8f-20261003-1902/pair-migration.log)
+down: a (pid 924581)
+down: b (pid 926883)
