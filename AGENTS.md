@@ -75,6 +75,8 @@ its private `.build-runs/<id>/` log, PID, result and status location; nested
 commands reuse it. For an ad-hoc command use `tools/watch-build -- COMMAND`.
 Status recording does not send automatic chat notifications. See
 `device-builds.md` for lifecycle and frozen-checkout handling.
+Long jobs also need verified result delivery; until off-session alerts are
+configured, supervise actively and announce completion promptly (#395).
 
 Images land in `target/` (`config/path` sets `TARGET_IMG=$ROOT/target`). Deploy to a
 networked device by `scp`-ing the image tar to `root@<host>:~/.update` and rebooting

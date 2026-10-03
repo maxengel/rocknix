@@ -39,6 +39,9 @@ dependencies,launch-memory,led,process,push-hook}/`.
 assembly from frozen distribution503e24e10d. The corrected watcher recorded
 rc0. Image/update checksums and immutable candidate-store custody pass.
 **Next:** collect consumed-source inventory and run P3 qualification.
+No build or qualification job is currently active. Notification delivery is
+the separate open #395 follow-up (D-WORKFLOW-143); off-session destination
+selection and proof remain. This does not replace the image qualification work.
 #393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
 the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
