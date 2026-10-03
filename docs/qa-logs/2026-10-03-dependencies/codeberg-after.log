@@ -1,0 +1,8 @@
+PASS stable-before-prerelease: rc=0 expected=0; tllist                     1.1.0          1.1.0          CURRENT
+PASS new-stable: rc=1 expected=1; tllist                     1.1.0          1.2.0          BEHIND
+PASS empty: rc=2 expected=2; tllist                     1.1.0                         UNKNOWN: no resolver for codeberg.org, or it did not answer
+PASS malformed: rc=2 expected=2; tllist                     1.1.0                         UNKNOWN: no resolver for codeberg.org, or it did not answer
+PASS request-failure: rc=2 expected=2; tllist                     1.1.0                         UNKNOWN: no resolver for codeberg.org, or it did not answer
+PASS failed-request-with-body: rc=2 expected=2; tllist                     1.1.0                         UNKNOWN: no resolver for codeberg.org, or it did not answer
+
+exit=0
