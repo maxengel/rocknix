@@ -106,3 +106,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 06:50 UTC -- flat VmSize after renderer trimming hid continuing live-heap growth; the stricter RSS endurance control failed. Actual VM LeakSanitizer traced ES udev lists, SDL mode arrays and an empty Mesa cache. All lifetimes fixed; noninstrumented10/50/virgl limits now pass without relaxation. Guard: tools/es-launch-memory and retained sanitizer comparison; issue: #310.
 
 - 2026-10-03 07:04 UTC -- a historical commit's closing keyword auto-closed #376 when the normal push reached next, despite its explicit unrun image criterion. CI hygiene caught it; reopened with event evidence and added neutral partial-delivery reference guidance. Guard: tools/ceremony-check hygiene; issue: #376.
+
+- 2026-10-03 14:19 UTC -- full source inventory exposed two ordinary patch filenames to the credential-shape heuristic; pre-commit correctly refused its matching shape. Paths and SHA256s verified as source metadata. Full immutable manifest retained with build artifacts; Git records digest/summary, no guard bypass. Guard: pre-commit and manifest hash verification; issue: #383.

@@ -18,7 +18,7 @@ is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: cold build running**;
+complete; P1 source complete; **P2 source gate complete; P3 current: input freeze/cold build**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T141032Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T141032Z.md.
+> Saved: 20261003T135950Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T135950Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -72,7 +72,8 @@ The current30-rule inventory and ES/splash entrypoints are repaired.
   (`docs/qa-logs/2026-10-03-process/final-handoff-proof.md`). Build-container instructions now
   use Makefile's existing digest, not stale latest-tag advice. Evidence
   `docs/qa-logs/2026-10-03-process/`; required local push checks pass. #367
-  is delivered/closed. All ES/splash entrypoint commits are published and #368 is closed.
+  is delivered/closed. All ES/splash entrypoint commits are now published;
+  #368 can close after this delivery record is integrated.
 
 ## #310 memory — all strict diagnostic acceptance passes
 
@@ -104,7 +105,7 @@ CSV/status/maps/stamps, sanitizer comparison, actual build/syntax checks,
 packaged patch exact-byte/fuzz0 controls and reproducible allocator driver.
 Mesa/SDL patches are committed/integrated. Qualified ES commits are now pushed
 and the recipe selects full e6e1e4d0f91e177e182cc05b1cea74991e1cc45b. Package
-lint passes. #310 is delivered/closed; candidate tests remain P3.
+lint passes. #310 closure follows pin integration; candidate tests remain P3.
 
 ## Source delivery state
 
@@ -118,11 +119,11 @@ Distribution feature commits integrated onto `next` by exact cherry-picks:
 | c3f0e88b7c | c3f0c75661 | process/hook/recorder |
 | 33faa33c27 | 939e73a1d4 | Mesa/SDL memory cleanup and evidence |
 
-Frozen build source is published next503e24e10dde6a59aa6c631f789b88b89f8e92e1
-(feature pin commit3c6ee8e94eee55a69a8ea54c6730e316924c6c6c). Normal hooks and
-remote readbacks pass. Later documentation commits must not advance or mutate
-the running build worktree; its exact source stays503e24e10d. Inspect live
-HEAD/status on primary/feature for documentation progress. Integrate exact new
+Distribution source/evidence is published through featurec5e0b6bfecd30be55713fb8685b138eadde45e7e
+and next3d58a7f8558a08e0ab1d0cab2e78dc834c6c071a. The normal push passed and
+remote hashes matched; no hook bypass. Latest closure receipts/checkpoint/rule
+addendum follow in a documentation commit; inspect live HEAD/status rather
+than assuming these snapshot hashes are still tips. Integrate exact new
 single commits, never the feature's historical merges. Preserve unrelated work.
 
 CI wordlist passes. Record CI initially caught #376 automatically closed by
@@ -130,7 +131,7 @@ historical commitf864baac02a5d9c819bbfe71931d3213e29b1ddd's closing keyword.
 It is reopened: candidate archive/RC2-upgrade evidence remains P3. The issue
 records GitHub's closure event and missing proof; issue-tracking now requires
 neutral `Refs #N` until all criteria pass. Hygiene passes after correction.
-Closing the delivered issues reaches the existing audit cadence:15 completed since
+Closing #332/#367/#371 reaches the existing audit cadence:13 completed since
 2026-10-02, limit12. Full ceremony check is red **only for audit due**; push
 `--gate` remains0. Keep the approved independent fixes review in P4 after
 artifact qualification; do not invent an audit receipt or reset its clock.
@@ -158,53 +159,36 @@ pins with stated reasons. Future release/device/personal-cloud gates remain.
 
 ## Immediate next actions
 
-1. Read `/workspace/tmp/rasteratops-m7-cold-01/build.status`, its mtime,
-   `build.rc` if present and the latest `build.log` tail. Verify buildPID3863117
-   and watcher3863200 in the **host** namespace (sandbox ps cannot see them).
-   Build is already running; do not launch a second or change its worktree.
-2. If failed/died/stalled, inspect exact thread logs and any download error;
-   fix the actual cause under #383 (or a specific issue). Preserve this attempt,
-   source manifest and logs; never overwrite the frozen inputs or failed result.
-   Do not edit a launcher while it runs. Source changes need new frozen inputs.
-3. After successful image creation, collect actual consumed-source inventory,
-   retain image/assets in candidate-store and verify exact manifest/digests.
-   Execute M7.P3 in the live body's order: clean/RC2 upgrade, full suites and
-   opt-ins, provider/pair/recovery, memory/UI/timing/identity/licence proof.
-4. Run approved P4 fixes review through Facilitator, primary+Fable5.1/xhigh.
-   Initial #375/#382 is complete; do not restart it. Resolve findings and
-   rebuild/requalify affected product bytes before any RC claim.
+1. Finish integrating/pushing this full ES pin and delivery record using exact
+   new commits, not historical feature merges. Close #310 and #368 from their
+   already-verified source/VM/entrypoint evidence. Keep candidate criteria P3.
+2. Fast-forward build/m7-generic-x64 to the integrated source commit. Recheck
+   host preflight, run the retained freeze script, start the cold build and
+   its actual host watcher. Record exact source/manifest/PID/log/status in
+   live M7 and #383. No build was running at this checkpoint; inspect current
+   receipts before launching another. The owner has authorized this work.
+3. Qualify the exact artifact and run approved P4 review. Do not restart
+   #375/#382. Primary+Fable5.1/xhigh through Facilitator is already authorized.
+   Resolve findings, rebuild/requalify changed bytes, then assess RC readiness.
 
-## Active cold build — M7.P3, no candidate yet
+## Cold-build preparation and QA entrypoints
 
-`/workspace/repos/rocknix.worktrees/m7-generic-x64`, branchbuild/m7-generic-x64,
-is frozen at503e24e10dde6a59aa6c631f789b88b89f8e92e1. Cold root
-`build.RASTERATOPS-GENERIC_X64.x86_64` was created at14:02UTC. No warm build
-root copied or renamed. The launched script is a run-owned immutable copy,
-`/workspace/tmp/rasteratops-m7-cold-01/build.sh`, validated against the manifest.
+New isolated `/workspace/repos/rocknix.worktrees/m7-generic-x64`, branch
+build/m7-generic-x64, currentlyc3f0c75661. No cold build root and no build running.
+Prepared reproducible launcher/freeze scripts:
+`docs/qa-logs/2026-10-03-m7-build-preparation/` and `/tmp/rasteratops-m7-build/`.
+They validate clean branch/commit, qualified ES pin served by remote, all input
+hashes, actual pinned container, new `build.RASTERATOPS-GENERIC_X64.x86_64`,
+nonroot build, both main.git/source-cache mounts and nonoverwritten receipts.
+Syntax checks pass; no actual freeze or build has occurred. A watcher must be
+started in the host namespace after the build PID exists; none is running now.
 
-- Run `/workspace/tmp/rasteratops-m7-cold-01/` owns `inputs.json`, `build.start`,
-  `build.pid`, `build.log`, `build.rc` (on exit), `build.status`/`.err`.
-- BuildPID3863117, host watcher3863200,30s heartbeat. At14:08UTC status running,
-  progress63/642, no exit result. These are snapshot facts; read current files.
-- Input SHA25624116729b3610411fe5ba89543cf10db98b11cb9ca8afc3cbf0ef61f08640459;
-  1,608 recipes and6,606 tracked build-input hashes. Full read-only manifest:
-  `/workspace/artifacts/rasteratops-build-inputs/m7-cold-01/inputs.json` (same
-  bytes as live manifest). Git summary/digest and initial receipts:
-  `docs/qa-logs/2026-10-03-m7-cold-01/`. Live logs stay in the run directory.
-  Git retains a summary because its credential-shape guard rejected two
-  ordinary patch filenames in the full inventory; verified as paths/hashes,
-  no credential or guard bypass. The frozen build manifest is unchanged.
-- Actual containerf68ec6df616a1989b3d8503b3b18e9a9f1c793484faf1373b0652c3d984b592b
-  consumes ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39,
-  user1000:1000, both main.git/source-cache mounts verified. No explicit
-  noncredential source/build override is passed. Mounted global options are
-  comments only, hashed with mtime predating build; no active setting omitted.
-- Global24jobs, WebKit-j4. Preflight13:56UTC READY:about40GiB available,
-  8GiB swap unused,1.9TiB disk free. Frozen upstream remains
-  9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
-- No image or candidate-store bundle exists yet. Post-build consumed source/
-  download inventory is owed. The watcher records outcome; it does not fix
-  failures or automatically launch QA. No silent QA continuation is claimed.
+Frozen upstream9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
+Container ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
+is available locally and verified by digest. Global24jobs; WebKit-j4 remains
+per-package. Build as max, not root. Source cache `/workspace/cache/rocknix-sources`.
+Preflight13:56UTC: READY,about40GiB available,8GiB swap unused,1.9TiB disk free.
+Recheck before launch. Collect actual consumed sources/download inventory.
 
 Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
 retains unrelated generated emulator-support doc and ignored warm diagnostic
@@ -216,19 +200,9 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-No diagnostic test loop remains active; only the cold build/watcher above.
-No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
+No test loop, build or watcher remains active. No physical device/personal
+cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
-
-For candidate VM QA, run from the frozen build checkout and set
-`RETROARCH_SRC=/workspace/repos/rocknix.worktrees/m7-generic-x64/build.RASTERATOPS-GENERIC_X64.x86_64`:
-wrapper-test's default still searches old warm roots. Set
-`ES_SRC=/home/max/Development/emulationstation-next.worktrees/qa-integration`
-only after verifying its clean HEAD is the pinned e6e1e4d0f91e177e182cc05b1cea74991e1cc45b;
-if it moved, use a source checkout of that exact pin. Both are existing supported
-runner overrides. Compare source identities to the manifest before accepting
-host-side suites; keep VM image digest checks separate. No QA has run on the
-unbuilt candidate yet.
 
 Candidate evidence required in live M7 P3:15 default VM suites plus link/RA
 opt-ins, clean install/RC2 upgrade, WebDAV/S3/pair migration, independently

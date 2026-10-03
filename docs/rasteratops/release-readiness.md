@@ -9,12 +9,13 @@ The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
 is the binding **current** execution order (D-WORKFLOW-139, #388). This document
 retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
 P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P3 input freeze/cold engineering build. Update the milestone and affected open issue titles
-when priorities change; issue numbers are references, not queue positions.
+Current priority is M7.P3: the cold engineering build is running from frozen
+inputs. Update the milestone and affected open issue titles when priorities change; issue numbers are references, not queue positions.
 
 **Verdict: not ready to call a build an RC.** Source/diagnostic preparation
-has advanced through P1 and P2; exact inputs still need final integration and
-the cold branded image must be built, qualified and independently reviewed.
+has completed P1/P2 source gates; exact inputs are integrated and frozen, and
+the cold branded build is running. Artifact qualification and independent
+review remain.
 No combined Rasteratops artifact exists yet. Prior general VM runs do not
 qualify the new bytes.
 
@@ -22,8 +23,9 @@ qualify the new bytes.
 
 P1 source coverage is complete:208 actor/state assignments, inherited-state
 recovery and missing-remote controls,1,367 host+322 focused checks PASS.
-T17/T19/T23/T26 guest cases are promoted for candidate P3 execution. ES's
-migration/settings-lock pin39f8883545537d5274708ea85c4683612078a957 is pushed.
+T17/T19/T23/T26 guest cases are promoted for candidate P3 execution. Their
+ES migration/settings-lock changes remain included in the current qualified
+pin e6e1e4d0f91e177e182cc05b1cea74991e1cc45b.
 
 P2 proxy preservation and current coupled dependencies pass their source
 checks. #310 now passes all unchanged diagnostic memory limits: software10,
@@ -33,8 +35,10 @@ and guest menu reselection pass. Process/hook controls and the six armature
 retests pass. Receipts are under `docs/qa-logs/2026-10-03-{proxy-refresh,
 dependencies,launch-memory,led,process,push-hook}/`.
 
-**Next:** freeze the integrated inputs and start the cold engineering build
-in build/m7-generic-x64. ES feature4f54ec035 / QAe6e1e4d0f and splash's
+**Current:** the cold engineering build is running in build/m7-generic-x64
+from frozen distribution503e24e10d, with actual host PID/watcher and retained
+input manifest. **Next:** resolve any build failures, retain the exact artifact
+and run P3 qualification. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
 normal-push/remote-hash receipts. The recipe selects full QA commit
 e6e1e4d0f91e177e182cc05b1cea74991e1cc45b; splash's product pin stays unchanged.
