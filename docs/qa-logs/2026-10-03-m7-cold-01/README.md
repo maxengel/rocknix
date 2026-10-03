@@ -55,3 +55,11 @@ Both emitted image/update SHA256 checks pass, and immutable custody verifies:
 `/workspace/artifacts/rasteratops-candidates/sha256/83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21`.
 `candidate-custody.log` names the bundle. Actual consumed-source inventory
 and the full P3 VM matrix remain; this is not an RC designation.
+
+## Qualification started — 2026-10-03 18:19 UTC
+
+Consumed-source inventory and recovered rclone archive are now retained;
+see `../2026-10-03-m7-qa-01/`. All frozen input hashes and artifact custody
+reverified before the first clean-install/default WebDAV VM run. That run
+is actively supervised with the shared nested-log watcher and host waiter.
+The candidate bytes are unchanged; qualification is in progress, not passed.

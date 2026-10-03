@@ -38,10 +38,14 @@ dependencies,launch-memory,led,process,push-hook}/`.
 **Current:** the cold engineering build completed642/642 tasks and image
 assembly from frozen distribution503e24e10d. The corrected watcher recorded
 rc0. Image/update checksums and immutable candidate-store custody pass.
-**Next:** collect consumed-source inventory and run P3 qualification.
-No build or qualification job is currently active. Notification delivery is
-the separate open #395 follow-up (D-WORKFLOW-143); off-session destination
-selection and proof remain. This does not replace the image qualification work.
+**Current qualification:** the first clean-install/default WebDAV VM suite is
+running from the immutable candidate. Consumed-source inventory is retained
+with no checksum/identity errors; see `docs/qa-logs/2026-10-03-m7-qa-01/`.
+**Next:** consume its result and rerun the corrected archive assertion
+(#396: writer intentionally keeps ROCKNIX for old-reader compatibility),
+then RC2 upgrade and the rest of P3. Twelve suites pass; visual walks remain
+active at18:42UTC. The failure and correction are retained separately. Shared recorder and active waiter are armed under #395; off-session
+destination selection and delivery proof remain (D-WORKFLOW-143).
 #393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
 the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
