@@ -23,8 +23,6 @@ now named **M7: Rasteratops 0.0.1**. D-WORKFLOW-139 and the newly adopted
 number30; the delivery/futro/retro naming references resolve locally.
 
 **Current priority: M7.P1** state/migration/recovery (#365/#356/#320).
-Its strict marker, interrupted-retry and settings-record source fixes now pass;
-the explicit actor/predecessor map and guest-case promotion remain next.
 Then M7.P2 qualified inputs; M7.P3 cold build plus image qualification;
 M7.P4 approved independent fixes audit; M7.P5 separately gated release
 staging. M7.P0 records the tracking-convention prerequisite #388. Open issue
@@ -39,58 +37,8 @@ read back the live result in the same session. Keep this checkpoint and
 secondary plans aligned. Image-only criteria remain open until an engineering
 build provides their proof; they do not prohibit creating that build.
 
-> Saved: 2026-10-03T00:46:32Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T004632Z.md.
-
-## Latest execution — 2026-10-03
-
-The maintainer authorized remaining instruction fixes and continuing M7 toward
-the first branded build. **Source work resumed; no new image has been built.**
-Do not repeat the initial audit, identity migration, workflow cleanup or fixed
-source work below.
-
-- Workflow #389/D-WORKFLOW-140: five delivery/resume/stash skills now reference
-  this fork's actual rules; resume reconciles canonical next and the live
-  milestone and continues already authorized work without a redundant menu.
-  Feature1a2ce256cf → next4b0899328f. Five skill validators/local links, rules,
-  register, work-log index and ceremony gate pass.
-- Migration #356/#365: complete-byte layout1/layout2 validation, a shared
-  marker writer, explicit migration_step_1 and a synchronized local JSON
-  recovery record retain original source paths after pointers advance.
-  Copy/delete/marker failures remain retryable and visible to scan/boot;
-  setup cannot label an unfinished move complete. OAuth token refresh does
-  not invalidate the provider/root fingerprint. The record is not a cloud lock.
-- Twelve unsupported-marker controls fail before and pass after. Nine final
-  copy/delete/marker retry controls fail before and pass after, including
-  retained payloads, retry visibility, safe repeat and an independent follower.
-  All93 focused cases pass. Full host suite:1,367 harness PASS/0 FAIL/0 SKIP,
-  plus those93 cases. #390 repairs C2/LY marker doubles exposed by this change;
-  one actual missing storage-failure reason was also corrected.
-- ES retry UI68e8c7da5 and settings race fix39f888354 are pushed to the fork's
-  test/qa-integration. **Current pin39f8883545537d5274708ea85c4683612078a957**.
-  #320 recordLastGood now locks and revalidates the complete current choice
-  for both load/save; LockBusy recovery records nothing. Both new controls
-  fail before, then all10 cases/119 assertions pass. Image-compiler checks
-  and French msgfmt validation pass. Guest race/byte criteria remain open.
-- Distribution source/evidence feature**d82d40cc7e** → next**a48029fa50**.
-  Exact inputs/receipts: docs/qa-logs/2026-10-03-m7-p1/ and its README.
-  A later checkpoint commit does not change product inputs. Both trees were
-  clean before this checkpoint. No distribution push claimed (#371 remains).
-- Product issues remain open for their image criteria. Source passes do not
-  qualify an image. Numbered actor coverage, actual predecessor partial
-  states, two-guest/provider recovery and frames are not silently completed.
-
-**Next concrete action:** read the appended execution notes in
-`docs/rasteratops/cloud-folder-state-table.md` and `cloud-layout.md`, map the
-remaining actor × state/predecessor cells to assertions, and extend the promoted
-`tools/rasteratops-vm-cloud-epic` with T23 retry/T26 unsupported-marker cases.
-Do not repeat the same unchanged host suite for another green count. Once P1's
-source/coverage prerequisites are explicit, advance to the P2 proxy refresh and
-qualified dependencies. Image-only acceptance stays open for P3 and does not
-forbid creating the engineering build that must provide it.
-
-No build, VM or source-test job is intentionally running. All checks above ended.
-Optional version/scan-pacing questions still do not block the authorized route.
+> Saved: 2026-10-02T23:08:50Z. Branch: feature/conflict-resolution.
+> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261002T230607Z.md.
 
 ## Authorization and worktrees
 
@@ -99,14 +47,14 @@ Optional version/scan-pacing questions still do not block the authorized route.
   those steps without asking again. No publication, personal-cloud writes
   or physical-device actions are authorized by this scope.
 - Main `/workspace/repos/rocknix` stays on `next`. Work here is
-  `/workspace/repos/rocknix.worktrees/conflict-resolution`. Current product
-  source: feature d82d40cc7e, integrated as next a48029fa50. Later stash commits
-  do not change those product inputs; read git log for current HEAD.
+  `/workspace/repos/rocknix.worktrees/conflict-resolution`. Last product
+  source: feature fcd0f20c9a, integrated as next df23faff6c. Later review/stash
+  commits do not change those product inputs; read git log for current HEAD.
   Earlier implementation commits are already integrated: do not repeat them.
 - Integrate new feature commits by cherry-pick into next. Do not merge this
   branch's historical merges or push it: #371's hook defect is still open.
 - ES: `/home/max/Development/emulationstation-next.worktrees/cloud-epic`,
-  39f8883545537d5274708ea85c4683612078a957, pushed to test/qa-integration.
+  97523542963dcc72e9ea51cfbcd26b735ff28c1f, pushed to test/qa-integration.
   Splash: 7450aa8180ae66684814dd460f31eb502b2abf61, pushed to fork.
 - Build tree `/workspace/repos/rocknix.worktrees/generic-x64`, branch
   build/generic-x64 at b2378d9c33. Previously dirty only with generated docs;
@@ -116,23 +64,20 @@ Optional version/scan-pacing questions still do not block the authorized route.
   Use `gh --repo rasteratops/distribution` explicitly. Host jobs are invisible
   in the sandbox PID namespace; inspect/watch in the host namespace.
 
-## Historical readiness review (#385, 2026-10-02)
-
-The source findings below describe that review baseline. #356/#320 are now
-fixed in source as recorded above; their VM criteria remain open.
+## Completed in this review (#385)
 
 - `docs/rasteratops/release-readiness.md` maps original goals, every open
   milestone issue at review, relevant older issues, actual evidence and the
   ordered route. Source/code inspection plus issue histories, decisions,
   audit receipts and the runs95–101 retro expose the omitted structural work.
-- At that review, #356 versioned migration was not implemented: production `fleet_made()`
+- #356 versioned migration is not implemented: production `fleet_made()`
   accepts any `layout=` prefix, marker failure reports success, tiers can
   commit pointers before a later failure. T23 collision refusal is not a
   successful interrupted retry/fleet proof. Corrected a stale function name
   in `docs/rasteratops/cloud-layout.md`; production code unchanged this review.
-- At that review, #320 settings-recovery race remained in pinned ES: recordLastGood after
+- #320 settings-recovery race remains in pinned ES: recordLastGood after
   loadUnderLock returns, including LockBusy. Added bug label and first-release
-  milestone so the bug-only preflight no longer overlooks it. The 2026-10-03 source fix above supersedes this finding.
+  milestone so the bug-only preflight no longer overlooks it. No fix yet.
 - Removed five RC2 bug exceptions from `docs/releases/rc-accept.txt`:
   #310/#327/#332/#352/#353. Historical decisions are retained. #310 memory
   growth needs current mapping/10/50-cycle proof; #327/#332 have later source
@@ -187,28 +132,35 @@ fixed in source as recorded above; their VM criteria remain open.
 
 ## Next steps, in order
 
-Current entrypoints (read the scoped rules before touching them):
+First editing entrypoints (read the scoped rules before touching them):
 
-- #365 coverage: `docs/rasteratops/cloud-folder-state-table.md`, production
-  `cloud_migrate_layout`/`cloud_setup`, `tools/rasteratops-cloud-layout-test`
-  and `tools/rasteratops-vm-cloud-epic`. Host T23/T26 assertions exist and pass;
-  the guest runner still needs their promotion. Keep actor applicability and
-  genuine old-binary limitations explicit; no new per-transfer version probe
-  or fleet-wide upgrade prerequisite was introduced.
-- #320 has its deterministic source tests in ES
-  `es-app/tests/unit/SystemConfTests.cpp`; do not add the same tests again.
-  Host has g++ but no CMake. Verified command from the ES checkout:
-  `g++ -std=c++17 -pthread -Ies-app/tests/unit/fakes -Ies-core/src -Iexternal es-app/tests/unit/SystemConfTests.cpp es-core/src/SystemConf.cpp es-core/src/utils/AtomicFileUtil.cpp -o /tmp/rasteratops-320-tests`.
-  The remaining criterion is a guest race/record-byte proof on the new image.
-- Before-fix distribution control remains `--ref fcd0f20c9a`; the runner must
-  select image rclone1.75.1, not host1.60. Use a fresh --output directory.
-  Results from this session are retained; rerun only for a changed input or
-  an unresolved concern, not because a context reset occurred.
+- #356/#365: `projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout`
+  (`fleet_made`, `write_marker`, apply tier publication), `cloud_setup` (seed
+  marker writer); tests in `tools/rasteratops-cloud-layout-test`, guest proof
+  in `tools/rasteratops-vm-cloud-epic`. Add new assertions before fixing source;
+  `--ref fcd0f20c9a` supplies the pre-fix production scripts to the new tests.
+  Example focused retry baseline, after extending T23's assertions:
+  `tools/rasteratops-cloud-layout-test --case T23 --ref fcd0f20c9a --output /tmp/rasteratops-356-before`.
+  Repeat without `--ref` into a distinct after directory. Its selected rclone
+  must be the image's1.75.1 (the runner prints it), not host1.60.
+- #320: in the ES cloud-epic checkout, production `es-core/src/SystemConf.cpp`
+  and `es-core/src/utils/AtomicFileUtil.{h,cpp}`; deterministic cases in
+  `es-app/tests/unit/SystemConfTests.cpp`, target `es-conf-tests`.
+  This host has g++ but no CMake. From that checkout, the verified standalone
+  compile command (the same source/include inputs as the CMake target) is:
+  `g++ -std=c++17 -pthread -Ies-app/tests/unit/fakes -Ies-core/src -Iexternal es-app/tests/unit/SystemConfTests.cpp es-core/src/SystemConf.cpp es-core/src/utils/AtomicFileUtil.cpp -o /tmp/rasteratops-320-tests`;
+  run `/tmp/rasteratops-320-tests`. The review compiled the existing target
+  to check this entrypoint; #320's new deterministic interleaving cases and
+  failing-before/passing-after evidence remain required. If using CMake in
+  the build environment instead, its configure also needs an explicit
+  RAPIDJSON_INCLUDE_DIR (host headers are absent; the warm build has them).
 
-1. Complete the explicit #365 actor/predecessor map and guest-case promotion
-   for #356/#320. Source fixes and host regressions above are done. Retain
-   independent settings/content choices and identify actual predecessor
-   partial-state coverage. VM-only criteria stay in P3, with issues open.
+1. Finish state/recovery correctness under #356/#365/#320: supported marker
+   versions, numbered steps/journal, failure at tier/marker publication,
+   idempotent retry, second-guest follow, deterministic settings interleaving.
+   Map applicable actor × T01–T25 cells to actual assertions. Do not pretend
+   an unmodified RC2 binary can be taught a future protocol or invent a
+   fleet-wide upgrade prerequisite from D-CLOUD-169.
 2. Complete proxy refresh/preservation #361/#384; reconcile #386 inputs and
    #362; relevant package/host checks. Resolve #310 launch memory and
    #327/#332 software/evidence criteria, #371/#367 host workflow gates.
@@ -239,8 +191,7 @@ Current entrypoints (read the scoped rules before touching them):
 
 ## Jobs, artifacts and remaining cautions
 
-Earlier fresh-agent proof: `docs/qa-logs/2026-10-02-readiness/handoff-proof.md`.
-The current handoff is rechecked under #389 after integration.
+Fresh-agent proof: `docs/qa-logs/2026-10-02-readiness/handoff-proof.md`.
 It recovered the correct next work and verified the key code/receipt claims;
 the entrypoints above incorporate its feedback. #385 is the completed review;
 #383 remains active delivery. The kickoff futro already exists at
@@ -254,7 +205,7 @@ snapshots and exact tracker edit scripts). Earlier source/harness temp:
 
 - RC2 image: /workspace/artifacts/rocknix-images/x64-all-20260929-69e6039f8f/ROCKNIX-GENERIC_X64.x86_64-20260929.img.gz.
 - Run101: /workspace/artifacts/rocknix-images/x64-all-20261002-b2378d9c33/.
-  Its green diagnostics do not qualify the new inputs. Source fixes, including the 2026-10-03 migration and settings changes, have
+  Its green diagnostics do not qualify the new inputs. Source fixes have
   never run together in a branded candidate.
 - Guest d SSH10026/VNC5912, monitor /tmp/rocknix-qemu-monitor-d.sock.
   Read /workspace/tmp/rocknix-session/rebuild-d-plain.sh; replace date-glob

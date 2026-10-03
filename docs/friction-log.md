@@ -80,3 +80,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 00:37 UTC -- strict marker reads exposed test doubles that returned successful empty bytes for a missing file. The full suite failed44 checks (including one real missing storage-failure reason); fixing marker cat/rcat behavior, resets and that reason restored1,367 PASS plus93 focused cases. Guard: tools/last-good-scripts-test C2/LY and tools/rasteratops-cloud-layout-test; issue: #390.
 
 - 2026-10-03 00:43 UTC -- pre-commit rejected a synthetic token-shaped literal in the new retry fixture. Rebuilt that field at runtime with an angle-bracket placeholder and reran the9 retry controls. No real credential was involved. Guard: .githooks/pre-commit; issue: #356.
+
+- 2026-10-03 00:45 UTC -- automatic approval review rejected an integration command with a branch reference, interpreting it as potentially replaying history. Verified the clean next HEAD and both single-commit parents, then integrated only their explicit full hashes successfully. Guard: exact commit IDs plus parent/status verification; issue: #389.
