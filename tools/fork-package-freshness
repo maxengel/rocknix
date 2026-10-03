@@ -22,6 +22,7 @@
 #
 # How "latest" is found, by the host PKG_URL points at:
 #   github.com               the latest release, else the newest release-shaped tag
+#   codeberg.org             the newest stable version among repository tags
 #   download.gnome.org       cache.json, even minor versions only (GNOME stable)
 #   ftp.gnu.org / savannah   the directory listing
 #   webkitgtk.org            the release listing, even minor versions only
@@ -53,6 +54,12 @@ latest_github() {  # <owner/repo>
     v=$(gh api "repos/$1/releases/latest" --jq .tag_name 2>/dev/null | tag_version | release_only)
     [ -n "$v" ] && { echo "$v"; return; }
     gh api "repos/$1/tags?per_page=50" --jq '.[].name' 2>/dev/null | tag_version | release_only | newest
+}
+latest_codeberg() {  # <owner/repo>
+    local tags
+    tags=$(curl -fsSL --max-time 30 "https://codeberg.org/api/v1/repos/$1/tags?limit=50" 2>/dev/null) || return 1
+    python3 -c 'import json, sys; print("\n".join(tag["name"] for tag in json.load(sys.stdin)))' <<<"$tags" 2>/dev/null \
+        | tag_version | release_only | newest
 }
 latest_gnome() {  # <module>
     curl -fsSL --max-time 30 "https://download.gnome.org/sources/$1/cache.json" 2>/dev/null | python3 -c '
@@ -137,6 +144,7 @@ while read -r d; do
             *dotat.at/*)                    latest=$(latest_listing "$(dirname "$eurl")/" "$name")
                                             [ -n "$latest" ] || latest=$(latest_github fanf2/unifdef) ;;   # dotat.at is often down; same author, same tags
             *github.com/*)                  latest=$(latest_github "$(github_repo "$eurl")") ;;
+            https://codeberg.org/*)         latest=$(latest_codeberg "$(sed -nE 's#^https://codeberg\.org/([^/]+/[^/]+).*#\1#p' <<<"$eurl")") ;;
         esac
         if [ -z "$latest" ]; then
             if [ -n "$pinned" ]; then verdict="PINNED: $pinned (latest not resolvable)"
