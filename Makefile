@@ -165,6 +165,10 @@ docker-%: INTERACTIVE=$(shell [ -t 0 ] && echo "-it")
 # By default pass through anything after `docker-` back into `make`
 docker-%: COMMAND=make $*
 
+# Record from outside Docker so a container exit cannot erase its monitor.
+# Direct native scripts use the same runner; nested builds inherit its run.
+docker-%: BUILD_WATCH=$(if $(filter shell clean distclean package-clean update kconfig-%,$*),,./tools/watch-build --docker --)
+
 # If the user issues a `make docker-shell` just start up bash as the shell to run commands
 docker-shell: COMMAND=bash
 
@@ -192,4 +196,4 @@ docker-%:
 	rm -f .env && [ ! -e .env ] || { echo "an older .env cannot be removed: no container started" >&2; exit 1; }; \
 	trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
 	( umask 077 && set -C && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
-	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e BUILDER_NAME=rasteratops-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)
+	BUILD_DIR=$(DOCKER_WORK_DIR) $(BUILD_WATCH) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e RASTERATOPS_BUILD_RUN -e BUILDER_NAME=rasteratops-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)

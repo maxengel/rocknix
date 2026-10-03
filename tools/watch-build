@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""Run one build with private durable logs and the shared watch-job monitor.
+
+Entrypoints use --entry; nested scripts reuse the outer run, including across
+the Docker mount. No command arguments or environment values are recorded.
+"""
+import argparse
+import datetime
+import fcntl
+import os
+from pathlib import Path
+import selectors
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import uuid
+
+
+def atomic(path, text):
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_text(text)
+    temporary.replace(path)
+
+
+def active_run(root, relative):
+    run = root / relative
+    if not relative.startswith('.build-runs/') or '..' in Path(relative).parts:
+        raise RuntimeError('invalid inherited run path')
+    status = run / 'build.status'
+    text = status.read_text()
+    try:
+        interval = int((run / 'watcher.interval').read_text())
+    except ValueError:
+        raise RuntimeError('invalid inherited watcher interval')
+    if interval < 1 or time.time() - status.stat().st_mtime > max(90, 2 * interval + 5):
+        raise RuntimeError('inherited watcher heartbeat is stale')
+    if not any(text.startswith('state:       ' + s + '\n') for s in ('running', 'stalled')):
+        raise RuntimeError('inherited watcher is not active')
+    if (run / 'build.rc').exists():
+        raise RuntimeError('inherited build has already finished')
+    return run
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--entry', action='store_true')
+    parser.add_argument('--docker', action='store_true', help='observe the host worktree, not its container path')
+    parser.add_argument('--interval', type=int, default=5)
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command
+    if command and command[0] == '--':
+        command = command[1:]
+    if not command or args.interval < 1:
+        parser.error('a command and positive interval are required')
+    root = Path.cwd().resolve()
+    environment = os.environ.copy()
+    if args.entry:
+        environment['RASTERATOPS_WATCH_EXEC'] = command[0]
+    inherited = environment.get('RASTERATOPS_BUILD_RUN')
+    if inherited:
+        active_run(root, inherited)
+        os.execvpe(command[0], command, environment)
+
+    build_umask = os.umask(0o077)
+    runs = root / '.build-runs'
+    runs.mkdir(exist_ok=True, mode=0o700)
+    lock = (runs / 'active.lock').open('a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise RuntimeError('another monitored build owns this worktree')
+    name = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:8]
+    run = runs / name
+    run.mkdir(mode=0o700)
+    environment['RASTERATOPS_BUILD_RUN'] = str(run.relative_to(root))
+    (run / 'build.pid').write_text(str(os.getpid()) + '\n')
+    (run / 'watcher.interval').write_text(str(args.interval) + '\n')
+    (run / 'build.start').write_text(datetime.datetime.now(datetime.timezone.utc).isoformat() + '\n')
+    source = Path(__file__).resolve().with_name('watch-job')
+    shutil.copyfile(source, run / 'watch-job')
+    (run / 'watch-job').chmod(0o500)
+    print(f'watch-build: recording in {run}', file=sys.stderr, flush=True)
+
+    # BUILD_DIR can move native build roots; Docker's host wrapper observes
+    # the mounted worktree, even when its container path is different.
+    activity_root = root if args.docker else Path(environment.get('BUILD_DIR', str(root)))
+    log = (run / 'build.log').open('wb', buffering=0)
+    errors = (run / 'watcher.err').open('wb', buffering=0)
+    monitor = subprocess.Popen([
+        str(run / 'watch-job'), '--log', str(run / 'build.log'),
+        '--rc', str(run / 'build.rc'), '--status', str(run / 'build.status'),
+        '--pid', str(os.getpid()), '--activity-root', str(activity_root),
+        '--interval', str(args.interval)], stdout=subprocess.DEVNULL,
+        stderr=errors, start_new_session=True)
+    (run / 'watcher.pid').write_text(str(monitor.pid) + '\n')
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            active_run(root, environment['RASTERATOPS_BUILD_RUN'])
+            break
+        except (OSError, RuntimeError):
+            if monitor.poll() is not None or time.monotonic() > deadline:
+                if monitor.poll() is None:
+                    monitor.terminate()
+                    monitor.wait(timeout=5)
+                atomic(run / 'runner-error', 'watcher failed to arm; command was not started\n')
+                raise RuntimeError(f'watcher failed to arm; see {run}')
+            time.sleep(.025)
+
+    child = None
+    interrupted = None
+
+    def forward(signum, _frame):
+        nonlocal interrupted
+        interrupted = signum
+        if child is not None and child.poll() is None:
+            os.killpg(child.pid, signum)
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, forward)
+    code = 125
+    try:
+        child = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, start_new_session=True,
+                                 preexec_fn=lambda: os.umask(build_umask))
+        (run / 'command.pid').write_text(str(child.pid) + '\n')
+        if interrupted is not None:
+            os.killpg(child.pid, interrupted)
+        selector = selectors.DefaultSelector()
+        selector.register(child.stdout, selectors.EVENT_READ)
+        console = True
+        while selector.get_map():
+            for key, _ in selector.select(timeout=1):
+                data = os.read(key.fd, 65536)
+                if not data:
+                    selector.unregister(key.fileobj)
+                    break
+                log.write(data)
+                if console:
+                    try:
+                        sys.stdout.buffer.write(data)
+                        sys.stdout.buffer.flush()
+                    except BrokenPipeError:
+                        # Losing a console reader must not lose the durable log.
+                        console = False
+        child.wait()
+        code = child.returncode if child.returncode >= 0 else 128 - child.returncode
+    except OSError as error:
+        log.write(f'watch-build: command launch/output failed: {error}\n'.encode())
+        if child is not None and child.poll() is None:
+            os.killpg(child.pid, signal.SIGTERM)
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait()
+    finally:
+        atomic(run / 'build.rc', str(code) + '\n')
+        log.close()
+    try:
+        monitor_code = monitor.wait(timeout=args.interval + 10)
+    except subprocess.TimeoutExpired:
+        monitor.terminate()
+        monitor_code = monitor.wait(timeout=5)
+    errors.close()
+    status = (run / 'build.status').read_text()
+    if monitor_code != 0 or not status.startswith('state:       finished\n'):
+        atomic(run / 'runner-error', 'build result retained, but watcher did not record completion\n')
+        print(f'watch-build: monitoring failed; see {run}', file=sys.stderr)
+        return code or 125
+    return code
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        print(f'watch-build: {error}', file=sys.stderr)
+        sys.exit(2)

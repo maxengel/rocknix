@@ -11,14 +11,14 @@ Use the existing Blitterbot identity; never print or request credentials.
 
 The user asked **"can we proceed with our M7 plan?"** Continue execution,
 not another readiness review or status-only response. The comprehensive review
-and initial audit are complete. The cold branded engineering image finished16:33UTC on2026-10-03, rc0.
-It is retained and checksum-verified; no VM qualification or RC is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
+and initial audit are complete. No combined branded image exists and no RC
+is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
 ## Binding order and naming — #388/#389
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: completed image awaiting qualification**;
+complete; P1 source complete; **P2 source gate complete; P3 current: cold build running**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T165225Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T163226Z.md.
+> Saved: 20261003T141032Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T141032Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -121,7 +121,7 @@ Distribution feature commits integrated onto `next` by exact cherry-picks:
 Frozen build source is published next503e24e10dde6a59aa6c631f789b88b89f8e92e1
 (feature pin commit3c6ee8e94eee55a69a8ea54c6730e316924c6c6c). Normal hooks and
 remote readbacks pass. Later documentation commits must not advance or mutate
-the frozen build worktree; its exact source stays503e24e10d. Inspect live
+the running build worktree; its exact source stays503e24e10d. Inspect live
 HEAD/status on primary/feature for documentation progress. Integrate exact new
 single commits, never the feature's historical merges. Preserve unrelated work.
 
@@ -158,24 +158,23 @@ pins with stated reasons. Future release/device/personal-cloud gates remain.
 
 ## Immediate next actions
 
-1. The build has completed: read `build.rc` (0) and terminal `build.status`
-   under `/workspace/tmp/rasteratops-m7-cold-01/`. Builder3863117 and
-   watcher4085803 have exited. A terminal status stops its heartbeat normally;
-   do not diagnose this as a dead watcher or relaunch the build.
-2. #393 watcher correctness and #394 automatic future-build routing have
-   passing controls and are being integrated/published. Future native/Docker
-   entrypoints use `tools/watch-build`; the current image keeps frozen503e.
-   Check git/remote delivery rather than assuming this checkpoint's commit.
-3. Verify the retained artifact bundle below. Collect actual consumed-source/
-   download inventory, then execute M7.P3 in the live body's order: clean/RC2
-   upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
-   identity/licence proof. Run image QA from the frozen checkout, with the
-   explicit ES_SRC/RETROARCH_SRC values below.
+1. Read `/workspace/tmp/rasteratops-m7-cold-01/build.status`, its mtime,
+   `build.rc` if present and the latest `build.log` tail. Verify buildPID3863117
+   and watcher3863200 in the **host** namespace (sandbox ps cannot see them).
+   Build is already running; do not launch a second or change its worktree.
+2. If failed/died/stalled, inspect exact thread logs and any download error;
+   fix the actual cause under #383 (or a specific issue). Preserve this attempt,
+   source manifest and logs; never overwrite the frozen inputs or failed result.
+   Do not edit a launcher while it runs. Source changes need new frozen inputs.
+3. After successful image creation, collect actual consumed-source inventory,
+   retain image/assets in candidate-store and verify exact manifest/digests.
+   Execute M7.P3 in the live body's order: clean/RC2 upgrade, full suites and
+   opt-ins, provider/pair/recovery, memory/UI/timing/identity/licence proof.
 4. Run approved P4 fixes review through Facilitator, primary+Fable5.1/xhigh.
    Initial #375/#382 is complete; do not restart it. Resolve findings and
    rebuild/requalify affected product bytes before any RC claim.
 
-## Completed cold engineering build — M7.P3, qualification remains
+## Active cold build — M7.P3, no candidate yet
 
 `/workspace/repos/rocknix.worktrees/m7-generic-x64`, branchbuild/m7-generic-x64,
 is frozen at503e24e10dde6a59aa6c631f789b88b89f8e92e1. Cold root
@@ -185,16 +184,8 @@ root copied or renamed. The launched script is a run-owned immutable copy,
 
 - Run `/workspace/tmp/rasteratops-m7-cold-01/` owns `inputs.json`, `build.start`,
   `build.pid`, `build.log`, `build.rc` (on exit), `build.status`/`.err`.
-- BuildPID3863117 finished16:33:39UTC with rc0; watcher4085803 recorded
-  finished/rc0 at16:34:02UTC and exited. Old watcher3863200 was replaced
-  at16:27UTC under #393 after mistaking buffered package output for inactivity.
-  The run-owned `/workspace/tmp/rasteratops-m7-cold-01/watch-job-393` observed
-  actual package logs. Its immutable deployed version is retained separately
-  from the final shared tool, which also discovers new build roots for #394.
-  Controls:28 watcher +34 automatic-runner PASS; actual pinned Docker smoke
-  at a different mount path PASS; normal hook controls PASS. Receipts:
-  `docs/qa-logs/2026-10-03-watch-job/`.
-  Automatic chat notification is unarmed. No automatic QA continuation exists.
+- BuildPID3863117, host watcher3863200,30s heartbeat. At14:08UTC status running,
+  progress63/642, no exit result. These are snapshot facts; read current files.
 - Input SHA25624116729b3610411fe5ba89543cf10db98b11cb9ca8afc3cbf0ef61f08640459;
   1,608 recipes and6,606 tracked build-input hashes. Full read-only manifest:
   `/workspace/artifacts/rasteratops-build-inputs/m7-cold-01/inputs.json` (same
@@ -211,16 +202,9 @@ root copied or renamed. The launched script is a run-owned immutable copy,
 - Global24jobs, WebKit-j4. Preflight13:56UTC READY:about40GiB available,
   8GiB swap unused,1.9TiB disk free. Frozen upstream remains
   9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
-- All6,606 frozen source hashes reverified unchanged after watcher replacement.
-  Build HEAD remains503e24e10d. The build has generated one tracked change:
-  `documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md`.
-  Preserve it; do not mistake this generated output for an edited build input.
-- Engineering image and update tar exist, each about2GiB. Their emitted
-  SHA256 files verify against actual bytes. Candidate-store also verified all
-  copied bytes in immutable bundle:
-  `/workspace/artifacts/rasteratops-candidates/sha256/83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21`.
-  It embeds the full frozen input inventory. Post-build consumed source/
-  download inventory and all image QA remain owed. Custody is not an RC claim.
+- No image or candidate-store bundle exists yet. Post-build consumed source/
+  download inventory is owed. The watcher records outcome; it does not fix
+  failures or automatically launch QA. No silent QA continuation is claimed.
 
 Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
 retains unrelated generated emulator-support doc and ignored warm diagnostic
@@ -232,7 +216,7 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-No diagnostic test loop, cold builder or watcher remains active; all ended.
+No diagnostic test loop remains active; only the cold build/watcher above.
 No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
 
@@ -244,7 +228,7 @@ only after verifying its clean HEAD is the pinned e6e1e4d0f91e177e182cc05b1cea74
 if it moved, use a source checkout of that exact pin. Both are existing supported
 runner overrides. Compare source identities to the manifest before accepting
 host-side suites; keep VM image digest checks separate. No QA has run on the
-new engineering image yet.
+unbuilt candidate yet.
 
 Candidate evidence required in live M7 P3:15 default VM suites plus link/RA
 opt-ins, clean install/RC2 upgrade, WebDAV/S3/pair migration, independently

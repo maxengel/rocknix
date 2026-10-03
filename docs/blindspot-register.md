@@ -1179,3 +1179,20 @@ helper of `cloud_migrate_layout` (`list_or_stop`, `has_files`, `has_entries`,
 inside `$(...)`, and a case feeds `--state` and `--join` a listing under
 `/ROCKNIX` that fails and asserts they end non-zero and state nothing (both
 fail against the tool before the fix).
+
+
+## 73. A monitor observed package completion instead of build activity (2026-10-03)
+
+The M7 cold build watcher reported stalled at636/642 because its aggregate
+log had not changed for20minutes. WebKit was writing a separate package log
+and four compiler processes were busy. The watcher heartbeat was healthy;
+its observation target was incomplete. A correct recorder attached by hand
+also did not ensure that the next build would use it (#393, #394).
+
+**Guard:** `tools/watch-job --activity-dir` observes actual package logs and
+separates overall completion from package progress. `tools/watch-build`
+automatically wraps native/Docker entrypoints and discovers cold build roots;
+nested calls reuse one private run. `.github/workflows/fork-checks.yml` runs
+lifecycle and entrypoint controls, including buffered-output and removed-hook
+failing controls. A suspected stall is no-log activity, not proof that a
+linker is hung; recorded status still does not deliver a notification.
