@@ -1,0 +1,9 @@
+RAM    62347MB total, 13946MB used, 48400MB available
+Swap   8191MB total, 8191MB used, 0MB free
+Disk   1.8T free of 3.6T  (not the usual limit)
+
+  SWAP EXHAUSTED: 0MB of 8191MB free. There is no cushion;
+    the next spike is an OOM kill rather than a slowdown. To reclaim it:
+      sudo swapoff -a && sudo swapon -a     # needs 8191MB of free RAM
+
+Worth clearing the above first; a build that finishes beats one that is fast.

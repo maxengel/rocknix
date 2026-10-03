@@ -20,7 +20,7 @@ remain open, including a replacement image for missing policy files (#397). Work
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: replacement image for #397/#401; matrix, host and production memory complete**;
+complete; P1 source complete; **P2 source gate complete; P3 current: host correction qualification and production memory; guest matrix249/0 complete**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -32,57 +32,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T210154Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T210154Z.md.
-
-## Current replacement build — #397/#401, 2026-10-03 20:59UTC
-
-Published source is feature7f439463b7 / next134e89c4fcb08581f1c831229167364828a37e27.
-The dedicated build/m7-generic-x64 was intentionally fast-forwarded to that
-published next only after the original6,606 input hashes verified. Its one
-generated emulator-support document was copied/hashed and preserved. The
-original503e immutable candidate and input inventory remain untouched.
-
-**Replacement build COMPLETE at21:01:38UTC, rc0:** owner
-`/workspace/tmp/rasteratops-m7-replacement-01/`; waiter84075 finished,
-runner2127103/watcher2127120 exited. All642 tasks and assembled policy/content
-byte checks passed. Immutable new bundle:
-`/workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5/`.
-Image SHA25688afd2ac9720bcdf14cde20cc5814733b339be87b76aa3c4a16d3c0439240abc.
-Receipts `docs/qa-logs/2026-10-03-m7-replacement-01/`.
-
-**ACTIVE replacement default/upgrade QA since21:02:57UTC:** owner
-`/workspace/tmp/rasteratops-m7-replacement-qa-01/`, immutable run.sh and
-check-payload.py, waiter43904, runner2258294/watcher2258295. Shared status
-in the frozen build tree `.build-runs/20261003T210257Z-d8c294b9/build.status`;
-console owner/console.log, test logs owner/artifacts. Independent owned pair
-and backend directories. All15 default suites, then clean payload/policy
-readback, RC2 upgrade and upgraded payload/policy readback, then custody
-verification. No other a/b guest or endpoint work until it exits. Exact
-ES_SRC/RETROARCH_SRC/QA_SYSTEM_ROOT and harness hashes are in run.sh.
-Check status within60s; five-second recorder, suspected inactivity5min;
-announce failures/terminal before unrelated work. No disconnected alert.
-
-Input manifest SHA2569da8a37468c3b65490cde4c88c8f8e611718ea9e853337fa35ad4cac0aee8315
-records6,611 file hashes plus180 raw symlink targets, including root
-LICENSE.md/TRADEMARK.md and watcher entrypoints. Read-only copy:
-`/workspace/artifacts/rasteratops-build-inputs/m7-replacement-01/inputs.json`.
-Same ES/splash/container/global24/WebKit4 inputs. Cached replacement uses
-the original cold root, explicitly cleaning rclone and invalidating the
-image stamp; no old diagnostic root copied. Actual containerab84957fd9d9,
-user1000:1000, expected main.git/source-cache mounts, receipt owner/container.json.
-Preflight sees48GiB available/no guests; historical8GiB swap full is recorded.
-Only lightweight package/image rebuilding expected, no C++ input changes.
-
-Earlier20:59:30 launcher exited1 before output mutation because Path.readlink
-normalized a trailing slash in its comparison. Raw os.readlink comparison
-corrects that preflight; original script/log preserved. An earlier inventory
-attempt encountered an existing broken symlink; final manifest records all
-symlink targets, hashing file contents where present. No source changed.
-
-Next: observe active default/upgrade QA, then affected WebDAV/S3
-interruption/retry and remaining P3 proofs. Custody is verified before/after
-QA; retain all original failure reports. No RC claim. Do not move this new frozen build HEAD for documentation.
-#402/#403/#404/#405 closed from published evidence, live readbacks verified.
+> Saved: 20261003T204355Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T204355Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -217,22 +167,32 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The completed guest-d matrix/memory and active replacement QA are detailed here. Product work remains P3 image
+The completed guest-d matrix and active memory job are detailed below. Product work remains P3 image
 qualification and the #397 replacement, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
 ## Immediate next actions
 
-1. Observe replacement default/upgrade QA above; its explicit frozen134e89 inputs supersede
-   the historical503e build checkout, not the retained503e artifact/evidence.
-2. Retain and qualify replacement clean/default, RC2 upgrade and affected
-   content/link cases. Remaining archives/pending awards/UI/timing/identity
-   gates stay open. RA fixture and off-session notification questions await reply.
-3. Run approved P4 fixes review through Facilitator, primary+Fable5.1/xhigh.
-   Initial #375/#382 is complete. Resolve findings and rebuild/requalify any
-   affected product bytes before an RC claim. P5 remains separately gated.
+1. The build has completed: read `build.rc` (0) and terminal `build.status`
+   under `/workspace/tmp/rasteratops-m7-cold-01/`. Builder3863117 and
+   watcher4085803 have exited. A terminal status stops its heartbeat normally;
+   do not diagnose this as a dead watcher or relaunch the build.
+2. #393 watcher correctness and #394 automatic future-build routing are
+   delivered with passing controls. Future native/Docker entrypoints use
+   `tools/watch-build`; the current image keeps frozen503e. Terminal status
+   wording was corrected after the fresh resume proof; final result readback
+   at16:59:43UTC used short-lived recorder48573 and explicitly states that
+   the heartbeat stops normally. It is no longer running.
+3. Default suites and RC2 upgrade passed as detailed below. Monitor production memory below, complete source delivery, then replacement image and remaining P3 cases.
+   Artifact and source inventory verification passed. Continue M7.P3 in the live body's order: clean/RC2
+   upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
+   identity/licence proof. Run image QA from the frozen checkout, with the
+   explicit ES_SRC/RETROARCH_SRC values below.
+4. Run approved P4 fixes review through Facilitator, primary+Fable5.1/xhigh.
+   Initial #375/#382 is complete; do not restart it. Resolve findings and
+   rebuild/requalify affected product bytes before any RC claim.
 
-## Candidate QA — completed matrix/host/memory results (#383 / #395)
+## Candidate QA — completed matrix/host results and active memory (#383 / #395)
 
 Default run ended18:51UTC:14PASS/one host assertion FAIL; all16 walks and
 frame comparison pass. #396 corrected the test's expectation: new writer
@@ -272,7 +232,7 @@ hashes and retained launch inputs. Frames remain under the owner's artifacts.
 Only selected H/L frames visually inspected so far; do not equate all249
 assertions with full language/resolution visual qualification.
 #404 fixes the old frame-count glob after the harness exited; actual H/A/L
-counts5/8/16, before0/3 correct and after3/3. Published in feature7f439463b7 / next134e89c4fc; #404 closed.
+counts5/8/16, before0/3 correct and after3/3. Source is included with this checkpoint; verify publication before freezing.
 
 **Host regression02 COMPLETE at20:47:25UTC:**1373 broad+322 layout PASS,
 0FAIL/0SKIP, terminal rc0. Owner `/workspace/tmp/rasteratops-m7-content-host-02/`,
@@ -283,16 +243,22 @@ literal-copy assertion failure is retained. Six complete content-script
 inactivity/progress checks now run in the standard suite. Receipts:
 `docs/qa-logs/2026-10-03-content-network/host-after/`.
 
-**Production memory/sign-in COMPLETE at20:56:03UTC:** owner
-`/workspace/tmp/rasteratops-m7-production-memory-01/`; waiter5744 finished rc0,
-runner2058906/watcher2058978 and owned guest exited. Virgl10 VmSize0KiB/RSS620KiB;
-software10 0/52KiB; software50 exit-sync 0/1228KiB. Five warmups, unchanged
-strict1024/2048KiB limits, fixed ES PID and actual exits. All55 sync stamps
-unique/successful.30s sign-in page load passes, peak combined RSS292788KiB;
-this is not provider authentication/redirect evidence. Prior launcher errors
-(--gl software, then absent config directory) occurred after successful phases;
-all original logs remain. Receipts: `docs/qa-logs/2026-10-03-production-memory/`.
-No parallel guest-d restriction remains from this completed job.
+**ACTIVE production memory sync/sign-in since20:46:45UTC:** owner
+`/workspace/tmp/rasteratops-m7-production-memory-01/`; waiter5744,
+runner2058906/watcher2058978; status
+`.build-runs/20261003T204645Z-887b88b3/build.status`.
+Fresh16GiB guest d, key under owner/pair, SSH10026, monitor/serial-d sockets,
+640x480 canonical profile. No parallel guest-d access or endpoint reset.
+Virgl10 passed after warmup5: VmSize0KiB/RSS+620KiB. Software10 passed0/52KiB.
+Both earlier launchers finished rc1 only after those results: first an
+unsupported --gl software value (use none), then a missing fresh rclone
+config directory. Originals and successful phase receipts are preserved.
+Immutable memory-sync-continue.sh validates qemu-args, creates the config
+parent, uses shipped cloud defaults and a separate WebDAV fixture, then
+runs software50 with exit sync and30s sign-in-page load/memory. Limits remain
+1024KiB VmSize/2048KiB RSS, five warmups, fixed ES PID and actual emulator
+exit. Every exit-sync cycle must have a new success stamp. Cleanup stops
+only its owned guest and endpoint. Do not edit its tools while running.
 
 Check every active status/log within60s and announce failures or terminal
 results before unrelated work. For process checks use the host namespace
@@ -322,21 +288,24 @@ that does not excuse missing inactivity bounds. Content scripts call rclone
 directly with30s I/O timeout/ten SDK retries and only probe network after
 nonzero return. Saves/settings already have progress-sensitive bounded_rclone.
 Fix content inactivity without ending long progressing transfers; inspect
-cancellation, partial accounting and sibling listings. A shared progress-sensitive copy/sync guard is published in feature7f439463b7 / next134e89c4fc. Both actual copy-call sets pass18/18
+cancellation, partial accounting and sibling listings. A shared progress-sensitive copy/sync guard is prepared in the working
+tree (included with this checkpoint; publication readback precedes the new freeze). Both actual copy-call sets pass18/18
 controls after vs12/18 before, including candidate BusyBox; full-script
 checks add6/6. It preserves progressing long transfers/cancellation and
 fails closed when its guard cannot be created. The real scan
-failure sentence is also corrected for the outcome vocabulary. Full host rerun02 passed and source is published; replacement proof remains. Baseline/filtered live guest evidence is retained under
+failure sentence is also corrected for the outcome vocabulary. Full host rerun02 above passed; source delivery and replacement proof remain. Baseline/filtered live guest evidence is retained under
 `docs/qa-logs/2026-10-03-content-network/`.
 **Fixture #402:** pagination RCLONE_S3_LIST_CHUNK=1 now makes an actual
 S3 cut land at20:17:22. The unchanged guest ends1 after43.1s, keeps stamps,
 and retries all24 systems/BIOS. Overall rc1: the now-reached failure sentence
-violates the outcome vocabulary (#401). That sentence is corrected in published source; real rebuilt proof is owed. Before/after fixture controls6/7
+violates the outcome vocabulary (#401). That sentence is corrected in the
+working tree; real rebuilt proof is owed. Before/after fixture controls6/7
 then7/7, including completed-before-cut failing. Owned S3 pair stopped.
 #403 corrects host discovery that ignored branded roots, with explicit
 QA_SYSTEM_ROOT and fail-closed missing/unusable inputs: old0/8, current8/8.
 #405 corrects signin-memory help printing Python imports; both help flags
-now show usage, runtime unchanged. These source changes are published; #402/#403/#404/#405 are closed. No memory tool is running.
+now show usage, runtime unchanged. These source changes are included with this checkpoint; verify actual branch delivery.
+Do not edit signin-memory while the memory continuation may invoke it.
 
 RA preflight is a pending fixture dependency: live dedicated QA account
 already earned Tobu achievement100359; hardcore unearned but current routed
@@ -353,8 +322,8 @@ adds only policy installation to image assembly; staged bytes/modes and
 missing-input failure controls pass4/4. Root LICENSE.md and TRADEMARK.md must
 be included in the next explicit input inventory. A replacement retained
 image with clean/upgrade readback is still owed; do not mark the old image
-qualified. Preserve its bundle, input manifest and receipts. The replacement build worktree is now frozen134e89; the original503e bundle
-and input manifest remain retained, and generated documentation was preserved.
+qualified. Preserve its bundle, input manifest and receipts. Frozen build
+worktree remains503e, with its generated emulator-support document preserved.
 
 #396 host-only correction is feature96ccdb16e5 / next4f0dcdfcaf, published.
 It has16/16 assertion controls (original14/16), and full VM proof above.
@@ -362,8 +331,8 @@ This does not change the frozen image or justify redoing unrelated source work.
 Current next also retains watcher/runner controls32+35PASS. Off-session
 notification #395 remains open, distinct from completed recorder #393/#394.
 
-After replacement qualification: RA opt-in, archives/pending awards,
-timing and EN/FR640x480/Nova1280x960 identity/UI. Production memory/page-load passed.
+After the active jobs and tracked corrections: RA opt-in, archives/pending awards,
+production memory/sign-in/timing and EN/FR640x480/Nova1280x960 identity/UI.
 Collect concrete failures, apply qualified fixes to a new image, renew affected
 proof, then approved P4. Never start a second pair/reset the active endpoint.
 
@@ -377,8 +346,7 @@ is provenance, not a publication corresponding-source/licence gate pass.
 ## Completed cold engineering build — M7.P3, qualification remains
 
 `/workspace/repos/rocknix.worktrees/m7-generic-x64`, branchbuild/m7-generic-x64,
-was originally frozen at503e24e10dde6a59aa6c631f789b88b89f8e92e1; the replacement
-section above records its intentional advance. Cold root
+is frozen at503e24e10dde6a59aa6c631f789b88b89f8e92e1. Cold root
 `build.RASTERATOPS-GENERIC_X64.x86_64` was created at14:02UTC. No warm build
 root copied or renamed. The launched script is a run-owned immutable copy,
 `/workspace/tmp/rasteratops-m7-cold-01/build.sh`, validated against the manifest.
@@ -412,7 +380,7 @@ root copied or renamed. The launched script is a run-owned immutable copy,
   8GiB swap unused,1.9TiB disk free. Frozen upstream remains
   9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
 - All6,606 frozen source hashes reverified unchanged after watcher replacement.
-  At cold completion HEAD was503e24e10d. That build generated one tracked change:
+  Build HEAD remains503e24e10d. The build has generated one tracked change:
   `documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md`.
   Preserve it; do not mistake this generated output for an edited build input.
 - Engineering image and update tar exist, each about2GiB. Their emitted
@@ -431,7 +399,8 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-Those old diagnostic jobs and the later production-memory guest have ended.
+Those old diagnostic jobs have ended. The production-memory guest above is active; do not stop
+them as stale diagnostic processes.
 No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
 
@@ -461,7 +430,7 @@ contribution is prepared but not submitted; acceptance does not hold the build.
 
 Harness scope clarification: the completed all-suite run used the frozen
 checkout plus pinned ES_SRC/RETROARCH_SRC, because it executes host source
-suites. Corrected round-trip, S3, completed link runs and the completed guest matrix and completed memory run intentionally
+suites. Corrected round-trip, S3, completed link runs and the completed guest matrix and current memory run intentionally
 use the feature host harness, with exact retained harness.sha256 checked
 before launch, against the unchanged candidate. They run no host source
 suites, so those source overrides are unnecessary. Do not rerun an obsolete
