@@ -9,7 +9,7 @@ The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
 is the binding **current** execution order (D-WORKFLOW-139, #388). This document
 retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
 P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P2 integration/input freeze. Update the milestone and affected open issue titles
+Current priority is M7.P3 input freeze/cold engineering build. Update the milestone and affected open issue titles
 when priorities change; issue numbers are references, not queue positions.
 
 **Verdict: not ready to call a build an RC.** Source/diagnostic preparation
@@ -33,14 +33,14 @@ and guest menu reselection pass. Process/hook controls and the six armature
 retests pass. Receipts are under `docs/qa-logs/2026-10-03-{proxy-refresh,
 dependencies,launch-memory,led,process,push-hook}/`.
 
-**Next:** finish normal distribution push proof and evidence integration,
-respect the pending explicit ES publication approval, pin its qualified
-QA commit e6e1e4d0f91e177e182cc05b1cea74991e1cc45b, freeze inputs and start
-the cold engineering build in build/m7-generic-x64. Build scripts are prepared;
-no build is running. Splash's instruction-only push is separately pending;
-its product pin is unchanged. Then run P3 artifact checks and the already
-approved P4 fixes review. The milestone and canonical saved session carry
-live hashes/job state. No RC2 waiver or image acceptance is inferred here.
+**Next:** freeze the integrated inputs and start the cold engineering build
+in build/m7-generic-x64. ES feature4f54ec035 / QAe6e1e4d0f and splash's
+instruction-only530b334 are published after explicit owner approval, with
+normal-push/remote-hash receipts. The recipe selects full QA commit
+e6e1e4d0f91e177e182cc05b1cea74991e1cc45b; splash's product pin stays unchanged.
+Freshness recheck exits0. Then run P3 artifact checks and the already approved
+P4 fixes review. The milestone and canonical checkpoint carry live job state.
+The audit cadence is due and remains unwaived; no RC claim is made.
 
 **Historical review below:** all tables, numbered gaps and diagnostics below
 record the2026-10-02 baseline. Their then-open source tasks are superseded by
