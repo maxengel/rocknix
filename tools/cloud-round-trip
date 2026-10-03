@@ -1489,8 +1489,8 @@ echo "${saw:-0}/${all:-0}"
     # FROM THIS DEVICE will apply is what this asserts. The script is resolved
     # BEFORE /etc/profile is sourced, because the profile rewrites PATH and
     # would drop the --path-prefix directory; the profile is sourced at all
-    # because the script itself does, and its globs are built on OS_NAME,
-    # which an ssh session does not have.
+    # because the script itself does. Archive suffixes are a persisted
+    # compatibility contract, independent of the displayed OS_NAME (#396).
     finder = finder_cmd       # module-level since the KILL cells use it too
     newest_cmd = finder('"$(command -v backuptool)"')
     newest = dev.run(newest_cmd, check=False).strip()
@@ -1504,13 +1504,16 @@ echo "${saw:-0}/${all:-0}"
     # The device's name sits between the stamp and ROCKNIX (2026-09-08): two
     # handhelds' archives used to be told apart by nothing.
     label = dev.run("cloud_device_id --label 2>/dev/null || true").strip()
-    osn = os_name(dev)
+    # New archives must remain readable by older ROCKNIX images (#376).
+    # Do not derive the expected writer suffix from the displayed OS name,
+    # or from the writer itself: either would miss a compatibility regression.
+    archive_osn = "ROCKNIX"
     named = bool(label) and re.fullmatch(
-        rf"\d{{4}}_\d{{2}}_\d{{2}}-\d{{6}}-{re.escape(label)}-{re.escape(osn)}_SETTINGS\.tar\.gz",
+        rf"\d{{4}}_\d{{2}}_\d{{2}}-\d{{6}}-{re.escape(label)}-{archive_osn}_SETTINGS\.tar\.gz",
         os.path.basename(newest)) is not None
     failures += not check(named,
-                          f"the archive is named for this device, between the date and {osn} ({label or 'no label'})",
-                          f"the archive does not carry this device's name between the date and {osn}: "
+                          f"the archive is named for this device, between the date and {archive_osn} ({label or 'no label'})",
+                          f"the archive does not carry this device's name between the date and {archive_osn}: "
                           f"{os.path.basename(newest) or 'none'} (label {label or 'none'})")
     # In the MIDDLE, so that the finder every image already carries --
     # *-ROCKNIX_SETTINGS.tar.gz -- still matches. The installed backuptool is
@@ -1525,7 +1528,7 @@ echo "${saw:-0}/${all:-0}"
                           f"not {os.path.basename(newest) or 'none'}")
     # Every device in the field has archives from before names carried a
     # device. A newer one of those must still be found.
-    legacy = f"{os.path.dirname(newest) if newest else f'{root}/backup'}/2099_12_31-235959-{osn}_BACKUP.zip"
+    legacy = f"{os.path.dirname(newest) if newest else f'{root}/backup'}/2099_12_31-235959-{os_name(dev)}_BACKUP.zip"
     dev.run(f": > {shlex.quote(legacy)}")
     found = dev.run(newest_cmd, check=False).strip()
     dev.run(f"rm -f {shlex.quote(legacy)}")

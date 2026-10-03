@@ -18,7 +18,7 @@ It is retained and checksum-verified; no VM qualification or RC is claimed. Work
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: first clean-install/default VM qualification running**;
+complete; P1 source complete; **P2 source gate complete; P3 current: completed image awaiting qualification**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T184200Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T174627Z.md.
+> Saved: 20261003T174627Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T170052Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -165,8 +165,8 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The first QA run below is active. Product work remains P3 image
-qualification, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
+No build or QA run is active. Product work remains P3 source inventory and
+image qualification, then P4. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
 ## Immediate next actions
@@ -181,61 +181,14 @@ create its own qualified image before any named migration/device action.
    wording was corrected after the fresh resume proof; final result readback
    at16:59:43UTC used short-lived recorder48573 and explicitly states that
    the heartbeat stops normally. It is no longer running.
-3. Consume the active default-suite result below. Artifact and source inventory
-   verification passed. Continue M7.P3 in the live body's order: clean/RC2
+3. Verify the retained artifact bundle below. Collect actual consumed-source/
+   download inventory, then execute M7.P3 in the live body's order: clean/RC2
    upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
    identity/licence proof. Run image QA from the frozen checkout, with the
    explicit ES_SRC/RETROARCH_SRC values below.
 4. Run approved P4 fixes review through Facilitator, primary+Fable5.1/xhigh.
    Initial #375/#382 is complete; do not restart it. Resolve findings and
    rebuild/requalify affected product bytes before any RC claim.
-
-## Active candidate QA — #383 / #395
-
-Started2026-10-03T18:19:10Z. Owner directory:
-`/workspace/tmp/rasteratops-m7-qa-01/`. Main runner389728, watcher389734,
-QEMU guest a390564 / b390590. Read the actual PID/status before acting.
-Host execution session33776 is the active waiter in this conversation;
-`write_stdin` returns suite results. Also read the recorder within60s:
-`.build-runs/20261003T181910Z-797780a0/build.status` under that owner directory.
-It checks nested QA logs every5s and suspects inactivity after5min. Report
-suite failures/stale monitoring/stalls/completion immediately. Do not confuse
-quiet summary output with a quiet suite. No off-session alert is configured.
-
-Run-owned immutable `runner/watch-build`, `runner/watch-job` and
-`default-vm-qa.sh` wrap the frozen checkout's actual `tools/vm-qa`, all15
-default WebDAV suites. Both guests booted503e24e10d with virgl; the clean-boot
-frame was black only from screensaver and the inert shift wake showed the
-carousel, verified visually. No guest bug or RC pass inferred from boot.
-Report/logs are under:
-`artifacts/rocknix-images/qa-503e24e10d-webdav-a-20261003-1819/`.
-At18:42UTC twelve suites pass; round-trip failed one assertion because it
-expected the displayed RASTERATOPS suffix instead of the deliberately
-persisted ROCKNIX writer suffix (#396). Visual walks remain active. Feature
-harness fix has16PASS/0FAIL controls (frozen source14PASS/2FAIL); rerun the
-whole round-trip on the unchanged candidate after this suite releases its
-guests/endpoint. Read current report rather than assuming this snapshot phase. Cleanup stops owned guests and endpoint.
-
-VM disks live in `pair/` on workspace disk, not tmpfs; QA key matches the
-harness's `/tmp/rocknix-vm-pair/qa-key`. Isolated endpoint state is `cloud/`.
-All subsequent commands must use those same explicit environment values,
-which are in the immutable launcher. Do not reset that endpoint or start
-another pair while this run is active. After completion, retain results, rerun the corrected archive harness, and
-continue RC2 upgrade, then remaining P3 matrix. P4 waits for qualification.
-
-Watcher extension source is feature68c6772a6d / next7bae7e1728, normally
-pushed and remotely verified;32 watcher+35 runner controls PASS. A deliberate
-exit7 was delivered through the active waiter and recorded correctly.
-Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/`. No product pin moved.
-
-Source inventory:568 unpacked roots,547 cache inputs,17 local/generated,
-three parent-source packages, one prebuilt rclone. Zero checksum/identity
-errors after classification. Rclone's recipe deletes its ZIP; recovered the
-same pinned archive and matched its binary to the actual unpacked binary.
-Inventory and supplemental recovery receipt are read-only at:
-`/workspace/artifacts/rasteratops-build-inputs/m7-cold-01-consumed/7736dfcc2065d979b7cf090e361e430efbd4af1c22dba17a60bbceed611d0b8b/`.
-The original input manifest and candidate bundle are unchanged. This is
-post-build provenance, not a completed publication source bundle/licence gate.
 
 ## Completed cold engineering build — M7.P3, qualification remains
 
@@ -281,7 +234,8 @@ root copied or renamed. The launched script is a run-owned immutable copy,
   SHA256 files verify against actual bytes. Candidate-store also verified all
   copied bytes in immutable bundle:
   `/workspace/artifacts/rasteratops-candidates/sha256/83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21`.
-  It embeds the full frozen input inventory. Post-build source/cache inventory is retained below; image QA is in flight. Custody is not an RC claim.
+  It embeds the full frozen input inventory. Post-build consumed source/
+  download inventory and all image QA remain owed. Custody is not an RC claim.
 
 Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
 retains unrelated generated emulator-support doc and ignored warm diagnostic
@@ -293,8 +247,7 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-Those old diagnostic jobs have ended. The new candidate QA runner, watcher
-and guests below are active; do not stop them as stale diagnostic processes.
+No diagnostic test loop, cold builder or watcher remains active; all ended.
 No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
 
@@ -305,7 +258,8 @@ wrapper-test's default still searches old warm roots. Set
 only after verifying its clean HEAD is the pinned e6e1e4d0f91e177e182cc05b1cea74991e1cc45b;
 if it moved, use a source checkout of that exact pin. Both are existing supported
 runner overrides. Compare source identities to the manifest before accepting
-host-side suites; keep VM image digest checks separate. The first default QA run below uses these exact paths.
+host-side suites; keep VM image digest checks separate. No QA has run on the
+new engineering image yet.
 
 Candidate evidence required in live M7 P3:15 default VM suites plus link/RA
 opt-ins, clean install/RC2 upgrade, WebDAV/S3/pair migration, independently
