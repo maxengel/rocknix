@@ -29,6 +29,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: identify upstream history for the fork issue-coverage check
+        run: git fetch --no-tags https://github.com/ROCKNIX/distribution.git next:refs/remotes/upstream/next
       - name: work-log index is current
         run: ./tools/work-log-index --check
       - name: decision register is a lookup table

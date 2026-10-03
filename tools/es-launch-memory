@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""Measure EmulationStation launch/exit memory on an owned local QA VM (#310).
+
+Uses ES's launch API and the image's execute_kill function. Captures status,
+maps and smaps after every cycle; refuses a changed ES PID or a lost launch.
+It does not provision ROMs, change settings or enable cloud synchronization.
+Omit memory limits for diagnosis; supply both limits for an acceptance run.
+"""
+import argparse
+import csv
+import json
+import re
+import shlex
+import subprocess
+import time
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--port', type=int, default=10026)
+    parser.add_argument('--process-name', default='emulationstation',
+                        help='pgrep name expression (override only for instrumented diagnostics)')
+    parser.add_argument('--identity', required=True)
+    parser.add_argument('--rom', default='/storage/roms/gb/Ninoid.gb')
+    parser.add_argument('--cycles', type=int, required=True)
+    parser.add_argument('--warmup', type=int, default=0)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--max-vmsize-kib', type=int)
+    parser.add_argument('--max-rss-kib', type=int)
+    parser.add_argument('--expect-exit-sync', action='store_true',
+                        help='require a new successful exit-sync stamp on every cycle')
+    parser.add_argument('--prepare-walk', type=Path,
+                        help='optional VM UI walk before each launch (e.g. original diagnostic navigation)')
+    parser.add_argument('--monitor', help='QEMU monitor required with --prepare-walk')
+    args = parser.parse_args()
+    if args.cycles < 1 or args.warmup < 0:
+        parser.error('cycles must be positive and warmup nonnegative')
+    if (args.max_vmsize_kib is None) != (args.max_rss_kib is None):
+        parser.error('acceptance requires both memory limits')
+    if args.prepare_walk and not args.monitor:
+        parser.error('--prepare-walk requires --monitor')
+    args.output.mkdir(parents=True, exist_ok=False)
+    ssh = ['ssh', '-n', '-i', args.identity, '-p', str(args.port),
+           '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+           '-o', 'StrictHostKeyChecking=accept-new',
+           '-o', f'UserKnownHostsFile={args.output}/known_hosts',
+           '-o', 'LogLevel=ERROR', 'root@127.0.0.1']
+
+    def guest(command):
+        result = subprocess.run(ssh + [command], text=True, capture_output=True, timeout=40)
+        if result.returncode:
+            raise RuntimeError(f'guest command failed with status {result.returncode}')
+        return result.stdout
+
+    def wait_for(command, predicate, description, seconds=90):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if predicate(guest(command)):
+                return
+            time.sleep(0.5)
+        raise RuntimeError(f'timed out waiting for {description}')
+
+    idle = 'curl -sS -m 3 http://127.0.0.1:1234/isIdle || true'
+    def is_idle(text):
+        try:
+            return json.loads(text) == [True]
+        except ValueError:
+            return False  # the interface may still be starting
+    running = "pgrep -f '^/usr/bin/retroarch' || true"
+    if guest(running).strip():
+        raise RuntimeError('a game is already running')
+    wait_for(idle, is_idle, 'idle interface')
+    pid_command = 'pgrep -o -- ' + shlex.quote(args.process_name)
+    pid = guest(pid_command).strip()
+    if not pid.isdigit():
+        raise RuntimeError('no unique interface PID')
+    filtered = "grep -v -i -E 'key|pass|token|user|psk'"
+    (args.output / 'os-release.txt').write_text(guest(f'cat /etc/os-release | {filtered}'))
+    (args.output / 'binary.sha256').write_text(guest('sha256sum /usr/bin/emulationstation'))
+    (args.output / 'mesa.sha256').write_text(guest('sha256sum /usr/lib/libgallium-*.so'))
+    (args.output / 'rom.sha256').write_text(guest('sha256sum ' + shlex.quote(args.rom)))
+    (args.output / 'settings.txt').write_text(guest(
+        '. /etc/profile >/dev/null 2>&1; '
+        'for setting in cloudsaves.startup cloudsaves.gameexit global.retroachievements '
+        'global.retroachievements.offlineproxy; do '
+        'printf "%s=" "$setting"; get_setting "$setting"; done | ' + filtered))
+    rows = []
+
+    def snapshot(iteration):
+        if guest(pid_command).strip() != pid:
+            raise RuntimeError('interface PID changed; this cannot prove bounded growth')
+        status = ''
+        for kind in ('status', 'maps', 'smaps'):
+            text = guest(f'cat /proc/{pid}/{kind} | {filtered}')
+            (args.output / f'{iteration:03d}.{kind}').write_text(text)
+            if kind == 'status':
+                status = text
+        (args.output / f'{iteration:03d}.threads').write_text(
+            guest(f'cat /proc/{pid}/task/*/comm | {filtered}'))
+        fields = {}
+        for name in ('VmSize', 'VmRSS', 'Threads'):
+            match = re.search(rf'^{name}:\s+(\d+)', status, re.M)
+            if not match:
+                raise RuntimeError(f'missing {name} in process status')
+            fields[name] = int(match.group(1))
+        row = [iteration, pid, int(time.time()), fields['VmSize'], fields['VmRSS'], fields['Threads']]
+        rows.append(row)
+        with (args.output / 'cycles.csv').open('w') as stream:
+            writer = csv.writer(stream)
+            writer.writerow(['cycle', 'pid', 'epoch', 'vmsize_kib', 'vmrss_kib', 'threads'])
+            writer.writerows(rows)
+        print(','.join(map(str, row)), flush=True)
+
+    snapshot(0)
+    stamp_command = "cat /storage/.cache/cloud_sync/last-sync-exit 2>/dev/null || true"
+    for iteration in range(1, args.warmup + args.cycles + 1):
+        wait_for(idle, is_idle, 'idle interface')
+        previous_stamp = guest(stamp_command).strip() if args.expect_exit_sync else None
+        if args.prepare_walk:
+            with (args.output / f'{iteration:03d}.walk.log').open('w') as stream:
+                subprocess.run([str(Path(__file__).resolve().with_name('vm-visual-qa')),
+                                '--monitor', args.monitor, 'run', str(args.prepare_walk),
+                                '--outdir', str(args.output / f'{iteration:03d}-walk')],
+                               stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=90)
+        guest('curl -fsS -m 10 -X POST -H "Content-Type: text/plain" --data ' +
+              shlex.quote(args.rom) + ' http://127.0.0.1:1234/launch')
+        wait_for(running, lambda text: bool(text.strip()), 'RetroArch process')
+        time.sleep(3)
+        # execute_kill kills ES when no emulator exists, so check at the call.
+        exit_status = guest("pgrep -f '^/usr/bin/retroarch' >/dev/null || exit 9; "
+              "bash -c 'DEBUG=false; log() { :; }; "
+              'eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"; execute_kill\'; result=$?; printf \"%s\\n\" \"$result\"')
+        # killall can return nonzero for another named process after killing
+        # RetroArch. Retain that status; the observed exit is the assertion.
+        print(f'exit-helper return={exit_status.strip()}', flush=True)
+        wait_for(running, lambda text: not text.strip(), 'RetroArch exit')
+        wait_for(idle, is_idle, 'interface return')
+        if args.expect_exit_sync:
+            wait_for(stamp_command,
+                     lambda text: bool(text.strip()) and text.strip() != previous_stamp,
+                     'a new exit-sync stamp')
+            stamp = guest(stamp_command).strip()
+            (args.output / f'{iteration:03d}.exit-sync').write_text(stamp + '\n')
+            fields = stamp.split()
+            if len(fields) < 3 or fields[1:3] != ['0', 'completed']:
+                raise RuntimeError(f'exit sync did not complete on cycle {iteration}')
+        time.sleep(3)
+        snapshot(iteration)
+    baseline, last = rows[args.warmup], rows[-1]
+    result = {'pid': int(pid), 'cycles': args.cycles, 'warmup': args.warmup,
+              'vmsize_growth_kib': last[3] - baseline[3],
+              'rss_growth_kib': last[4] - baseline[4]}
+    if args.max_vmsize_kib is not None:
+        result['passed'] = (result['vmsize_growth_kib'] < args.max_vmsize_kib and
+                            result['rss_growth_kib'] < args.max_rss_kib)
+    (args.output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    print(json.dumps(result), flush=True)
+    return 0 if result.get('passed', True) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

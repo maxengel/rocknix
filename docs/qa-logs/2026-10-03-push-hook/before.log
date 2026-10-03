@@ -1,0 +1,11 @@
+FAIL published history merged into existing branch: exit=1, expected=allow
+✖ pre-push (HEAD): a commit in this push adds a credential-shaped line:
+    00b270a:fixture:1: +[REDACTED]
+✗ pre-push: refusing to push HEAD. Placeholders belong in <angle brackets>; a real value, and a listed word, have to come out of history before this pushes.
+PASS new credential at tip: exit=1, expected=refuse
+PASS new credential removed at tip: exit=1, expected=refuse
+FAIL unrelated remote cannot exempt unpublished origin history: exit=0, expected=refuse
+
+PASS new credential in commit message: exit=1, expected=refuse
+PASS clean new branch: exit=0, expected=allow
+PASS unreadable range: exit=1, expected=refuse

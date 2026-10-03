@@ -16,6 +16,7 @@
 #   tools/ceremony-check            # report; exit 1 when something is overdue
 #   tools/ceremony-check --gate     # the same, terse, for the push guard
 #   tools/ceremony-check --no-gh    # without the tracker (audits and closures come from gh)
+#   tools/ceremony-check --issues-only # only next's commit-to-issue coverage
 #
 # The cadences are the constants below (D-QA-040 is the maintainer's call on
 # them). The clock starts at SINCE: nothing before it is demanded, so the
@@ -30,6 +31,7 @@
 #   weekly    docs/work-logs/<yyyy_mm>-work_logs/<yyyy>-W<ww>-summary.md
 #   monthly   docs/work-logs/<yyyy_mm>-work_logs/SUMMARY.md
 #   index     tools/work-log-index --check
+#   issues    fork commits on next after D-WORKFLOW-132 cite an issue
 #   hygiene   no issue closed as completed since the clock carries an open checkbox (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   rules     tools/rules-check --quiet (the instruction files, D-WORKFLOW-045)
@@ -57,6 +59,7 @@ FRICTION_ISSUE_DAYS = 3            # a friction entry gets an issue (or a guard)
 WEEKLY_GRACE_DAYS = 2              # the week's summary by Tuesday
 MONTHLY_GRACE_DAYS = 3             # the month's summary by the 3rd
 GUARD_FROM = 52                    # blindspot entries from this number on must name a guard
+ISSUE_BASELINE = 'bf121ce8766258c06765d230d7a18efd23809ef1'  # D-WORKFLOW-132, #367
 
 
 def sh(cmd, timeout=120):
@@ -109,7 +112,43 @@ def last_marker(days, word, folder):
     return best
 
 
+def issue_coverage(ref='next', baseline=ISSUE_BASELINE, upstream='upstream/next'):
+    """Check post-adoption fork commits, including merge messages; fail closed."""
+    for name in (ref, baseline, upstream):
+        rc, _, _ = sh(['git', 'rev-parse', '--verify', name + '^{commit}'])
+        if rc:
+            return False, 'cannot resolve required history: ' + name
+    rc, _, _ = sh(['git', 'merge-base', '--is-ancestor', baseline, ref])
+    if rc:
+        return False, 'issue-policy baseline is not an ancestor of ' + ref
+    rc, adopted, _ = sh(['git', 'show', '-s', '--format=%ct', baseline])
+    if rc or not adopted.isdigit():
+        return False, 'cannot read issue-policy adoption time'
+    rc, text, _ = sh(['git', 'log', baseline + '..' + ref, '--not', upstream,
+                      '--format=%H%x00%ct%x00%B%x00'])
+    if rc:
+        return False, 'cannot read fork commit messages on ' + ref
+    fields = text.split('\0')
+    missing = []
+    checked = 0
+    for i in range(0, len(fields) - 1, 3):
+        if i + 2 >= len(fields) or not fields[i + 1].isdigit():
+            return False, 'could not parse fork commit history'
+        if int(fields[i + 1]) < int(adopted):
+            continue  # old feature history merged later predates the policy
+        checked += 1
+        if not re.search(r'#[1-9][0-9]*\b', fields[i + 2]):
+            missing.append(fields[i].strip()[:12])
+    if missing:
+        return False, 'fork commits without an issue citation: ' + ', '.join(missing)
+    return True, '%d post-adoption fork commits on %s cite an issue' % (checked, ref)
+
+
 def main():
+    if '--issues-only' in sys.argv:
+        ok, message = issue_coverage()
+        print(('ok' if ok else 'FAIL') + ' issues: ' + message)
+        return 0 if ok else 1
     gate = '--gate' in sys.argv
     use_gh = '--no-gh' not in sys.argv
     # CEREMONY_TODAY=<yyyy-mm-dd> moves the clock, for proving a gate fires (the guard's positive)
@@ -121,6 +160,11 @@ def main():
 
     def report(ok, name, text):
         lines.append('%s  %-9s %s' % ('ok  ' if ok else 'DUE ', name, text))
+
+    ok, message = issue_coverage()
+    report(ok, 'issues', message)
+    if not ok:
+        overdue.append(('block', 'issues: ' + message))
 
     # 1. mini-retro: every RETRO_ACTIVE_DAYS active days
     # A heading counts as a retro when it *is* one -- it begins with the

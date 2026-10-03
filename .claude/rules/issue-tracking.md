@@ -104,11 +104,19 @@ before, the proofs that gate a candidate lived as session scripts outside the
 tree, and the session had loaded 17 of the 29 rules stale from a worktree 813
 commits behind `next` (#367).
 
-**What no tool checks yet.** `tools/ceremony-check` reads the ceremonies'
-artifacts on their cadence. It does not read whether the work in flight has an
-owner, and it read nothing overdue on the night the drift above was real. A
-check for the part a tool can see (a commit on `next` that cites no issue) is
-proposed on #367; until it lands, this paragraph is the whole enforcement.
+**What the tool checks.** `tools/ceremony-check` has a blocking `issues` line:
+fork commits on `next` made after the policy's adoption in `bf121ce876` must
+cite `#N` in their subject or body, including merge commits. It excludes
+upstream history and older feature commits inherited by a later merge; it
+fails closed when required history is missing. `--issues-only` runs this
+check by itself. The fork CI fetches upstream's history for that comparison;
+this does not merge or advance the distribution's frozen ancestry (#367).
+
+**What no tool checks yet.** A citation does not prove that its issue existed
+before the work or owns that work. Logging friction when it happens, recording
+the VM question before a test, and amending a rule when practice moves still
+depend on following these instructions. A green ceremony check proves only
+its named predicates.
 
 ## A criterion is agent-first (D-QA-044)
 
