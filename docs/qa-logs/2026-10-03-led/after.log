@@ -1,0 +1,15 @@
+PASS max: all eight brightness files = 255
+PASS mid: all eight brightness files = 128
+PASS min: all eight brightness files = 32
+PASS unset custom RGB: actual helper writes white at saved min
+PASS explicit custom RGB tuple preserved
+PASS off clears every brightness and color
+PASS battery 75% Discharging: saved min and expected color
+PASS battery 25% Discharging: saved min and expected color
+PASS battery 35% Discharging: saved min and expected color
+PASS battery 15% Discharging: saved min and expected color
+PASS battery 50% Charging: saved min and expected color
+PASS battery 98% Charging: saved min and expected color
+PASS battery 5% Discharging: saved min and expected color
+PASS critical battery: five min-brightness/on and zero/off pairs
+14 PASS, 0 FAIL

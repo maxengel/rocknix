@@ -6,7 +6,7 @@
 # Simple script to set led brightness and rgb color based on
 # brightness and rgb values from emulation station
 
-LED_PATH="/sys/devices/platform/"
+LED_PATH="${LED_PATH:-/sys/devices/platform/}"
 
 function led_brightness() {
   n=1

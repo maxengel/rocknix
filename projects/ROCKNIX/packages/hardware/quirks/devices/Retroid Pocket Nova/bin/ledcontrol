@@ -8,7 +8,7 @@
 # (fork #332's first criterion); on the device it is the platform's.
 LED_PATH="${LED_PATH:-/sys/devices/platform/}"
 
-# The six LEDs' brightness, 0-255 (the colour stays in multi_intensity).
+# The eight LEDs' brightness, 0-255 (the colour stays in multi_intensity).
 function led_brightness_all() {
   n=1
   while [ "$n" -lt 5 ]; do
@@ -60,7 +60,7 @@ case ${1} in
   ;;
   brightness)
     # LED BRIGHTNESS (max|mid|min): the case the row called and nothing
-    # answered (fork #332). Written to the six LEDs whatever the colour
+    # answered (fork #332). Written to the eight LEDs whatever the colour
     # case, and remembered for the next rgb with no colour set.
     led_brightness_all "$(brightness_value "${2}")"
     set_setting led.brightness ${2}
