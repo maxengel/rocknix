@@ -202,6 +202,17 @@ if [ -n "${DEVICE}" ] && [ -d "${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/files
   done
 fi
 
+# Keep the fork's approved identity terms with its artwork in SYSTEM (#397).
+# Install the authoritative files at image assembly time so a text change
+# cannot be hidden by an unchanged package build stamp.
+if [ "${DISTRONAME}" = "RASTERATOPS" ]; then
+  for policy in LICENSE.md TRADEMARK.md; do
+    install -D -m 0644 "${ROOT}/${policy}" \
+      "${INSTALL}/usr/share/licenses/rasteratops/${policy}" \
+      || die "Unable to install Rasteratops identity policy: ${policy}"
+  done
+fi
+
 # Replace placeholders with values in install script to eMMC
 if [ -f ${INSTALL}/usr/bin/install2emmc ]; then
   sed -e "s%@SYSTEM_SIZE@%${SYSTEM_SIZE}%g" \

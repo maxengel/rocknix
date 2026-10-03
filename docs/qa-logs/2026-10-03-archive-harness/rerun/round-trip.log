@@ -1,0 +1,181 @@
+
+=== device reachable and equipped
+    PASS  ssh works
+    PASS  rclone and cloud scripts present
+
+=== point the device at the QA bucket
+    PASS  first remote is 'qa-cloud', which is what the scripts will use
+    scratch tree /storage/cloud-qa (pass --real-roms to use /storage/roms)
+    SAVES_REMOTE /Rasteratops/Saves on the webdav endpoint
+
+=== plant fixtures
+    PASS  fixtures written
+
+=== saves back up to the cloud
+    PASS  a restore with no Saves folder in the cloud is a truthful empty (0 + the offer) or fails with its own code, never a sentinel
+    PASS  all 9 fixtures reached the bucket
+    PASS  the allowlist kept excluded files out of the cloud
+
+=== a second backup replaces several saves at once
+    PASS  the second backup completed (exit 0)
+    PASS  all 9 replaced saves came back from the cloud as the new bytes
+
+=== saves restore from the cloud
+    PASS  local copies removed before restore
+    PASS  all 9 files restored byte-identical
+
+=== the settings archive round-trips
+    PASS  the settings backup archive reached the cloud
+    PASS  the settings backup exited 0 and ended on Completed.
+    PASS  the archive is filed under this device (GENERIC-X64-15ca35b6b4)
+    PASS  the settings restore exited 0
+    PASS  the archive came back byte-identical
+    PASS  and the restorer said it fell back to the newest archive overall
+
+=== a changed archive of the same size still reaches the cloud
+    PASS  the second archive replaced the first in the cloud
+
+=== retention removes only archives carrying this device's name, and restore prefers them
+    PASS  the upload ran (exit 0)
+    PASS  this device's archives were trimmed to CLOUD_BACKUP_KEEP=3, oldest first
+    PASS  another device's archive and both pre-label shapes were left alone
+    PASS  restore brought back this device's newest, not the other device's newer archive
+    PASS  with none of its own, restore took the newest overall
+    PASS  and the log named the device that made it
+
+=== ROMs and BIOS back up a system directory
+    PASS  vectrex is offered as a content directory
+    PASS  all 3 content files reached the cloud
+
+=== a user's own rule sits above the catch-all and keeps its file off the cloud
+    PASS  the backup with a user rule completed (exit 0)
+    PASS  the user rule sits above the catch-all in the merged file (lines 6 < 99)
+    PASS  the excluded file stayed home while the ordinary save travelled
+
+=== an edited RCLONEOPTS without --filter-from still keeps the allowlist
+    PASS  the backup with a bare RCLONEOPTS completed (exit 0)
+    PASS  the file outside the allowlist stayed home while the save travelled
+    PASS  the log says the allowlist was added
+    PASS  a restore with a bare RCLONEOPTS left the cloud-side non-save in the cloud (exit 0)
+    PASS  a user's own --filter-from is honoured and nothing is added over it
+
+=== the transfer lock is free the moment a run returns, and no child of a run can hold it
+    PASS  no command cloud_backup starts under the lock sees its descriptor (0 of 4)
+    PASS  no command cloud_restore starts under the lock sees its descriptor (0 of 4)
+    PASS  the lock is free the moment the run returns (FREE rc=0)
+
+=== a settings-only backup with nothing on the device to send is skipped, and says so once
+    PASS  the settings phase says it was skipped and the summary agrees: SKIPPED - NOTHING TO SEND YET
+    PASS  and the saves line says the phase was skipped, not COMPLETED
+    PASS  the settings stamp still describes the last upload that happened (1791053607 0)
+
+=== changing the cloud folder moves the settings folder beside it, and the layout counts as current
+    PASS  the three folders are siblings under the new root
+    PASS  a settings backup ran without the nesting warning (exit 0)
+    PASS  the archive landed under /QA-Custom/Backups/GENERIC-X64/
+    PASS  the migration check calls the chosen sibling layout current
+
+=== a cloud with no saves folder yet is empty, not broken; a wrong root still fails
+    PASS  root present, Saves absent: exit 0, the plain line, and the offer
+    PASS  root absent: the restore fails (exit 3) and offers nothing
+    PASS  a root-level saves folder on an empty cloud: exit 0 and the offer names it
+    PASS  Savez beside Saves: exit 0, the offer carries the near name, the line names both
+    PASS  a missing folder near nothing gets the plain offer
+
+=== ROMs and BIOS restore it
+    PASS  local content removed before restore
+    PASS  all 3 content files restored byte-identical
+
+=== --all restores every system and BIOS, each a unit of its own
+    PASS  --all exited 0
+    PASS  the BIOS file came down with --all
+    PASS  and vectrex's 3 files, byte-identical
+    PASS  each announced as a unit, numbered across the run (announced vectrex|1|2, bios|2|2)
+
+=== a save file inside a system directory does not reach the ROMs and BIOS tier
+    PASS  the ROM reached the content tier
+    PASS  the save file was correctly withheld from content
+
+=== a sync-conflict artifact is carried by no tier, in either direction
+    PASS  the ordinary ROM reached the content tier
+    PASS  the conflicted copy was withheld from the cloud
+    PASS  the Syncthing conflict file was withheld
+    PASS  --list-sizes ignores conflict artifacts
+
+=== gamelist.xml moves with game content, newest-first, in its own pass
+    PASS  the ROM reached the content tier
+    PASS  the gamelist reached the cloud in its own pass
+    PASS  --selected announced every unit it moved, numbered across the run (announced vectrex|1|1)
+    PASS  the restore ran (the removed ROM is back)
+    PASS  a newer local gamelist survived the restore
+
+=== a second cloud sync while one runs is refused, exits 75, and stamps nothing
+    PASS  the test could hold the lock itself
+    PASS  the second sync exited 75 (EX_TEMPFAIL, the lock sentinel)
+    PASS  and said another sync was running
+    PASS  the refusal: no developer words on the 0 card-visible line(s) or the outcome line ("Skipped: another cloud sync is already running. Try again when it's do")
+    PASS  the refusal: the outcome line is one of the three outcome words ("Skipped: another cloud sync is already running. Try again when it's do")
+    PASS  no last-run stamp was written for work that did not happen
+
+=== a --recent sync with nothing changed leaves the remote alone
+    PASS  the recent sync exited 0
+    PASS  rclone was given a recency window and told not to list the remote
+    PASS  and found nothing to move
+    PASS  no probe and no tidy round trips were made
+
+=== a --recent sync after one save is written pushes that file
+    PASS  the new save reached the bucket
+    PASS  and it was the only file transferred
+
+=== a changed save of the same size still reaches the cloud (#315)
+    PASS  the same-size change reached the bucket as the new bytes
+
+=== with no network the exit sync returns 69 at once and stamps nothing
+    PASS  exit 69 (EX_UNAVAILABLE, the no-network sentinel) with no default route
+    PASS  and it answered in under two seconds
+    PASS  no last-run stamp was written for work that did not happen
+    PASS  the no-network skip: no developer words on the 0 card-visible line(s) or the outcome line ("Skipped: there's no network connection. Try again when you're online.")
+    PASS  the no-network skip: the outcome line is one of the three outcome words ("Skipped: there's no network connection. Try again when you're online.")
+
+=== every EmulationStation system path is carried by exactly one tier
+    PASS  every ES path outside /storage/roms is in the settings backup
+
+=== the settings archive is a tar archive named for this device, and every reader finds it
+    PASS  newest archive is a tar.gz (2026_10_03-145410-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz)
+    PASS  the archive passes tar integrity
+    PASS  the archive is named for this device, between the date and ROCKNIX (GENERIC-X64)
+    PASS  the installed image's own backuptool finds the same archive
+    PASS  a newer archive under the pre-label name is still found
+
+=== content transfers honour the system selection
+    PASS  selection persisted as ['vectrex']
+    PASS  an unselected system was not uploaded
+    PASS  --selected announced the selected units and only those, numbered across the run (announced vectrex|1|1)
+    PASS  --match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included (announced vectrex|1|2, ghost-never-a-system|2|2)
+    PASS  and said so for the system that already matches
+
+=== a system this device cannot run is marked unsupported
+    PASS  the unrunnable system is flagged 0 (unsupported)
+    PASS  the scan says what a copy each way would move, in files and bytes
+    PASS  under ROMs alone the game list is neither sized nor counted
+    PASS  under game content the game list is sized on each side and never counted as moving
+
+=== a scan the cloud refused exits with rclone's code and lists nothing
+    PASS  the stanza's endpoint is the dead port 9011
+    PASS  the scan exited 5 with no system lines
+    PASS  with the stanza restored the scan lists systems again (exit 0)
+
+=== seeding is idempotent and never clobbers an existing note
+    PASS  a second seeding run reports the folders present
+    PASS  the owner's note survived a second seeding
+
+=== an older config's keys are carried across (D-UI-022, A12)
+    PASS  every old key reached its new name with its value
+
+=== one last-known-good of every record, and no writer's litter, after the suite
+    PASS  one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 7 last-* stamps, 0 capture line(s), 0 manifest; 1 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 1 settings file(s)
+
+=== clean up root@127.0.0.1 port 10022
+    scratch tree and bucket emptied; the device's own remote, paths and settings-backup setting restored
+
+PASSED
