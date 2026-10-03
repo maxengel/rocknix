@@ -1,0 +1,32 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/conflict-resolution/.build-runs/20261003T232307Z-b142ead9
+PASS candidate bundle /workspace/artifacts/rasteratops-candidates/sha256/87b8c01d65dc22b4f29049bd0d69307a59c14c16f5223534e95058b2234ca5cd
+Image resized.
+No errors were found on the image.
+31689/262144 = 12.09% allocated, 0.00% fragmented, 0.00% compressed clusters
+Image end offset: 2077425664
+[W][23:23:16.607606] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:23:16.607638] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~23s
+PASS exact replacement02 BUILD_ID
+PASS actual packaged modules, no source override
+PASS packaged detector recognizes Rasteratops
+PASS canonical account path is discovered without override
+PASS reopen 1 retains all predecessor cache rows
+PASS reopen 1 retains all predecessor pending rows
+PASS reopen 1 retains base/subset award mapping
+PASS reopen 1 retains synthetic cached sign-in
+PASS reopen 2 retains all predecessor cache rows
+PASS reopen 2 retains all predecessor pending rows
+PASS reopen 2 retains base/subset award mapping
+PASS reopen 2 retains synthetic cached sign-in
+Traceback (most recent call last):
+  File "/storage/.cache/m7-proxy-runtime/guest-proof.py", line 21, in <module>
+    check(image_cache.resolve_cached_static_asset('/Badge/old.png').read_bytes()==(root/'static/Badge/old.png').read_bytes(),'legacy unsharded image path remains readable')
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'read_bytes'
+
+Traceback (most recent call last):
+  File "/workspace/tmp/rasteratops-m7-proxy-runtime-02/host-proof.py", line 20, in <module>
+    assert r.returncode==0,r.returncode
+           ^^^^^^^^^^^^^^^
+AssertionError: 1

@@ -1,0 +1,28 @@
+This device stores:
+  saves    qa-cloud:/ROCKNIX/Saves
+  backups  qa-cloud:/ROCKNIX/Backups
+
+The current layout is:
+  saves    qa-cloud:/Rasteratops/Saves
+  backups  qa-cloud:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa-cloud:/ROCKNIX/Saves  ->  qa-cloud:/Rasteratops/Saves
+
+Now using /Rasteratops/Backups for your settings backups.
+>>> unit SAVES|1|1
+Copying saves...
+>>> doing copy
+Transferred:   	         18 B / 18 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Server Side Copies:     1 @ 18 B
+Elapsed time:         0.0s
+Verifying saves...
+>>> doing verify
+Now using /Rasteratops/Saves for your saves.
+Removing the old saves folder...
+>>> doing remove
+
+Done. Saves are at qa-cloud:/Rasteratops/Saves, backups at qa-cloud:/Rasteratops/Backups.
+Old folders were left in place if anything else was in them.

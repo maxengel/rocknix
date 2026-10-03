@@ -1,0 +1,14 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/conflict-resolution/.build-runs/20261003T233515Z-caa12c4a
+up: s3 bucket rocknix-qa on port 9032
+note: SAVES_REMOTE must start with the bucket, e.g. /rocknix-qa/Rasteratops/Saves
+[W][23:35:17.664599] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:35:17.664632] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+Traceback (most recent call last):
+  File "/workspace/tmp/rasteratops-m7-s3-listing-02/s3-listing.py", line 37, in <module>
+    check(guest("sed -n 's/^BUILD_ID=//p' /etc/os-release").strip('"')=='61b64817bf8ab48237e51abb395484e36cbf924b','exact replacement BUILD_ID')
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<retained QA helpers>", line 16, in guest
+AssertionError: guest step1 rc255: root@127.0.0.1: Permission denied (publickey,password,keyboard-interactive).
+
+down
