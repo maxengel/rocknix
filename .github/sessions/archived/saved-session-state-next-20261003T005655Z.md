@@ -39,8 +39,8 @@ read back the live result in the same session. Keep this checkpoint and
 secondary plans aligned. Image-only criteria remain open until an engineering
 build provides their proof; they do not prohibit creating that build.
 
-> Saved: 2026-10-03T00:56:55Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T005655Z.md.
+> Saved: 2026-10-03T00:46:32Z. Branch: feature/conflict-resolution.
+> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T004632Z.md.
 
 ## Latest execution — 2026-10-03
 
@@ -211,8 +211,7 @@ Current entrypoints (read the scoped rules before touching them):
    partial-state coverage. VM-only criteria stay in P3, with issues open.
 2. Complete proxy refresh/preservation #361/#384; reconcile #386 inputs and
    #362; relevant package/host checks. Resolve #310 launch memory and
-   #332 software criteria, #371/#367 host workflow gates. The remaining
-   #327 frame/docs proof belongs to P3, after the engineering build.
+   #327/#332 software/evidence criteria, #371/#367 host workflow gates.
    Diagnostic VM builds are engineering builds, not RCs. Do not rerun an
    unchanged full suite merely to accumulate green runs.
 3. Freeze qualified distro/ES/splash/container/source inputs, cold-build
@@ -241,11 +240,9 @@ Current entrypoints (read the scoped rules before touching them):
 ## Jobs, artifacts and remaining cautions
 
 Earlier fresh-agent proof: `docs/qa-logs/2026-10-02-readiness/handoff-proof.md`.
-The current fresh-agent proof is retained at
-`docs/qa-logs/2026-10-03-m7-p1/handoff-proof.md` under #389/#368.
-It recovered the correct next work and verified the key source/receipt claims.
-Its two findings are corrected: #327 stays in P3; the guest runner help names
-the real executable and all currently accepted cases. #385 is the completed review;
+The current handoff is rechecked under #389 after integration.
+It recovered the correct next work and verified the key code/receipt claims;
+the entrypoints above incorporate its feedback. #385 is the completed review;
 #383 remains active delivery. The kickoff futro already exists at
 `docs/futros/2026-10-02-rc-remediation.md`; read it as historical kickoff state.
 
