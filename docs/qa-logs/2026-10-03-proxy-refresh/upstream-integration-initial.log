@@ -1,0 +1,121 @@
+.....Flush auth error: achievementId=22 lastError=Token rejected by server (HTTP 401)
+..Flush aborted: no RetroAchievements credentials
+......EEE.Flush marked token invalid: user=testuser reason=HTTP Error 401: Unauthorized
+.Flush could not refresh patch data: patch request failed: boom
+.........................................................................................FF./usr/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 429: 'Too Many Requests'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+..../usr/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'Forbidden'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+......F...........................................................
+======================================================================
+ERROR: test_queue_award_serializes_near_simultaneous_appends (linux.tests.test_linux_award_parity.LinuxAwardParityTests.test_queue_award_serializes_near_simultaneous_appends)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_award_parity.py", line 638, in test_queue_award_serializes_near_simultaneous_appends
+    server = proxy_service.ProxyRuntimeServer({"proxy_port": 8080}, store)
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/raofflineproxy/proxy_service.py", line 349, in __init__
+    super().__init__(
+    ~~~~~~~~~~~~~~~~^
+        (host, port),
+        ^^^^^^^^^^^^^
+        ProxyRequestHandler,
+        ^^^^^^^^^^^^^^^^^^^^
+        bind_and_activate=inherited is None,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/lib/python3.14/socketserver.py", line 453, in __init__
+    self.socket = socket.socket(self.address_family,
+                  ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+                                self.socket_type)
+                                ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/socket.py", line 236, in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_queue_award_skips_cached_already_unlocked_achievement (linux.tests.test_linux_award_parity.LinuxAwardParityTests.test_queue_award_skips_cached_already_unlocked_achievement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_award_parity.py", line 546, in test_queue_award_skips_cached_already_unlocked_achievement
+    server = proxy_service.ProxyRuntimeServer({"proxy_port": 8080}, store)
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/raofflineproxy/proxy_service.py", line 349, in __init__
+    super().__init__(
+    ~~~~~~~~~~~~~~~~^
+        (host, port),
+        ^^^^^^^^^^^^^
+        ProxyRequestHandler,
+        ^^^^^^^^^^^^^^^^^^^^
+        bind_and_activate=inherited is None,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/lib/python3.14/socketserver.py", line 453, in __init__
+    self.socket = socket.socket(self.address_family,
+                  ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+                                self.socket_type)
+                                ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/socket.py", line 236, in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+ERROR: test_queue_award_skips_cached_already_unlocked_from_achievementsets (linux.tests.test_linux_award_parity.LinuxAwardParityTests.test_queue_award_skips_cached_already_unlocked_from_achievementsets)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_award_parity.py", line 597, in test_queue_award_skips_cached_already_unlocked_from_achievementsets
+    server = proxy_service.ProxyRuntimeServer({"proxy_port": 8080}, store)
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/raofflineproxy/proxy_service.py", line 349, in __init__
+    super().__init__(
+    ~~~~~~~~~~~~~~~~^
+        (host, port),
+        ^^^^^^^^^^^^^
+        ProxyRequestHandler,
+        ^^^^^^^^^^^^^^^^^^^^
+        bind_and_activate=inherited is None,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/lib/python3.14/socketserver.py", line 453, in __init__
+    self.socket = socket.socket(self.address_family,
+                  ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+                                self.socket_type)
+                                ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/socket.py", line 236, in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+======================================================================
+FAIL: test_forced_probe_gives_up_after_max_attempts (linux.tests.test_linux_network.LinuxNetworkTests.test_forced_probe_gives_up_after_max_attempts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_network.py", line 225, in test_forced_probe_gives_up_after_max_attempts
+    self.assertEqual(calls, network.PROBE_ATTEMPTS)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 3
+
+======================================================================
+FAIL: test_forced_probe_retries_transient_failures (linux.tests.test_linux_network.LinuxNetworkTests.test_forced_probe_retries_transient_failures)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_network.py", line 216, in test_forced_probe_retries_transient_failures
+    self.assertTrue(reachable)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_request_path_probe_does_not_retry (linux.tests.test_linux_network.LinuxNetworkTests.test_request_path_probe_does_not_retry)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/rasteratops-proxy-refresh-20261003/integration/linux/tests/test_linux_network.py", line 300, in test_request_path_probe_does_not_retry
+    self.assertEqual(calls, 1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 180 tests in 5.417s
+
+FAILED (failures=3, errors=3)

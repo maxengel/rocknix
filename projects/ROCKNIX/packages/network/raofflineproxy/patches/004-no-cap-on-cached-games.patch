@@ -1,27 +1,77 @@
-The client caps manual caching at 100 games ("to keep bulk caching from
-generating too many RetroAchievements requests at once", docs/caching-games.md)
-and derives the smart-cache limit from the same constant. On ROCKNIX the scan
-is the way every game on the console comes to earn offline (fork #179,
-D-RA-010), and the maintainer's call is that every game does (fork #184 note 6,
-D-RA-014): "Why would there be a limit on how many games I can have stored for
-offline play? I would want every game available for offline play to be able to
-be played offline with the ability to unlock the achievements." The cap goes;
-the request throttle (network.py: 0.3 s between requests, a cooldown per batch,
-backoff on 429) stays, so a full-library scan is as polite as the capped one,
-only longer.
+rom_browser: allow an OS-managed deliberate whole-library scan
 
+Rasteratops' explicit preparation scans must retain more than100 games in
+one run (D-RA-014, #361). Add an opt-in budgeted=False argument to the
+single-ROM/drain entrypoints. Existing upstream callers keep the100-game
+window and batch bound. Deliberate calls retain the queue locks, pacing,
+429 stop and persisted pause; each cached game is still charged. They do
+not treat queued success as readiness: the integrating helper checks queued.
 
+The original patch004 raised a removed total-library cap. This replacement
+preserves that workflow through current upstream's queue API instead.
+
+diff --git a/linux/raofflineproxy/rom_browser.py b/linux/raofflineproxy/rom_browser.py
+index 97ab179..5fd43cc 100644
 --- a/linux/raofflineproxy/rom_browser.py
 +++ b/linux/raofflineproxy/rom_browser.py
-@@ -46,7 +46,10 @@ SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".7z"}
- # which bundles a 7z reader (third_party/lzma-sdk), so it never reaches zipfile.
- ZIP_READABLE_ARCHIVE_EXTENSIONS = {".zip"}
- EXCLUDED_BROWSER_DIR_NAMES = {"Imgs"}
--MAX_CACHED_GAMES = 100
-+# ROCKNIX: no cap on how many games the scan may cache (fork #184, D-RA-014);
-+# upstream's 100 was a courtesy to the server, which the request throttle in
-+# network.py keeps. Large enough that no library reaches it.
-+MAX_CACHED_GAMES = 1000000
- MAX_SCAN_ENTRIES = 5000
- MAX_SCAN_DEPTH = 12
- # RetroAchievements adds hashes over time, so a "no match" is only cached long enough to
+@@ -513,9 +513,12 @@ def fetch_game_id(
+     return int(game_id)
+ 
+ 
+-def add_rom_to_cache(path: Path, storage: Storage, config_data: dict) -> AddRomResult:
++def add_rom_to_cache(
++    path: Path, storage: Storage, config_data: dict, *, budgeted: bool = True
++) -> AddRomResult:
+     """Caches one ROM right away if the caching budget allows it, otherwise queues it for the
+-    proxy service."""
++    proxy service. An OS-managed deliberate scan may set budgeted=False to
++    prepare its whole library; locking, request pacing and server pauses remain."""
+     user_agent = self_user_agent()
+     credentials = resolve_credentials(storage, config_data, user_agent)
+     if credentials is None:
+@@ -550,6 +553,7 @@ def add_rom_to_cache(path: Path, storage: Storage, config_data: dict) -> AddRomR
+             credentials,
+             user_agent,
+             wait_for_lock=True,
++            budgeted=budgeted,
+             keys=[rom.key],
+             on_outcome=lambda queued, outcome, game_id, message: outcomes.__setitem__(
+                 queued.key, (outcome, game_id, message)
+@@ -670,6 +674,7 @@ def drain_cache_queue(
+     keys: list[str] | None = None,
+     on_item=None,
+     on_outcome=None,
++    budgeted: bool = True,
+ ) -> DrainResult:
+     """The single place that sends RA requests for bulk caching: works through the queue oldest
+     first (or through keys, in order) within the caching budget. A window allows
+@@ -693,6 +698,7 @@ def drain_cache_queue(
+                 None if keys is None else list(dict.fromkeys(keys)),
+                 on_item,
+                 on_outcome,
++                budgeted,
+             )
+ 
+ 
+@@ -705,6 +711,7 @@ def _drain_locked(
+     pending_keys: list[str] | None,
+     on_item,
+     on_outcome,
++    budgeted: bool = True,
+ ) -> DrainResult:
+     cached = 0
+     no_match = 0
+@@ -771,7 +778,12 @@ def _drain_locked(
+             report(rom, QueuedRomOutcome.ALREADY_CACHED, local.game_id, "")
+             continue
+ 
+-        games_left = cache_budget.remaining(storage)
++        # A deliberate OS scan can prepare more than one budget window,
++        # but a persisted pause (including a 429 from another process) still
++        # stops it. Every successful game is charged for the background worker.
++        if not budgeted and cache_budget.load(storage).paused_until > current_millis():
++            return result(DrainStop.BUDGET_EXHAUSTED, cache_budget.next_available_at(storage))
++        games_left = cache_budget.remaining(storage) if budgeted else 1
+         if games_left == 0:
+             return result(DrainStop.BUDGET_EXHAUSTED, cache_budget.next_available_at(storage))
+         apply_scan_batch_cooldown(requested)

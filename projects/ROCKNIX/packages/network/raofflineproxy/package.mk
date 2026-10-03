@@ -2,23 +2,17 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-28 (248ce5a,
-# step 0 of the release candidate; c1bd3724 of 2026-09-26 before, fork #293).
-# The 23 commits since c1bd3724 are the Android app (the stale login token's
-# 401 on award sync, #182; NetherSX2's host-override broadcast, #190; the
-# caching budget, #174), dependabot, and nightly CI. On the Linux side the
-# updater learned a nightly channel (update.py, #176/#179) -- reached only
-# from the CLI's update commands, which nothing on this image runs -- and
-# config.py stops taking the dArkOS path on spruce (#178), neither of which
-# is this image. The store, the proxy service and the cache keys are
-# unchanged; the login key was already lower-cased on Linux, which is the
-# half of #182 the Android app lacked. Both submodules are unchanged
-# (rcheevos 1433173, libchdr 8e7b8bd; D-RA-029, D-RA-037). Every patch
-# applies as it did; 008's config.py hunk header is moved eight lines to
-# where #178 left load_config. APP_VERSION still reads 1.13.0-alpha1.
-# freshness: pinned -- retain the qualified caching model for0.0.1; upstream HEAD is18 commits ahead (bdcd229b45, 2026-10-02), including a caching-budget/queue rework and new telemetry. The subset-award preservation fix1278ebcd47 is backported in patch017 (#384). Candidate disposition remains #361.
-PKG_VERSION="248ce5acae75113d09500cd7c6661a12fee4b93c"
-PKG_SHA256="5a430a6bc75d4d101ef983ea1c67897613387148f991daafac5a035637ec7cf5"
+# Current upstream main at2026-10-03; D-WORKFLOW-138/#361 selects the
+# refresh while retaining whole-library preparation and offline state.
+# The14 rebased patches preserve the fork's service, recovery and image
+# behavior. Upstream now owns connection reuse and subset award mapping;
+# duplicate patches014/017 are retired. The explicit OS scanner opts out
+# of the100-game budget window but retains locks, request pacing and429
+# pauses, and never counts queued work as ready. See docs/rasteratops/
+# raofflineproxy-refresh.md for dispositions and exact host/VM boundaries.
+# Coupled rcheevos/libchdr pins remain those in this parent (D-RA-029/037).
+PKG_VERSION="5866cd9ba784c13771a99c52dd6b6f2acc546842"
+PKG_SHA256="1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"

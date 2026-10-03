@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""Exercise the shipped preparation helper against an unpacked patched proxy (#361).
+
+Uses actual queue/storage/helper code and synthetic game/HTTP boundaries. No
+personal account or provider is contacted. Image/service qualification is separate.
+"""
+import argparse
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--source', type=Path, required=True, help='patched source containing linux/')
+parser.add_argument('--helper', type=Path, default=ROOT/'projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-indexed')
+parser.add_argument('--predecessor-source', type=Path, required=True, help='actual older patched source containing linux/')
+args = parser.parse_args()
+config = tempfile.TemporaryDirectory(prefix='proxy-integration-')
+os.environ['RAOFFLINEPROXY_CONFIG_DIR'] = config.name
+sys.path[:0] = [str(args.source.resolve()), str(args.source.resolve()/'linux')]
+from linux.tests.test_linux_caching_queue import QueueTestCase, CREDENTIALS
+from linux.raofflineproxy import cache_budget, cache_keys, cache_queue, image_cache, rate_limit, rom_browser, rom_cache, storage
+# Upstream fixtures import linux.raofflineproxy; the shipped helper imports
+# raofflineproxy. Both must exercise the same module objects and real store.
+for name, value in list(sys.modules.items()):
+    if name.startswith('linux.raofflineproxy'):
+        sys.modules[name.removeprefix('linux.')] = value
+loader = importlib.machinery.SourceFileLoader('fork_preparation', str(args.helper.resolve()))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+helper = importlib.util.module_from_spec(spec)
+loader.exec_module(helper)
+
+
+class WholeLibrary(QueueTestCase):
+    def prepare(self, kind, count=125):
+        paths = self.roms(*(str(i) for i in range(1,count+1)))
+        self.game_ids.update({str(i):i for i in range(1,count+1)})
+        jobs = self.root/'jobs.tsv'
+        jobs.write_text(''.join(f'I\t{i}\t{i}\t{p}\n' if kind=='I' else f'H\t\t\t{p}\n'
+                                for i,p in enumerate(paths,1)))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch.object(sys,'argv',[str(args.helper),str(jobs)]), \
+                mock.patch.object(helper,'Storage',return_value=self.store), \
+                mock.patch.object(self.store,'close'), \
+                mock.patch.object(helper,'configure_logging'), \
+                mock.patch.object(helper,'load_config',return_value={}), \
+                mock.patch.object(helper,'resolve_credentials',return_value=CREDENTIALS), \
+                mock.patch.object(helper,'cache_game',side_effect=self.fake_cache_game), \
+                mock.patch.object(helper,'apply_scan_batch_cooldown') as cooldown, \
+                mock.patch.object(helper,'wait_for_badges'):
+            self.assertEqual(0,helper.main())
+        self.assertEqual(list(range(count)),[c.args[0] for c in cooldown.call_args_list])
+        return output.getvalue()
+
+    def assert_ready(self, output, count=125):
+        self.assertEqual(count,sum(line.startswith('OK ') for line in output.splitlines()))
+        self.assertEqual(count,len(self.store.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH)))
+        self.assertEqual(0,cache_queue.count(self.store))
+        for i in range(1,count+1):
+            entry=self.store.get_cache(cache_keys.patch(i,CREDENTIALS['user']))
+            self.assertEqual(f'/roms/{i}.nes',entry['sourceRomPath'])
+            alias=self.store.get_cache(cache_keys.game_id(str(i)))
+            self.assertEqual(i,json.loads(alias['responseBody'])['GameID'])
+
+    def test_unindexed_125_games_are_cached_not_just_queued(self):
+        self.assert_ready(self.prepare('H'))
+
+    def test_indexed_125_games_are_cached_without_rom_lookup(self):
+        self.assert_ready(self.prepare('I'))
+        self.assertEqual([],self.lookups)
+
+    def test_failure_and_retry_preserve_completed_games(self):
+        self.fail_cache_for.add(61)
+        first=self.prepare('H')
+        self.assertIn('FAIL 61/125',first)
+        self.assertEqual(124,len(self.cached))
+        before={r['cacheKey']:r['responseBody'] for r in self.store.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH)}
+        self.fail_cache_for.clear()
+        self.assert_ready(self.prepare('H'))
+        self.assertEqual(125,len(self.cached),'completed games were needlessly fetched again')
+        for key,body in before.items(): self.assertEqual(body,self.store.get_cache(key)['responseBody'])
+
+    def test_persisted_pause_never_reports_queued_games_ready(self):
+        cache_budget.pause_until(self.store,storage.current_millis()+600000)
+        output=self.prepare('H',3)
+        self.assertNotIn('\nOK ', '\n'+output)
+        self.assertIn('DONE cached=0 failed=3',output)
+        self.assertEqual([],self.cached)
+        self.assertEqual(3,cache_queue.count(self.store))
+
+    def check_rate_limit(self,kind):
+        attempts=[]
+        def refused(*a,**kw):
+            attempts.append(a[0])
+            rate_limit.on_rate_limited(1200000)
+            raise rate_limit.RateLimitedError('synthetic server pause')
+        self.fake_cache_game=refused
+        with mock.patch.object(rom_browser,'cache_game',side_effect=refused):
+            output=self.prepare(kind,3)
+        self.assertEqual([1],attempts,'work continued sending after429')
+        self.assertNotIn('\nOK ','\n'+output)
+        self.assertGreaterEqual(cache_budget.load(self.store).paused_until,storage.current_millis()+1199000)
+        rate_limit.reset_for_tests()  # another process only has the persisted pause
+        with mock.patch.object(rom_browser,'cache_game',side_effect=refused):
+            self.prepare(kind,3)
+        self.assertEqual([1],attempts,'restart ignored the persisted server pause')
+
+    def test_unindexed_429_stops_requests_and_survives_restart(self): self.check_rate_limit('H')
+    def test_indexed_429_stops_requests_and_survives_restart(self): self.check_rate_limit('I')
+
+    def test_upstream_default_still_queues_at_100(self):
+        self.use_budget(100)
+        (rom,)=self.roms('later');self.game_ids['later']=9
+        result=rom_browser.add_rom_to_cache(rom,self.store,{})
+        self.assertTrue(result.success and result.queued)
+        self.assertEqual([],self.cached)
+
+
+class Upgrade(unittest.TestCase):
+    def test_actual_predecessor_store_and_image_paths_survive_reopen(self):
+        with tempfile.TemporaryDirectory(prefix='proxy-old-store-') as directory:
+            root=Path(directory)
+            script=r'''
+import json,sys
+from pathlib import Path
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+root=Path(sys.argv[1]);store=Storage(database_path=root/'store.sqlite3')
+store.upsert_cache(cache_keys.login('QA'),json.dumps({'User':'QA','Token':'<synthetic>'}))
+store.upsert_cache(cache_keys.patch(100,'QA'),json.dumps({'PatchData':{'ID':100,'Title':'old cached game'}}),source_rom_path='/gb/game.gb')
+store.upsert_cache(cache_keys.achievementsets('abc','QA'),json.dumps({'GameId':100,'Sets':[{'GameId':100,'Achievements':[{'ID':1}]},{'GameId':200,'Achievements':[{'ID':2}]}]}))
+for i in (1,2):
+ store.upsert_pending_award({'achievementId':i,'queryString':f'/dorequest.php?r=awardachievement&a={i}&u=QA&h=0','requestBody':f'a={i}&u=QA&h=0','userAgent':'RetroArch/QA','queuedAt':1700000000000})
+(root/'before.json').write_text(json.dumps({'cache':store.get_all_cache_by_prefix(''),'awards':store.get_pending_awards()},sort_keys=True))
+store.close()
+legacy=root/'static/Badge/old.png';legacy.parent.mkdir(parents=True);legacy.write_bytes(b'previous cached image')
+'''
+            env=dict(os.environ,PYTHONPATH=str(args.predecessor_source.resolve()/'linux'),RAOFFLINEPROXY_CONFIG_DIR=str(root/'config'))
+            subprocess.run([sys.executable,'-c',script,str(root)],env=env,check=True,capture_output=True)
+            before=json.loads((root/'before.json').read_text())
+            for _ in range(2):
+                store=storage.Storage(database_path=root/'store.sqlite3')
+                try:
+                    self.assertEqual(before['cache'],store.get_all_cache_by_prefix(''))
+                    self.assertEqual(before['awards'],store.get_pending_awards())
+                    self.assertEqual({1:100,2:200},rom_cache.build_achievement_game_ids(
+                        store.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH),
+                        store.get_all_cache_by_prefix(cache_keys.PREFIX_ACHIEVEMENTSETS)))
+                    self.assertEqual({'user':'QA','token':'<synthetic>'},store.load_login_credentials())
+                finally: store.close()
+            with mock.patch.object(image_cache,'STATIC_DIR',root/'static'):
+                self.assertEqual(b'previous cached image',image_cache.resolve_cached_static_asset('/Badge/old.png').read_bytes())
+
+
+if __name__=='__main__':
+    try:
+        suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (WholeLibrary,Upgrade))
+        result=unittest.TextTestRunner(verbosity=2).run(suite)
+        sys.exit(0 if result.wasSuccessful() else 1)
+    finally: config.cleanup()

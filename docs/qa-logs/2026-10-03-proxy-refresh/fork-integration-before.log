@@ -1,0 +1,74 @@
+test_failure_and_retry_preserve_completed_games (__main__.WholeLibrary.test_failure_and_retry_preserve_completed_games) ... FAIL
+test_indexed_125_games_are_cached_without_rom_lookup (__main__.WholeLibrary.test_indexed_125_games_are_cached_without_rom_lookup) ... ok
+test_indexed_429_stops_requests_and_survives_restart (__main__.WholeLibrary.test_indexed_429_stops_requests_and_survives_restart) ... FAIL
+test_persisted_pause_never_reports_queued_games_ready (__main__.WholeLibrary.test_persisted_pause_never_reports_queued_games_ready) ... FAIL
+test_unindexed_125_games_are_cached_not_just_queued (__main__.WholeLibrary.test_unindexed_125_games_are_cached_not_just_queued) ... FAIL
+test_unindexed_429_stops_requests_and_survives_restart (__main__.WholeLibrary.test_unindexed_429_stops_requests_and_survives_restart) ... FAIL
+test_upstream_default_still_queues_at_100 (__main__.WholeLibrary.test_upstream_default_still_queues_at_100) ... ok
+test_actual_predecessor_store_and_image_paths_survive_reopen (__main__.Upgrade.test_actual_predecessor_store_and_image_paths_survive_reopen) ... ok
+
+======================================================================
+FAIL: test_failure_and_retry_preserve_completed_games (__main__.WholeLibrary.test_failure_and_retry_preserve_completed_games)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 86, in test_failure_and_retry_preserve_completed_games
+    self.assertEqual(124,len(self.cached))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 124 != 100
+
+======================================================================
+FAIL: test_indexed_429_stops_requests_and_survives_restart (__main__.WholeLibrary.test_indexed_429_stops_requests_and_survives_restart)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 119, in test_indexed_429_stops_requests_and_survives_restart
+    def test_indexed_429_stops_requests_and_survives_restart(self): self.check_rate_limit('I')
+                                                                    ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 110, in check_rate_limit
+    self.assertEqual([1],attempts,'work continued sending after429')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [1] != [1, 2, 3]
+
+Second list contains 2 additional elements.
+First extra element 1:
+2
+
+- [1]
++ [1, 2, 3] : work continued sending after429
+
+======================================================================
+FAIL: test_persisted_pause_never_reports_queued_games_ready (__main__.WholeLibrary.test_persisted_pause_never_reports_queued_games_ready)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 96, in test_persisted_pause_never_reports_queued_games_ready
+    self.assertNotIn('\nOK ', '\n'+output)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '\nOK ' unexpectedly found in '\nOK 1/3 1.nes\nOK 2/3 2.nes\nOK 3/3 3.nes\nDONE cached=3 failed=0 indexed=0\n'
+
+======================================================================
+FAIL: test_unindexed_125_games_are_cached_not_just_queued (__main__.WholeLibrary.test_unindexed_125_games_are_cached_not_just_queued)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 76, in test_unindexed_125_games_are_cached_not_just_queued
+    self.assert_ready(self.prepare('H'))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 67, in assert_ready
+    self.assertEqual(count,len(self.store.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 125 != 100
+
+======================================================================
+FAIL: test_unindexed_429_stops_requests_and_survives_restart (__main__.WholeLibrary.test_unindexed_429_stops_requests_and_survives_restart)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 118, in test_unindexed_429_stops_requests_and_survives_restart
+    def test_unindexed_429_stops_requests_and_survives_restart(self): self.check_rate_limit('H')
+                                                                      ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/raofflineproxy-integration-test", line 111, in check_rate_limit
+    self.assertNotIn('\nOK ','\n'+output)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '\nOK ' unexpectedly found in '\nOK 1/3 1.nes\nOK 2/3 2.nes\nOK 3/3 3.nes\nDONE cached=3 failed=0 indexed=0\n'
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.137s
+
+FAILED (failures=5)

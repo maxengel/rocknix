@@ -239,10 +239,12 @@
 #
 # The store this reads -- read-only, through the service's own sqlite3
 # module, never written here -- is the client's schema at the commit
-# package.mk pins (248ce5acae75113d09500cd7c6661a12fee4b93c, storage.py
-# _initialize_sqlite, read 2026-09-28 for audit #308 F-RA-07 at c1bd3724
-# and unchanged since, as are cache_keys.py and proxy_service.py; the
-# header named 4e9bab48, three pins back, until then): pending_awards(id,
+# package.mk pins (5866cd9ba784c13771a99c52dd6b6f2acc546842, storage.py
+# _initialize_sqlite, read 2026-10-03 for #361). These consumed columns and
+# cache-key spellings remain compatible; the refreshed client adds queue
+# state independently. The suite reads a store the current client wrote,
+# and the integration fixture reopens the predecessor's store with current
+# Storage twice, preserving cache/login/base/subset award bytes: pending_awards(id,
 # achievementId, queryString, requestBody, queuedAt, status) for pending,
 # pending-ids and summary; api_cache(cacheKey, responseBody, sourceRomPath,
 # cachedAt) for account, summary, the ready set behind added= and the
