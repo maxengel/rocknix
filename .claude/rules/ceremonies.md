@@ -95,3 +95,12 @@ The fork CI (`.github/workflows/fork-checks.yml`) runs the index check, the
 register lint and `ceremony-check` on every push of `next` and daily, so a
 ceremony owed shows as a red badge until its artifact exists. `fork-*`
 workflows never reach an upstream PR (`fork-workflow.md`).
+
+## Execution discipline
+
+The delivery, futro and mini-retro skills consume settled outputs from the
+preceding stage. Run their stages serially under one orchestrator; another
+session must not mutate the same scope concurrently. Delegation within a stage
+requires that stage's authorization. A resume continues from recorded evidence;
+it does not rerun completed ceremonies or request an already granted approval.
+The milestone body and `milestone-phase-naming.md` determine the current phase.

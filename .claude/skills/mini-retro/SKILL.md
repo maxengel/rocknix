@@ -21,7 +21,18 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 2026-07-08, an agent parallelized a code-auditor run). In-stage sub-agents are allowed
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
 scope, other agents pause mutations on that scope until it completes
-([serial-execution-gates](../../../.claude/rules/serial-execution-gates.md)).
+([ceremony execution discipline](../../rules/ceremonies.md#execution-discipline)).
+
+## Rasteratops continuation
+
+The live milestone body orders phases; follow
+[`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
+On resume, reuse the recorded kickoff, retro and audit receipts for this scope;
+verify their evidence and finish the current phase before starting another.
+Existing authorization remains effective: confirmation steps below apply only
+when the decision or action has not already been authorized. Readiness reviews
+and closed audit issues do not close product acceptance criteria. Update the
+milestone's current/next work and evidence before handing off.
 
 ## Core principle: retros are actionable artifacts
 
@@ -62,7 +73,7 @@ This skill covers the **Phase** tier. For **Epic** and **Milestone** tiers,
 defer to the `code-auditor` skill; this skill's output still applies
 (each phase retro is an input to the next tier's audit). For the
 **Project** tier (portfolio-wide, counterfactual), defer to the
-[`retro-sweep`](../retro-sweep/SKILL.md) skill — it composes this skill's
+`retro-sweep` (optional external skill, absent here) skill — it composes this skill's
 Step 2/3 methodology at milestone grain.
 
 ## When to use
@@ -583,16 +594,15 @@ Three things to note:
 
 ## Repo-specific integrations
 
-- **scaffold:**
-  - This skill is the procedure; scaffold has no separate `mini-retro`
-    instruction file. Issue / PR / Epic delivery conventions live in
-    [`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md);
+- **Rasteratops:**
+  - This skill is the procedure; the local cadence is in [`ceremonies.md`](../../rules/ceremonies.md). Issue / PR / Epic delivery conventions live in
+    [`issue-tracking.md`](../../rules/issue-tracking.md) and [`fork-workflow.md`](../../rules/fork-workflow.md);
     phase / Epic / milestone naming in
-    [`milestone-phase-naming.instructions.md`](../../../.claude/rules/milestone-phase-naming.md).
+    [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
   - Spec documents embed retro placeholders per phase only if the repo uses
     product specs (scaffold does not today).
   - The scoped audit grounds against
-    [`cornerstone-conformance.md`](../../../docs/architecture/cornerstone-conformance.md)
+    [`working-principles.md`](../../rules/working-principles.md) and [`decision-register.md`](../../rules/decision-register.md)
     (see `references/scoped-audit.md` Check 2).
 
 - **Other repos:** if a similar instruction file exists, defer to it. If not,
