@@ -23,7 +23,18 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 2026-07-08, an agent parallelized a code-auditor run). In-stage sub-agents are allowed
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
 scope, other agents pause mutations on that scope until it completes
-([serial-execution-gates](../../../.claude/rules/serial-execution-gates.md)).
+([ceremony execution discipline](../../rules/ceremonies.md#execution-discipline)).
+
+## Rasteratops continuation
+
+The live milestone body orders phases; follow
+[`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
+On resume, reuse the recorded kickoff, retro and audit receipts for this scope;
+verify their evidence and finish the current phase before starting another.
+Existing authorization remains effective: confirmation steps below apply only
+when the decision or action has not already been authorized. Readiness reviews
+and closed audit issues do not close product acceptance criteria. Update the
+milestone's current/next work and evidence before handing off.
 
 ## When to use
 
@@ -116,8 +127,8 @@ Phase N+1 execution
 - A spec / plan document exists for the feature (e.g.
   `docs/planning/<feature>/<feature>-spec.md`)
 
-If the repo has a delivery / issue-workflow governance doc (in scaffold,
-[`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md)),
+If the repo has a delivery / issue-workflow governance doc (in this repository,
+[`issue-tracking.md`](../../rules/issue-tracking.md) and [`fork-workflow.md`](../../rules/fork-workflow.md)),
 it takes precedence over this skill for per-issue protocol.
 
 ## Tooling
@@ -196,7 +207,7 @@ upward-tier audit is now due and `begin-delivery` is responsible for invoking it
 2. Pause and confirm with the user before invoking. Do not auto-spend tokens on a multi-pass audit without acknowledgement — but do **not** advance to Step 2 if the user defers; instead, record the deferral in the kickoff comment and flag it as a known carry-forward risk.
 3. If approved, invoke `code-auditor` per its `SKILL.md`. Wait for completion.
 4. Read the resulting punch list (`logs/audits/.../05-punch-list.md`). Any P0/P1 items become **inputs to the futro in Step 2** — they directly inform what the next phase must address before its own scope.
-5. Open follow-up issues for punch-list items per the repo's delivery-workflow governance (in scaffold, `github-delivery-workflow.instructions.md`).
+5. Open follow-up issues for punch-list items per the repo's delivery-workflow governance (`issue-tracking.md` in this repository).
 
 **If Step 1.5 is skipped under user deferral**, the futro in Step 2 must
 include an explicit "deferred upward-tier audit" entry in its blindspot
@@ -599,10 +610,10 @@ project's issue workflow.
 
 ## Repo-specific integrations
 
-- **scaffold**:
-  - [`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md) governs issue / PR protocol — this skill defers to it; phase / Epic naming lives in [`milestone-phase-naming.instructions.md`](../../../.claude/rules/milestone-phase-naming.md)
+- **Rasteratops**:
+  - [`issue-tracking.md`](../../rules/issue-tracking.md) and [`fork-workflow.md`](../../rules/fork-workflow.md) governs issue / PR protocol — this skill defers to it; phase / Epic naming lives in [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md)
   - The `mini-retro` skill — produces what Step 1 retrieves
   - The `futro` skill — invoked by Step 2
-  - Grounding (doctrine + Accepted ADRs + development principles) lives in [`cornerstone-conformance.md`](../../../docs/architecture/cornerstone-conformance.md)
+  - Grounding (doctrine + Accepted ADRs + development principles) lives in [`working-principles.md`](../../rules/working-principles.md) and [`decision-register.md`](../../rules/decision-register.md)
 - **Other repos**: if similar instruction files exist, defer to them. If
   not, the pre-flight checklist in Step 4 is a reasonable default.

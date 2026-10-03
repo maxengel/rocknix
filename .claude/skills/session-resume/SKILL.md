@@ -3,13 +3,13 @@ name: session-resume
 description: Resume work from a previously saved session-stash snapshot. Use when the user says "resume work", "pick up where I left off", "continue the session", "load the last handoff", "what was I doing", or at the start of a new context/agent session where a saved state file exists. Pair with session-stash.
 license: Apache-2.0
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   origin: Converted from .github/prompts/resume-work.prompt.md (an external prompt library). v1.2.0 (2026-06-13) — when the current branch is not `main`, the fallback file search ignores the inherited `saved-session-state-main.md`, which is branch-creation cruft (session-stash removes it on first stash there), not a real handoff for this branch.
 ---
 
 # Session Resume
 
-Load a previously saved session state file, validate it against the current environment, and present a short resumption briefing to the user.
+Load the canonical session state, reconcile it with current evidence and the live milestone queue, briefly report the next action, and continue the authorized work.
 
 ## When to resume
 
@@ -39,12 +39,14 @@ Before trusting the saved state, check:
 | ------------------------------------------------------------------ | ----------------------------------------------------------- |
 | Current git branch matches `Branch:` in the state file             | Warn, but proceed. Note the divergence in the briefing.     |
 | Files listed in "Key Files Modified" still exist                   | Flag any missing. Assume git history has the explanation.   |
-| Age of the state file (`stat` the file, compare with current time) | If >24 h, prefer live tracker data over stale summary.      |
+| Age of the state file (`stat` the file, compare with current time) | Report its age; verify live sources on every resume.      |
 | Working tree is clean (no unrelated in-flight changes)             | Surface anything unexpected before resuming.                |
-| The worktree's rules are `next`'s (`git diff --quiet next -- .claude CLAUDE.md AGENTS.md`), in this repository | Merge `next` into a feature worktree before reading any rule, or read the rules from `next`: a session loads the rules of the worktree it starts in (#367). |
+| The worktree's rules are `next`'s (`git diff --quiet next -- .claude CLAUDE.md AGENTS.md`), in this repository | Read the rules from `next` before trusting a stale copy; integrate only by the worktree's recorded safe strategy: a session loads the rules of the worktree it starts in (#367). |
 | Issue tracker state (if referenced) has not diverged               | Re-query the tracker and note what changed since the stash. |
 
-For the tracker check: use whatever API the repo uses. For GitHub repos, prefer the GitHub MCP tools (`mcp_github_search_issues`, `mcp_github_issue_read`). Avoid `gh` CLI list/search for bulk queries — it has destabilised agent runners.
+For the tracker check, read the live milestone body and owning issues, including later comments. Resolve current/next work using [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md); issue numbers and checkpoint age are not priority. If the tracker is unreachable, state that limitation and continue independent authorized work from the last verified plan.
+
+For API access: use whatever API the repo uses. For GitHub repos, prefer the GitHub MCP tools (`mcp_github_search_issues`, `mcp_github_issue_read`). Avoid `gh` CLI list/search for bulk queries — it has destabilised agent runners.
 
 ### Step 3 — Produce the briefing
 
@@ -81,22 +83,29 @@ Present a short, scannable summary. Do **not** dump the whole state file verbati
 - <any unresolved questions from the saved state>
 ```
 
-### Step 4 — Offer options
+### Step 4 — Continue the work stream
 
-End the briefing with a short menu so the user can steer:
+When the user asks to resume or continue, execute the next unblocked action
+already authorized. Do not end with a menu or ask for another "continue".
+Preserve the objective, constraints, completed work and valid approvals across
+sessions; a status question or context reset does not restart delivery.
+Ask only for missing information or an action-specific approval that is
+actually required. Continue independent work while awaiting an answer.
+A request to report status alone does not authorize a new work stream.
 
-- **Continue** → Start executing step 1 of "Immediate next steps"
-- **Show full saved state** → Print the complete state file
-- **Start fresh** → Archive the state file to `.github/sessions/archived/` and begin a new plan
-- **Refresh from tracker** → Re-query the issue tracker and rebuild the next-step list from live data
+Reconcile the live milestone and checkpoint after meaningful progress or a
+changed dependency. Record the issue, worktree, actual evidence, current/next
+action and any running job's PID/result/watcher. Distinguish source readiness,
+image qualification, RC designation and publication. Follow the recorded
+integration strategy; never merge historical feature history merely to refresh
+instructions. Do not repeat already integrated commits or completed ceremonies.
 
-Wait for the user's choice before proceeding with substantive work.
+## Staleness
 
-## Staleness heuristic
-
-- `< 1 h`: treat saved state as authoritative
-- `1–24 h`: trust focus/next-steps, re-verify tracker state
-- `> 24 h`: trust focus as historical context only; rebuild the next-step list from live tracker data and recent commits
+At every resume, compare the snapshot with git, job artifacts and the live
+tracker. Its timestamp describes when it was written, not its authority.
+Recover missing context from those sources before asking the user to reconstruct
+it. The canonical milestone orders work; the snapshot supplies execution detail.
 
 ## Production-operations hardgate
 
@@ -104,9 +113,9 @@ Wait for the user's choice before proceeding with substantive work.
 
 ## When the file is malformed or incomplete
 
-If the saved file is missing required sections (`Current Focus`, `Next Steps`) or looks corrupted:
-
-1. Don't guess
-2. Show the user what was found and what's missing
-3. Offer to reconstruct from `git log`, recent commits, and open issues
-4. Suggest re-stashing with the `session-stash` skill once you're back on track, so the next resume is clean
+If the snapshot lacks enough information to continue safely, reconstruct it
+from git, the live milestone, owning issues and job artifacts. Repository-specific
+headings such as "Start here" and "Current priorities" are valid; do not reject
+them for differing from this skill's example. State unresolved gaps, ask only
+where they affect the next action, and refresh the canonical checkpoint once
+reconciled.

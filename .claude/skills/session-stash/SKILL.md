@@ -29,7 +29,7 @@ Default path: `.github/sessions/saved-session-state-{branch}.md`
 
 If the repo has a different convention (look for an existing `sessions/`, `handoff/`, or `.agent-state/` directory), prefer that.
 
-**In this repository (D-WORKFLOW-133, `.claude/rules/learning-capture.md` § 4):** write the full stash to `.github/sessions/saved-session-state-next.md` (committed on the working branch and fast-forwarded into `next`), opening with a **Start here** section for an agent new to the project; leave a pointer at each working branch's own path; then prove it by giving an agent with no context only the repository and asking it to resume.
+**In this repository (D-WORKFLOW-133, `.claude/rules/learning-capture.md` § 4):** write the full stash to `.github/sessions/saved-session-state-next.md` (committed on the working branch and integrated into `next` using the recorded safe strategy), opening with a **Start here** section for an agent new to the project; leave a pointer at each working branch's own path; then prove it by giving an agent with no context only the repository and asking it to resume.
 
 ### Shed inherited `main` state on feature branches
 
@@ -116,20 +116,20 @@ Use this exact template. Omit sections that genuinely have no content (do not le
 - <decision that was deferred>
 ```
 
-### Step 3 — Show a summary and confirm
+### Step 3 — Report and retain the handoff
 
 After writing the file:
 
 1. Print a 3–5 line summary of what was saved
 2. Show the path
 3. Remind the user they can resume with the `session-resume` skill
-4. Ask (do not assume) whether to commit the state file. If the user confirms, commit it yourself — this is an explicitly user-approved commit — with message:
-
-   ```text
-   chore: stash work session <timestamp>
-   ```
-
-   If the user declines, leave the file uncommitted and say so in the summary.
+4. Follow the repository's existing commit authorization and integration strategy.
+   Here the canonical stash is committed with the authorized work; do not request
+   a repeated confirmation solely because this skill was invoked. Use the fork's
+   commit convention and owning issue. Preserve unrelated changes.
+5. Update and read back the live milestone's current/next work and evidence,
+   following [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
+   The checkpoint carries commands and artifacts; the milestone holds priorities.
 
 ## Field-level guidance
 
@@ -160,4 +160,4 @@ This is where you write things that are obvious in your head but would take hour
 | "Everything is fine" / vague status                         | Indistinguishable from doing no work — be specific      |
 | Writing next steps as "continue working"                    | Non-actionable — decompose into concrete steps          |
 | Forgetting to archive the previous state before overwriting | Loses handoff history                                   |
-| Committing the state file without user approval             | User may not want session state in repo history         |
+| Discarding existing commit authorization or integration rules | Creates redundant prompts or merges unrelated history |

@@ -79,7 +79,9 @@ all of the armatures in place to support that."*
   tested again (#368).
 - **Check the rules you loaded.** A session loads the rules of the worktree it
   starts in: `git diff --quiet next -- .claude CLAUDE.md AGENTS.md || echo STALE`,
-  and a stale feature worktree merges `next` before any rule is trusted. On
+  and a stale feature worktree reads the rules from `next` before trusting
+  them. Integrate by the recorded worktree strategy; do not merge unrelated
+  historical feature commits merely to update rules. On
   2026-10-02 the session's own worktree had 17 of 29 rules stale (#367).
 
 ## Notes
