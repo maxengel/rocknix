@@ -1,0 +1,46 @@
+Subject: [PATCH] virgl: release an empty screen cache after probe or teardown
+
+The process-global fd table survives a failed virgl probe and the last screen
+release. If the driver is unloaded, its pointer is lost. A software-rendered
+application that repeatedly reloads Mesa then leaks the empty table each time.
+Destroy an empty table under the existing screen mutex, on both paths. Live
+screen entries and their sharing/refcounts are unchanged.
+
+Downstream: rasteratops/distribution#310. LeakSanitizer names 592 bytes per
+failed software-profile probe at virgl_drm_screen_create in Mesa 26.2.2.
+
+--- a/src/gallium/winsys/virgl/drm/virgl_drm_winsys.c
++++ b/src/gallium/winsys/virgl/drm/virgl_drm_winsys.c
+@@ -1305,6 +1305,16 @@
+ static struct hash_table *fd_tab = NULL;
+ static simple_mtx_t virgl_screen_mutex = SIMPLE_MTX_INITIALIZER;
+ 
++/* Called with virgl_screen_mutex held. No screen owns an empty cache. */
++static void
++virgl_drm_release_empty_screen_cache(void)
++{
++   if (fd_tab && fd_tab->entries == 0) {
++      _mesa_hash_table_destroy(fd_tab, NULL);
++      fd_tab = NULL;
++   }
++}
++
+ static void
+ virgl_drm_screen_destroy(struct pipe_screen *pscreen)
+ {
+@@ -1317,6 +1327,7 @@
+    if (destroy) {
+       fd = virgl_drm_winsys(screen->vws)->fd;
+       _mesa_hash_table_remove_key(fd_tab, intptr_to_pointer(fd));
++      virgl_drm_release_empty_screen_cache();
+    }
+    simple_mtx_unlock(&virgl_screen_mutex);
+ 
+@@ -1405,6 +1416,7 @@
+    }
+ 
+ unlock:
++   virgl_drm_release_empty_screen_cache();
+    simple_mtx_unlock(&virgl_screen_mutex);
+    return pscreen;
+ }

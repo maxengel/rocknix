@@ -1,0 +1,142 @@
+
+=================================================================
+==285173==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 328 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec4197cf in malloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:74
+    #1 0x7fddeca1dd76  (/lib64/ld-linux-x86-64.so.2+0xbd76)
+    #2 0x7fddeca1ece5  (/lib64/ld-linux-x86-64.so.2+0xcce5)
+    #3 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #4 0x7fddeca1db51  (/lib64/ld-linux-x86-64.so.2+0xbb51)
+    #5 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #6 0x7fddeca1df60  (/lib64/ld-linux-x86-64.so.2+0xbf60)
+    #7 0x7fddeb3f5337  (/usr/lib/libc.so.6+0x9a337)
+    #8 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #9 0x7fddeca135ee  (/lib64/ld-linux-x86-64.so.2+0x15ee)
+    #10 0x7fddeb3f4e83  (/usr/lib/libc.so.6+0x99e83)
+    #11 0x7fddeb3f53d0 in dlopen (/usr/lib/libc.so.6+0x9a3d0)
+    #12 0x7fddebabc390  (/usr/lib/libfreetype.so.6+0x65390)
+    #13 0x7fddeba724ce in FT_Add_Module (/usr/lib/libfreetype.so.6+0x1b4ce)
+    #14 0x7fddeba65e6b in FT_Add_Default_Modules (/usr/lib/libfreetype.so.6+0xee6b)
+    #15 0x7fddeba6605d in FT_Init_FreeType (/usr/lib/libfreetype.so.6+0xf05d)
+    #16 0x000000c1043e  (/usr/lib/ld-linux-x86-64.so.2+0xc1043e)
+    #17 0x000000c15d16  (/usr/lib/ld-linux-x86-64.so.2+0xc15d16)
+    #18 0x000000c19954  (/usr/lib/ld-linux-x86-64.so.2+0xc19954)
+    #19 0x000000b1f5d1  (/usr/lib/ld-linux-x86-64.so.2+0xb1f5d1)
+    #20 0x0000004d117a  (/usr/lib/ld-linux-x86-64.so.2+0x4d117a)
+    #21 0x7fddeb381253  (/usr/lib/libc.so.6+0x26253)
+    #22 0x7fddeb381305 in __libc_start_main (/usr/lib/libc.so.6+0x26305)
+
+Direct leak of 168 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec4197cf in malloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:74
+    #1 0x7fddeca14fee  (/lib64/ld-linux-x86-64.so.2+0x2fee)
+    #2 0x7fddeca1e6f6  (/lib64/ld-linux-x86-64.so.2+0xc6f6)
+    #3 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #4 0x7fddeca1db51  (/lib64/ld-linux-x86-64.so.2+0xbb51)
+    #5 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #6 0x7fddeca1df60  (/lib64/ld-linux-x86-64.so.2+0xbf60)
+    #7 0x7fddeb3f5337  (/usr/lib/libc.so.6+0x9a337)
+    #8 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #9 0x7fddeca135ee  (/lib64/ld-linux-x86-64.so.2+0x15ee)
+    #10 0x7fddeb3f4e83  (/usr/lib/libc.so.6+0x99e83)
+    #11 0x7fddeb3f53d0 in dlopen (/usr/lib/libc.so.6+0x9a3d0)
+    #12 0x7fddebc11292  (/usr/lib/libSDL2-2.0.so.0+0xfc292)
+    #13 0x7fddebc1d863  (/usr/lib/libSDL2-2.0.so.0+0x108863)
+    #14 0x7fddebb46d02  (/usr/lib/libSDL2-2.0.so.0+0x31d02)
+    #15 0x7fddebb42291  (/usr/lib/libSDL2-2.0.so.0+0x2d291)
+    #16 0x000000a9111e  (/usr/lib/ld-linux-x86-64.so.2+0xa9111e)
+    #17 0x000000a91b74  (/usr/lib/ld-linux-x86-64.so.2+0xa91b74)
+    #18 0x0000004d20b7  (/usr/lib/ld-linux-x86-64.so.2+0x4d20b7)
+    #19 0x7fddeb381253  (/usr/lib/libc.so.6+0x26253)
+    #20 0x7fddeb381305 in __libc_start_main (/usr/lib/libc.so.6+0x26305)
+    #21 0x0000004f9b70  (/usr/lib/ld-linux-x86-64.so.2+0x4f9b70)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec419336 in calloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:120
+    #1 0x7fdde9ddd1b3  (<unknown module>)
+    #2 0x7fdde9ddf53d  (<unknown module>)
+    #3 0x7fdde9ddfb42  (<unknown module>)
+    #4 0x7fddebc41021  (/usr/lib/libSDL2-2.0.so.0+0x12c021)
+    #5 0x7fddebc42584  (/usr/lib/libSDL2-2.0.so.0+0x12d584)
+    #6 0x7fddebbf9ab1  (/usr/lib/libSDL2-2.0.so.0+0xe4ab1)
+    #7 0x7fddebbf9bf9  (/usr/lib/libSDL2-2.0.so.0+0xe4bf9)
+    #8 0x7fddebbfc5fc  (/usr/lib/libSDL2-2.0.so.0+0xe75fc)
+    #9 0x000000c0c550  (/usr/lib/ld-linux-x86-64.so.2+0xc0c550)
+    #10 0x0000004d2346  (/usr/lib/ld-linux-x86-64.so.2+0x4d2346)
+    #11 0x7fddeb381253  (/usr/lib/libc.so.6+0x26253)
+    #12 0x7fddeb381305 in __libc_start_main (/usr/lib/libc.so.6+0x26305)
+    #13 0x0000004f9b70  (/usr/lib/ld-linux-x86-64.so.2+0x4f9b70)
+
+Direct leak of 88 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec4197cf in malloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:74
+    #1 0x7fddeb8de978 in pa_xmalloc (/usr/lib/libpulse.so.0+0x27978)
+    #2 0x7fddeb8d2a39  (/usr/lib/libpulse.so.0+0x1ba39)
+    #3 0x7fddeb8da58d in pa_context_subscribe (/usr/lib/libpulse.so.0+0x2358d)
+    #4 0x000000b178a7  (/usr/lib/ld-linux-x86-64.so.2+0xb178a7)
+    #5 0x7fddeb8c6295  (/usr/lib/libpulse.so.0+0xf295)
+    #6 0x7fddeb8c760c  (/usr/lib/libpulse.so.0+0x1060c)
+    #7 0x7fddeaa5f8b8  (/usr/lib/pulseaudio/libpulsecommon-17.0.so+0x2f8b8)
+    #8 0x7fddeaa5f9bf in pa_pdispatch_run (/usr/lib/pulseaudio/libpulsecommon-17.0.so+0x2f9bf)
+    #9 0x7fddeb8c65ad  (/usr/lib/libpulse.so.0+0xf5ad)
+    #10 0x7fddeaa618ce  (/usr/lib/pulseaudio/libpulsecommon-17.0.so+0x318ce)
+    #11 0x7fddeaa62f06  (/usr/lib/pulseaudio/libpulsecommon-17.0.so+0x32f06)
+    #12 0x7fddeb8d2675 in pa_mainloop_dispatch (/usr/lib/libpulse.so.0+0x1b675)
+    #13 0x7fddeb8d2870 in pa_mainloop_iterate (/usr/lib/libpulse.so.0+0x1b870)
+    #14 0x7fddeb8d28cf in pa_mainloop_run (/usr/lib/libpulse.so.0+0x1b8cf)
+    #15 0x000000b175ca  (/usr/lib/ld-linux-x86-64.so.2+0xb175ca)
+    #16 0x7fddeb727ca3  (/usr/lib/libstdc++.so.6+0xe6ca3)
+    #17 0x7fddec416937 in ThreadStartFunc<false> ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:465
+    #18 0x7fddeb3f8f1a  (/usr/lib/libc.so.6+0x9df1a)
+    #19 0x7fddeb482827  (/usr/lib/libc.so.6+0x127827)
+
+Direct leak of 72 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec4197cf in malloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:74
+    #1 0x7fddeca14fee  (/lib64/ld-linux-x86-64.so.2+0x2fee)
+    #2 0x7fddeca1e6f6  (/lib64/ld-linux-x86-64.so.2+0xc6f6)
+    #3 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #4 0x7fddeca1db51  (/lib64/ld-linux-x86-64.so.2+0xbb51)
+    #5 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #6 0x7fddeca1df60  (/lib64/ld-linux-x86-64.so.2+0xbf60)
+    #7 0x7fddeb3f5337  (/usr/lib/libc.so.6+0x9a337)
+    #8 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #9 0x7fddeca135ee  (/lib64/ld-linux-x86-64.so.2+0x15ee)
+    #10 0x7fddeb3f4e83  (/usr/lib/libc.so.6+0x99e83)
+    #11 0x7fddeb3f53d0 in dlopen (/usr/lib/libc.so.6+0x9a3d0)
+    #12 0x7fddebc11292  (/usr/lib/libSDL2-2.0.so.0+0xfc292)
+    #13 0x7fddebbead68  (/usr/lib/libSDL2-2.0.so.0+0xd5d68)
+    #14 0x7fddebbeb0a7  (/usr/lib/libSDL2-2.0.so.0+0xd60a7)
+    #15 0x7fddebc430ec  (/usr/lib/libSDL2-2.0.so.0+0x12e0ec)
+    #16 0x7fddebbfa5e5  (/usr/lib/libSDL2-2.0.so.0+0xe55e5)
+    #17 0x7fddebbfcf87  (/usr/lib/libSDL2-2.0.so.0+0xe7f87)
+    #18 0x000000c0dcbd  (/usr/lib/ld-linux-x86-64.so.2+0xc0dcbd)
+    #19 0x000000c0eac5  (/usr/lib/ld-linux-x86-64.so.2+0xc0eac5)
+    #20 0x000000b1f388  (/usr/lib/ld-linux-x86-64.so.2+0xb1f388)
+    #21 0x0000004d117a  (/usr/lib/ld-linux-x86-64.so.2+0x4d117a)
+    #22 0x7fddeb381253  (/usr/lib/libc.so.6+0x26253)
+
+Direct leak of 56 byte(s) in 1 object(s) allocated from:
+    #0 0x7fddec4197cf in malloc ../../../../src/libsanitizer/lsan/lsan_interceptors.cpp:74
+    #1 0x7fddeca14fee  (/lib64/ld-linux-x86-64.so.2+0x2fee)
+    #2 0x7fddeca1e6f6  (/lib64/ld-linux-x86-64.so.2+0xc6f6)
+    #3 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #4 0x7fddeca1db51  (/lib64/ld-linux-x86-64.so.2+0xbb51)
+    #5 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #6 0x7fddeca1df60  (/lib64/ld-linux-x86-64.so.2+0xbf60)
+    #7 0x7fddeb4d54fc  (/usr/lib/libc.so.6+0x17a4fc)
+    #8 0x7fddeca134bb in _dl_catch_exception (/lib64/ld-linux-x86-64.so.2+0x14bb)
+    #9 0x7fddeca135ee  (/lib64/ld-linux-x86-64.so.2+0x15ee)
+    #10 0x7fddeb4d5a1e  (/usr/lib/libc.so.6+0x17aa1e)
+    #11 0x7fddeb4821c8 in __libc_unwind_link_get (/usr/lib/libc.so.6+0x1271c8)
+    #12 0x7fddeb48d9e3 in backtrace (/usr/lib/libc.so.6+0x1329e3)
+    #13 0x0000004d0cf4  (/usr/lib/ld-linux-x86-64.so.2+0x4d0cf4)
+    #14 0x7fddeb381253  (/usr/lib/libc.so.6+0x26253)
+    #15 0x7fddeb381305 in __libc_start_main (/usr/lib/libc.so.6+0x26305)
+    #16 0x0000004f9b70  (/usr/lib/ld-linux-x86-64.so.2+0x4f9b70)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      1         64 *tls_get_addr*
+-----------------------------------------------------
+
+SUMMARY: LeakSanitizer: 808 byte(s) leaked in 6 allocation(s).

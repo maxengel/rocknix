@@ -81,6 +81,7 @@ def main():
     (args.output / 'os-release.txt').write_text(guest(f'cat /etc/os-release | {filtered}'))
     (args.output / 'binary.sha256').write_text(guest('sha256sum /usr/bin/emulationstation'))
     (args.output / 'mesa.sha256').write_text(guest('sha256sum /usr/lib/libgallium-*.so'))
+    (args.output / 'sdl.sha256').write_text(guest('sha256sum /usr/lib/libSDL2-2.0.so.0'))
     (args.output / 'rom.sha256').write_text(guest('sha256sum ' + shlex.quote(args.rom)))
     (args.output / 'settings.txt').write_text(guest(
         '. /etc/profile >/dev/null 2>&1; '

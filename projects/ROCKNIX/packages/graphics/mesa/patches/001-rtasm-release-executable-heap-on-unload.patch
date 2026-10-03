@@ -1,0 +1,69 @@
+Subject: [PATCH] rtasm: release the executable heap when the driver unloads
+
+The POSIX executable allocator retains a 10 MiB mmap after its suballocations
+are freed. When an application closes and reloads the DRI driver (for example,
+EmulationStation around each game), the static pointers are lost and a new
+heap is mapped each time. Register cleanup with atexit, as other Mesa global
+resources do; on our glibc target it also runs when the owning DSO unloads.
+
+Publish the heap only after both allocations succeed, and unwind allocation
+or callback-registration failure so a later call can retry. The arena stays
+shared and locked during normal operation; no per-shader mmap is introduced.
+
+Downstream: rasteratops/distribution#310. Mesa 26.2.2; current upstream still
+has the same unpaired mmap. See docs/qa-logs/2026-10-03-launch-memory/.
+
+--- a/src/gallium/auxiliary/rtasm/rtasm_execmem.c
++++ b/src/gallium/auxiliary/rtasm/rtasm_execmem.c
+@@ -67,18 +67,44 @@
+ static unsigned char *exec_mem = NULL;
+ 
+ 
++static void
++destroy_heap(void)
++{
++   u_mmDestroy(exec_heap);
++   exec_heap = NULL;
++   munmap(exec_mem, EXEC_HEAP_SIZE);
++   exec_mem = NULL;
++}
++
++
+ static int
+ init_heap(void)
+ {
+-   if (!exec_heap)
+-      exec_heap = u_mmInit( 0, EXEC_HEAP_SIZE );
++   if (exec_heap)
++      return 1;
+ 
+-   if (!exec_mem)
+-      exec_mem = (unsigned char *) mmap(NULL, EXEC_HEAP_SIZE,
+-         PROT_EXEC | PROT_READ | PROT_WRITE,
+-         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++   exec_mem = (unsigned char *) mmap(NULL, EXEC_HEAP_SIZE,
++      PROT_EXEC | PROT_READ | PROT_WRITE,
++      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++   if (exec_mem == MAP_FAILED)
++      return 0;
+ 
+-   return (exec_mem != MAP_FAILED);
++   exec_heap = u_mmInit(0, EXEC_HEAP_SIZE);
++   if (!exec_heap) {
++      munmap(exec_mem, EXEC_HEAP_SIZE);
++      exec_mem = NULL;
++      return 0;
++   }
++
++   /* The DRI driver can be unloaded before the process exits. Return the
++    * executable arena as well as its bookkeeping when that happens.
++    */
++   if (atexit(destroy_heap) != 0) {
++      destroy_heap();
++      return 0;
++   }
++
++   return 1;
+ }
+ 
+ 
