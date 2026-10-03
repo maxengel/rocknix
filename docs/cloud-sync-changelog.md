@@ -21,6 +21,31 @@ document is asking for help with.
 ---
 
 
+## Preserve account discovery after the distribution rename (2026-10-03)
+
+Source controls pass; packaged replacement qualification is pending under M7.P3.
+
+- **Offline RetroAchievements finds the account saved in Rasteratops settings.**
+  The current upstream proxy recognizes the renamed distribution's existing
+  account layout; cache and queued awards keep their established paths (#408).
+
+## Avoid an extra cloud-folder probe on game exit (2026-10-03)
+
+A byte-verified VM source comparison passes; rebuilt-image proof remains pending.
+
+- **Earlier cloud folders keep their absence check with less overhead.**
+  Listing an explicitly named directory avoids WebDAV's file-type probe. The
+  five-sample legacy/current timing difference falls from39ms to20ms in the
+  controlled VM comparison, within the unchanged30ms criterion (#364).
+
+## Name an explicitly selected cloud root (2026-10-03)
+
+Source pointer-writer controls pass; rebuilt-image proof is pending under M7.P3.
+
+- **Migration progress names the root of your cloud when that is the selected
+  folder.** It no longer leaves the folder name blank. The stored selection
+  and the ROMs/BIOS location remain unchanged (#407).
+
 ## Stop content transfers that stop progressing (2026-10-03)
 
 Source and isolated full-script controls pass; rebuilt image qualification

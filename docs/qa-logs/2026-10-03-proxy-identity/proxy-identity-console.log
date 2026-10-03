@@ -1,0 +1,16 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/m7-generic-x64/.build-runs/20261003T230118Z-d804f44f
+up: webdav serving /workspace/tmp/rasteratops-m7-archives-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+[W][23:01:19.658782] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:01:19.658816] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+{"module": "/usr/lib/python3.14/site-packages/raofflineproxy/config.pyc", "os_name": "OS_NAME=\"RASTERATOPS\"", "recognized_platform": false, "automatic_detected": false, "explicit_detected": true, "automatic_credentials": false, "explicit_credentials_correct": true}
+PASS synthetic account and existing credential parser are valid
+FAIL branded image automatically discovers canonical account settings
+Traceback (most recent call last):
+  File "/workspace/tmp/rasteratops-m7-archives-01/proxy-identity.py", line 29, in <module>
+    check(result['recognized_platform'] and result['automatic_detected'] and result['automatic_credentials'],'branded image automatically discovers canonical account settings')
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<retained QA helpers>", line 22, in check
+AssertionError: branded image automatically discovers canonical account settings
+down

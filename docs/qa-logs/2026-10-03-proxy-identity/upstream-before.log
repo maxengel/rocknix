@@ -1,0 +1,32 @@
+........FFF......
+======================================================================
+FAIL: test_platform_name_must_be_the_complete_os_name_record (__main__.RocknixDetectionTests.test_platform_name_must_be_the_complete_os_name_record) (text='# OS_NAME="ROCKNIX"')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/m7-proxy-408/linux/tests/test_linux_rocknix.py", line 45, in test_platform_name_must_be_the_complete_os_name_record
+    self.assertFalse(config.running_on_rocknix())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_platform_name_must_be_the_complete_os_name_record (__main__.RocknixDetectionTests.test_platform_name_must_be_the_complete_os_name_record) (text='PREVIOUS_OS_NAME="ROCKNIX"')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/m7-proxy-408/linux/tests/test_linux_rocknix.py", line 45, in test_platform_name_must_be_the_complete_os_name_record
+    self.assertFalse(config.running_on_rocknix())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_rasteratops_discovers_rocknix_account_settings (__main__.RocknixDetectionTests.test_rasteratops_discovers_rocknix_account_settings)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/m7-proxy-408/linux/tests/test_linux_rocknix.py", line 31, in test_rasteratops_discovers_rocknix_account_settings
+    self.assertTrue(config.running_on_rocknix())
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.002s
+
+FAILED (failures=3)

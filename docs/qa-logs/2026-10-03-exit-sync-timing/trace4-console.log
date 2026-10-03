@@ -1,0 +1,15 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/m7-generic-x64/.build-runs/20261003T225014Z-55ad2f68
+up: webdav serving /workspace/tmp/rasteratops-m7-archives-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+[W][22:50:15.813572] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][22:50:15.813608] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+TRACE legacy {"bytes": 10820, "lines": 182, "http_mentions": 28, "requests": ["PROPFIND /ROCKNIX HTTP/1.1", "PROPFIND /ROCKNIX/ HTTP/1.1", "PROPFIND /ROCKNIX/Saves-replaced/2026_10_03-185035 HTTP/1.1", "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1", "MKCOL /ROCKNIX/Saves/nes/ HTTP/1.1", "PUT /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1", "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1"]}
+PASS legacy actual HTTP requests retained without headers
+Traceback (most recent call last):
+  File "/workspace/tmp/rasteratops-m7-archives-01/follow-trace4.py", line 49, in <module>
+    guest(wrapper+command+' >/tmp/m7-traced-outcome.log 2>&1')
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<retained QA helpers>", line 16, in guest
+AssertionError: guest step8 rc124: 
+down

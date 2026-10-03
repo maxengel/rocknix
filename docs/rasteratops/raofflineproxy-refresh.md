@@ -27,7 +27,7 @@ This is source integration; candidate build and VM qualification remain required
 |016|Rebased: downloaded/cached, absent404/410 and transient outcomes remain visible to the image helper.|
 |017|Retired: upstream subset-aware `_iter_achievementsets_achievements`/`build_achievement_game_ids` and award-parity tests already preserve each set's game ID.|
 
-Fourteen generated patches apply without fuzz and reproduce the reviewed
+Fourteen refresh patches apply without fuzz and reproduce the reviewed
 integration tree. Parent gitlinks retain rcheevos1433173 and libchdr8e7b8bd;
 full pins are retained in the evidence directory and existing coupled recipes.
 The whole upstream download/queue model remains available. The deliberate OS
@@ -60,3 +60,14 @@ The isolated concurrent-image-publication contribution under
 `docs/upstream/raofflineproxy/image-publication/` remains prepared, not submitted.
 General fixes remain owned by #168; upstream acceptance does not gate the
 locally qualified candidate.
+
+
+## Branded runtime discovery follow-up — #408
+
+Replacement134e89 exposed upstream's exact OS_NAME=ROCKNIX detector missing
+Rasteratops, so automatic account discovery could not find system.cfg. Patch018
+adds the new complete identity while preserving the existing paths, configured
+overrides and all queue behavior. Seven isolated controls,36 upstream platform/
+config/auth tests and eight fork integration tests pass. The prepared upstream
+patch includes focused tests. A rebuilt image must qualify this correction;
+the original packaged failure remains in2026-10-03-proxy-identity.

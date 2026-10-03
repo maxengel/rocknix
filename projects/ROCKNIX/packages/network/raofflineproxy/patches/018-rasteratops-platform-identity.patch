@@ -1,0 +1,58 @@
+config: recognize Rasteratops as the ROCKNIX settings layout
+
+Rasteratops changes OS_NAME while retaining /storage and the canonical
+system.cfg account. Without recognition, automatic credential discovery
+misses that file after the rename. Match complete OS_NAME records so an
+unrelated field or commented example is not treated as platform identity.
+No stored paths, accounts, cache schema, or upstream queue behavior change.
+Fork #408; intended for upstream contribution with #168.
+
+--- a/linux/raofflineproxy/config.py
++++ b/linux/raofflineproxy/config.py
+@@ -74,7 +74,11 @@
+         content = OS_RELEASE_PATH.read_text(encoding="utf-8", errors="replace")
+     except OSError:
+         return False
+-    return 'OS_NAME="ROCKNIX"' in content
++    # Rasteratops retains ROCKNIX's settings and emulator layout.
++    return any(
++        line in {'OS_NAME="ROCKNIX"', 'OS_NAME="RASTERATOPS"'}
++        for line in content.splitlines()
++    )
+ 
+ 
+ def running_on_spruce() -> bool:
+--- a/linux/tests/test_linux_rocknix.py
++++ b/linux/tests/test_linux_rocknix.py
+@@ -18,6 +18,31 @@
+                 self.assertTrue(config.running_on_rocknix())
+             finally:
+                 config.OS_RELEASE_PATH = original
++
++    def test_rasteratops_discovers_rocknix_account_settings(self) -> None:
++        with tempfile.TemporaryDirectory() as temp_dir:
++            os_release = Path(temp_dir) / "os-release"
++            system_cfg = Path(temp_dir) / "system.cfg"
++            os_release.write_text('OS_NAME="RASTERATOPS"\n', encoding="utf-8")
++            system_cfg.touch()
++            with patch.object(config, "OS_RELEASE_PATH", os_release), patch.object(
++                config, "DEFAULT_ROCKNIX_SYSTEM_CFG", system_cfg
++            ):
++                self.assertTrue(config.running_on_rocknix())
++                self.assertEqual(config.detect_rocknix_system_cfg(), str(system_cfg))
++                self.assertEqual(
++                    config.detect_rocknix_system_cfg({"rocknix_system_cfg": "/custom/system.cfg"}),
++                    "/custom/system.cfg",
++                )
++
++    def test_platform_name_must_be_the_complete_os_name_record(self) -> None:
++        with tempfile.TemporaryDirectory() as temp_dir:
++            os_release = Path(temp_dir) / "os-release"
++            for text in ('# OS_NAME="ROCKNIX"', 'PREVIOUS_OS_NAME="ROCKNIX"', 'OS_NAME="ROCKNIX_REMIX"'):
++                with self.subTest(text=text):
++                    os_release.write_text(text + "\n", encoding="utf-8")
++                    with patch.object(config, "OS_RELEASE_PATH", os_release):
++                        self.assertFalse(config.running_on_rocknix())
+ 
+     def test_running_on_rocknix_false_when_os_release_differs(self) -> None:
+         with tempfile.TemporaryDirectory() as temp_dir:

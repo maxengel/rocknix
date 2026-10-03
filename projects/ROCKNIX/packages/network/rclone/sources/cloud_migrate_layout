@@ -666,7 +666,7 @@ set_pointer() { # <key> <remote path>
         logger -t cloud_migrate_layout "could not write $1 to ${SYNC_CONF}; stopped before removing anything" 2>/dev/null
         return 1
     fi
-    say "Now using ${2} for your $(tier_words "$1")."
+    say "Now using ${2:-the root of your cloud} for your $(tier_words "$1")."
 }
 
 # A tier as the player knows it (es-player-text.md: the four tiers), for
