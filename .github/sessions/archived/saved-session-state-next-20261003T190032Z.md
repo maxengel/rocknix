@@ -12,15 +12,13 @@ Use the existing Blitterbot identity; never print or request credentials.
 The user asked **"can we proceed with our M7 plan?"** Continue execution,
 not another readiness review or status-only response. The comprehensive review
 and initial audit are complete. The cold branded engineering image finished16:33UTC on2026-10-03, rc0.
-It is retained and checksum-verified. All15 default suites have passing evidence
-after a host assertion correction; RC2 upgrade passed. Full P3 and RC status
-remain open, including a replacement image for missing policy files (#397). Working version remains0.0.1; optional1.0.0 was not selected.
+It is retained and checksum-verified; no VM qualification or RC is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
 ## Binding order and naming — #388/#389
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: WebDAV link-loss cases running after defaults/upgrade/providers/pair PASS**;
+complete; P1 source complete; **P2 source gate complete; P3 current: first clean-install/default VM qualification running**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -32,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T192120Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T192120Z.md.
+> Saved: 20261003T184200Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T174627Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -167,8 +165,8 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The current link-loss QA run below is active. Product work remains P3 image
-qualification and the #397 replacement, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
+The first QA run below is active. Product work remains P3 image
+qualification, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
 ## Immediate next actions
@@ -183,9 +181,8 @@ create its own qualified image before any named migration/device action.
    wording was corrected after the fresh resume proof; final result readback
    at16:59:43UTC used short-lived recorder48573 and explicitly states that
    the heartbeat stops normally. It is no longer running.
-3. Default suites and RC2 upgrade passed as detailed below. Consume the
-   active link-loss result, then guest-d cases, RA and remaining P3 cases.
-   Artifact and source inventory verification passed. Continue M7.P3 in the live body's order: clean/RC2
+3. Consume the active default-suite result below. Artifact and source inventory
+   verification passed. Continue M7.P3 in the live body's order: clean/RC2
    upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
    identity/licence proof. Run image QA from the frozen checkout, with the
    explicit ES_SRC/RETROARCH_SRC values below.
@@ -193,82 +190,52 @@ create its own qualified image before any named migration/device action.
    Initial #375/#382 is complete; do not restart it. Resolve findings and
    rebuild/requalify affected product bytes before any RC claim.
 
-## Candidate QA — completed results and active link run (#383 / #395)
+## Active candidate QA — #383 / #395
 
-Default run ended18:51UTC:14PASS/one host assertion FAIL; all16 walks and
-frame comparison pass. #396 corrected the test's expectation: new writer
-archives intentionally retain ROCKNIX for old-reader compatibility. Full
-corrected WebDAV round-trip passed81s at18:54UTC on the unchanged candidate.
-All15 default suites therefore have passing evidence across those two runs.
-Do not rewrite the first failed report or infer a new product build.
-Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/default/` and
-`docs/qa-logs/2026-10-03-archive-harness/rerun/`.
+Started2026-10-03T18:19:10Z. Owner directory:
+`/workspace/tmp/rasteratops-m7-qa-01/`. Main runner389728, watcher389734,
+QEMU guest a390564 / b390590. Read the actual PID/status before acting.
+Host execution session33776 is the active waiter in this conversation;
+`write_stdin` returns suite results. Also read the recorder within60s:
+`.build-runs/20261003T181910Z-797780a0/build.status` under that owner directory.
+It checks nested QA logs every5s and suspects inactivity after5min. Report
+suite failures/stale monitoring/stalls/completion immediately. Do not confuse
+quiet summary output with a quiet suite. No off-session alert is configured.
 
-RC2 upgrade passed18:57:43UTC:69e6039f8f ->503e24e10d, byte-identical saves
-and states, settings/cloud/backup retained, update queue empty, boot quirks
-applied and owner's settings/files kept. Owned pair/backend stopped. Evidence:
-`docs/qa-logs/2026-10-03-m7-qa-01/upgrade/`; full artifacts:
-`/workspace/artifacts/rocknix-images/qa-503e24e10d-upgrade-from-69e6039f8f-20261003-1856/`.
-Run01 waiter33776, corrected waiter66256 and upgrade waiter71273 all finished;
-their terminal recorders exited normally. Proactive failure and success
-notices were delivered in chat. No disconnected notification is configured.
+Run-owned immutable `runner/watch-build`, `runner/watch-job` and
+`default-vm-qa.sh` wrap the frozen checkout's actual `tools/vm-qa`, all15
+default WebDAV suites. Both guests booted503e24e10d with virgl; the clean-boot
+frame was black only from screensaver and the inert shift wake showed the
+carousel, verified visually. No guest bug or RC pass inferred from boot.
+Report/logs are under:
+`artifacts/rocknix-images/qa-503e24e10d-webdav-a-20261003-1819/`.
+At18:42UTC twelve suites pass; round-trip failed one assertion because it
+expected the displayed RASTERATOPS suffix instead of the deliberately
+persisted ROCKNIX writer suffix (#396). Visual walks remain active. Feature
+harness fix has16PASS/0FAIL controls (frozen source14PASS/2FAIL); rerun the
+whole round-trip on the unchanged candidate after this suite releases its
+guests/endpoint. Read current report rather than assuming this snapshot phase. Cleanup stops owned guests and endpoint.
 
-S3 complete round-trip passed107s at19:00UTC. Pair migration passed42/42
-at19:04:37UTC, exercising actual RC2+fresh503e devices, joining existing
-cloud data, update then verified migration, second-device follow, missed
-step/late old-device writes and provider refusal without changed pointers.
-Receipts under the main QA directory's `s3/` and `pair/`. Waiters3351 and
-15710 finished; both pairs and endpoints stopped. The pair's output folder
-uses the bundle's suffix bcd9877d21 only as a label; actual guest BUILD_IDs
-are asserted inside its log. A setup typo's observation path was repaired
-through a same-inode log alias; `pair/activity-alias.log` retains the proof.
+VM disks live in `pair/` on workspace disk, not tmpfs; QA key matches the
+harness's `/tmp/rocknix-vm-pair/qa-key`. Isolated endpoint state is `cloud/`.
+All subsequent commands must use those same explicit environment values,
+which are in the immutable launcher. Do not reset that endpoint or start
+another pair while this run is active. After completion, retain results, rerun the corrected archive harness, and
+continue RC2 upgrade, then remaining P3 matrix. P4 waits for qualification.
 
-**ACTIVE since19:20:11UTC:** corrected all-seven WebDAV link-loss rerun, throttled200k.
-Owner `/workspace/tmp/rasteratops-m7-link-02/`, immutable launcher `link.sh`.
-Status `.build-runs/20261003T192011Z-5f0be9cb/build.status` under the owner.
-Active waiter session15271: poll within60s; nested activity every5s,
-suspected stall after5min. Read actual PID/status rather than assuming this
-snapshot. Announce failures/stall/lost monitoring/completion before unrelated
-work. Cleanup stops owned pair and WebDAV endpoint. The launcher retains
-VM_PAIR_DIR/CLOUD_QA_STATE/ROCKNIX_ARTIFACTS, throttle and harness hashes.
-Do not start/reset another pair or cloud run while this one owns them.
-
-The first link run ended19:15UTC, rc1: LINK2/3/4 rejected valid extended
-failure stamps (#398). The host correction was applied after it exited;
-actual controls pass14/14, original7/14. Initial report and terminal recorder
-remain under `docs/qa-logs/2026-10-03-link-stamp/initial/`. LINK5 has the known
-D-CLOUD-128 WebDAV buffering skip; strict S3 LINK5 evidence is required next.
-The rerun uses the corrected host harness and unchanged candidate bytes.
-Do not infer final suite success or ignore any additional failure.
-
-**New product gate #397:** actual SYSTEM has no fork branding licence or
-trademark policy under /usr/share/licenses. Source terms already existed.
-Feature d43d31a4a4 / next0159cb3235 (published, exact remote hashes verified)
-adds only policy installation to image assembly; staged bytes/modes and
-missing-input failure controls pass4/4. Root LICENSE.md and TRADEMARK.md must
-be included in the next explicit input inventory. A replacement retained
-image with clean/upgrade readback is still owed; do not mark the old image
-qualified. Preserve its bundle, input manifest and receipts. Frozen build
-worktree remains503e, with its generated emulator-support document preserved.
-
-#396 host-only correction is feature96ccdb16e5 / next4f0dcdfcaf, published.
-It has16/16 assertion controls (original14/16), and full VM proof above.
-This does not change the frozen image or justify redoing unrelated source work.
-Current next also retains watcher/runner controls32+35PASS. Off-session
-notification #395 remains open, distinct from completed recorder #393/#394.
-
-After link: RA opt-in and independently
-reset guest-d casesT17/T19/T23/T26 plus owning matrix, archives/pending awards,
-production memory/sign-in/timing and EN/FR640x480/Nova1280x960 identity/UI.
-Collect concrete failures, apply qualified fixes to a new image, renew affected
-proof, then approved P4. Never start a second pair/reset the active endpoint.
+Watcher extension source is feature68c6772a6d / next7bae7e1728, normally
+pushed and remotely verified;32 watcher+35 runner controls PASS. A deliberate
+exit7 was delivered through the active waiter and recorded correctly.
+Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/`. No product pin moved.
 
 Source inventory:568 unpacked roots,547 cache inputs,17 local/generated,
-three parent-source packages, one prebuilt rclone;0 checksum/identity errors.
-Rclone ZIP recovery matches both pinned archive and consumed binary. Read-only:
+three parent-source packages, one prebuilt rclone. Zero checksum/identity
+errors after classification. Rclone's recipe deletes its ZIP; recovered the
+same pinned archive and matched its binary to the actual unpacked binary.
+Inventory and supplemental recovery receipt are read-only at:
 `/workspace/artifacts/rasteratops-build-inputs/m7-cold-01-consumed/7736dfcc2065d979b7cf090e361e430efbd4af1c22dba17a60bbceed611d0b8b/`.
-Original manifest/bundle verify unchanged before and after default QA. This
-is provenance, not a publication corresponding-source/licence gate pass.
+The original input manifest and candidate bundle are unchanged. This is
+post-build provenance, not a completed publication source bundle/licence gate.
 
 ## Completed cold engineering build — M7.P3, qualification remains
 
@@ -314,7 +281,7 @@ root copied or renamed. The launched script is a run-owned immutable copy,
   SHA256 files verify against actual bytes. Candidate-store also verified all
   copied bytes in immutable bundle:
   `/workspace/artifacts/rasteratops-candidates/sha256/83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21`.
-  It embeds the full frozen input inventory. Post-build source/cache inventory is retained below; image QA has default/upgrade PASS evidence; remaining P3 is active. Custody is not an RC claim.
+  It embeds the full frozen input inventory. Post-build source/cache inventory is retained below; image QA is in flight. Custody is not an RC claim.
 
 Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
 retains unrelated generated emulator-support doc and ignored warm diagnostic
@@ -326,8 +293,8 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-Those old diagnostic jobs have ended. The current link-loss candidate QA runner, watcher
-and guests above are active; do not stop them as stale diagnostic processes.
+Those old diagnostic jobs have ended. The new candidate QA runner, watcher
+and guests below are active; do not stop them as stale diagnostic processes.
 No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
 
@@ -338,7 +305,7 @@ wrapper-test's default still searches old warm roots. Set
 only after verifying its clean HEAD is the pinned e6e1e4d0f91e177e182cc05b1cea74991e1cc45b;
 if it moved, use a source checkout of that exact pin. Both are existing supported
 runner overrides. Compare source identities to the manifest before accepting
-host-side suites; keep VM image digest checks separate. The completed first default QA run used these exact paths.
+host-side suites; keep VM image digest checks separate. The first default QA run below uses these exact paths.
 
 Candidate evidence required in live M7 P3:15 default VM suites plus link/RA
 opt-ins, clean install/RC2 upgrade, WebDAV/S3/pair migration, independently
@@ -354,11 +321,3 @@ Old fork-publish-release selects dated ROCKNIX assets and undrafts; do not use
 it for manifest-bound Rasteratops publication. Publication, handheld actions
 and personal-cloud writes retain named authorization. Upstream proxy #168
 contribution is prepared but not submitted; acceptance does not hold the build.
-
-Harness scope clarification: the completed all-suite run used the frozen
-checkout plus pinned ES_SRC/RETROARCH_SRC, because it executes host source
-suites. Corrected round-trip, S3 and current link-only runs intentionally
-use the feature host harness, with exact retained harness.sha256 checked
-before launch, against the unchanged candidate. They run no host source
-suites, so those source overrides are unnecessary. Do not rerun an obsolete
-assertion merely to obey the older generic frozen-checkout instruction.

@@ -32,7 +32,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T192120Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T192120Z.md.
+> Saved: 20261003T190719Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T190719Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -223,22 +223,23 @@ uses the bundle's suffix bcd9877d21 only as a label; actual guest BUILD_IDs
 are asserted inside its log. A setup typo's observation path was repaired
 through a same-inode log alias; `pair/activity-alias.log` retains the proof.
 
-**ACTIVE since19:20:11UTC:** corrected all-seven WebDAV link-loss rerun, throttled200k.
-Owner `/workspace/tmp/rasteratops-m7-link-02/`, immutable launcher `link.sh`.
-Status `.build-runs/20261003T192011Z-5f0be9cb/build.status` under the owner.
-Active waiter session15271: poll within60s; nested activity every5s,
+**ACTIVE since19:06:03UTC:** all seven WebDAV link-loss cases, throttled200k.
+Owner `/workspace/tmp/rasteratops-m7-link-01/`, immutable launcher `link.sh`.
+Status `.build-runs/20261003T190603Z-63a38bb2/build.status` under the owner.
+Active waiter session73538: poll within60s; nested activity every5s,
 suspected stall after5min. Read actual PID/status rather than assuming this
 snapshot. Announce failures/stall/lost monitoring/completion before unrelated
 work. Cleanup stops owned pair and WebDAV endpoint. The launcher retains
 VM_PAIR_DIR/CLOUD_QA_STATE/ROCKNIX_ARTIFACTS, throttle and harness hashes.
 Do not start/reset another pair or cloud run while this one owns them.
 
-The first link run ended19:15UTC, rc1: LINK2/3/4 rejected valid extended
-failure stamps (#398). The host correction was applied after it exited;
-actual controls pass14/14, original7/14. Initial report and terminal recorder
-remain under `docs/qa-logs/2026-10-03-link-stamp/initial/`. LINK5 has the known
-D-CLOUD-128 WebDAV buffering skip; strict S3 LINK5 evidence is required next.
-The rerun uses the corrected host harness and unchanged candidate bytes.
+Current link run has LINK2/3/4 failures from #398's stale stamp parser:
+it accepts exactly two fields, while production deliberately writes rc69
+plus `gaps` and a reason. Interruption bounds, whole files and retries pass
+so far. Prepared correction is `/tmp/rasteratops-m7-testing/cloud-round-trip-stamp-fixed`;
+actual AST controls:old7PASS/7FAIL, prepared14PASS/0FAIL. Do not copy it over
+the executing tools/cloud-round-trip until this run exits. Then apply,
+retain original log and rerun all seven cases on unchanged candidate bytes.
 Do not infer final suite success or ignore any additional failure.
 
 **New product gate #397:** actual SYSTEM has no fork branding licence or

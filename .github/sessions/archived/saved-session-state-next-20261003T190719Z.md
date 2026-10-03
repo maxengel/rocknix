@@ -20,7 +20,7 @@ remain open, including a replacement image for missing policy files (#397). Work
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: WebDAV link-loss cases running after defaults/upgrade/providers/pair PASS**;
+complete; P1 source complete; **P2 source gate complete; P3 current: S3 round-trip running after default/RC2 upgrade PASS**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -32,7 +32,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T192120Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T192120Z.md.
+> Saved: 20261003T190032Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T190032Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -167,7 +167,7 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The current link-loss QA run below is active. Product work remains P3 image
+The current S3 QA run below is active. Product work remains P3 image
 qualification and the #397 replacement, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
@@ -184,7 +184,7 @@ create its own qualified image before any named migration/device action.
    at16:59:43UTC used short-lived recorder48573 and explicitly states that
    the heartbeat stops normally. It is no longer running.
 3. Default suites and RC2 upgrade passed as detailed below. Consume the
-   active link-loss result, then guest-d cases, RA and remaining P3 cases.
+   active S3 round-trip result, then pair migration and remaining P3 cases.
    Artifact and source inventory verification passed. Continue M7.P3 in the live body's order: clean/RC2
    upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
    identity/licence proof. Run image QA from the frozen checkout, with the
@@ -193,7 +193,7 @@ create its own qualified image before any named migration/device action.
    Initial #375/#382 is complete; do not restart it. Resolve findings and
    rebuild/requalify affected product bytes before any RC claim.
 
-## Candidate QA — completed results and active link run (#383 / #395)
+## Candidate QA — completed results and active S3 run (#383 / #395)
 
 Default run ended18:51UTC:14PASS/one host assertion FAIL; all16 walks and
 frame comparison pass. #396 corrected the test's expectation: new writer
@@ -213,33 +213,15 @@ Run01 waiter33776, corrected waiter66256 and upgrade waiter71273 all finished;
 their terminal recorders exited normally. Proactive failure and success
 notices were delivered in chat. No disconnected notification is configured.
 
-S3 complete round-trip passed107s at19:00UTC. Pair migration passed42/42
-at19:04:37UTC, exercising actual RC2+fresh503e devices, joining existing
-cloud data, update then verified migration, second-device follow, missed
-step/late old-device writes and provider refusal without changed pointers.
-Receipts under the main QA directory's `s3/` and `pair/`. Waiters3351 and
-15710 finished; both pairs and endpoints stopped. The pair's output folder
-uses the bundle's suffix bcd9877d21 only as a label; actual guest BUILD_IDs
-are asserted inside its log. A setup typo's observation path was repaired
-through a same-inode log alias; `pair/activity-alias.log` retains the proof.
-
-**ACTIVE since19:20:11UTC:** corrected all-seven WebDAV link-loss rerun, throttled200k.
-Owner `/workspace/tmp/rasteratops-m7-link-02/`, immutable launcher `link.sh`.
-Status `.build-runs/20261003T192011Z-5f0be9cb/build.status` under the owner.
-Active waiter session15271: poll within60s; nested activity every5s,
-suspected stall after5min. Read actual PID/status rather than assuming this
-snapshot. Announce failures/stall/lost monitoring/completion before unrelated
-work. Cleanup stops owned pair and WebDAV endpoint. The launcher retains
-VM_PAIR_DIR/CLOUD_QA_STATE/ROCKNIX_ARTIFACTS, throttle and harness hashes.
+**ACTIVE since18:58:36UTC:** full S3 round-trip on the same image.
+Owner `/workspace/tmp/rasteratops-m7-s3-01/`, immutable launcher `s3.sh`.
+Runner904541, watcher904556; check actual PID state rather than trusting this
+snapshot. Status `.build-runs/20261003T185836Z-f5051f0c/build.status` under the
+owner. Active waiter session3351: poll within60s; nested activity every5s,
+suspected stall after5min. Announce failures/stall/lost monitoring/completion
+before unrelated work. Cleanup stops owned pair and S3 endpoint. The launcher
+retains VM_PAIR_DIR/CLOUD_QA_STATE/ROCKNIX_ARTIFACTS and harness hashes.
 Do not start/reset another pair or cloud run while this one owns them.
-
-The first link run ended19:15UTC, rc1: LINK2/3/4 rejected valid extended
-failure stamps (#398). The host correction was applied after it exited;
-actual controls pass14/14, original7/14. Initial report and terminal recorder
-remain under `docs/qa-logs/2026-10-03-link-stamp/initial/`. LINK5 has the known
-D-CLOUD-128 WebDAV buffering skip; strict S3 LINK5 evidence is required next.
-The rerun uses the corrected host harness and unchanged candidate bytes.
-Do not infer final suite success or ignore any additional failure.
 
 **New product gate #397:** actual SYSTEM has no fork branding licence or
 trademark policy under /usr/share/licenses. Source terms already existed.
@@ -257,7 +239,7 @@ This does not change the frozen image or justify redoing unrelated source work.
 Current next also retains watcher/runner controls32+35PASS. Off-session
 notification #395 remains open, distinct from completed recorder #393/#394.
 
-After link: RA opt-in and independently
+After S3: mixed-install pair migration, link and RA opt-ins, independently
 reset guest-d casesT17/T19/T23/T26 plus owning matrix, archives/pending awards,
 production memory/sign-in/timing and EN/FR640x480/Nova1280x960 identity/UI.
 Collect concrete failures, apply qualified fixes to a new image, renew affected
@@ -326,7 +308,7 @@ QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
 `/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
 `/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
 Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
-Those old diagnostic jobs have ended. The current link-loss candidate QA runner, watcher
+Those old diagnostic jobs have ended. The current S3 candidate QA runner, watcher
 and guests above are active; do not stop them as stale diagnostic processes.
 No physical device/personal cloud action occurred. If reusing guests, read command profiles/receipts and
 use their owned fixture mounts; credentials must never enter tracked evidence.
@@ -354,11 +336,3 @@ Old fork-publish-release selects dated ROCKNIX assets and undrafts; do not use
 it for manifest-bound Rasteratops publication. Publication, handheld actions
 and personal-cloud writes retain named authorization. Upstream proxy #168
 contribution is prepared but not submitted; acceptance does not hold the build.
-
-Harness scope clarification: the completed all-suite run used the frozen
-checkout plus pinned ES_SRC/RETROARCH_SRC, because it executes host source
-suites. Corrected round-trip, S3 and current link-only runs intentionally
-use the feature host harness, with exact retained harness.sha256 checked
-before launch, against the unchanged candidate. They run no host source
-suites, so those source overrides are unnecessary. Do not rerun an obsolete
-assertion merely to obey the older generic frozen-checkout instruction.

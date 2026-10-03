@@ -86,3 +86,20 @@ Read-only identity checks found a separate missing-policy installation gate
 The RC2 upgrade rehearsal started18:56:05 under the shared watcher and active
 waiter71273, owned state `/workspace/tmp/rasteratops-m7-upgrade-01/`. Its
 activity log is `/workspace/artifacts/rocknix-images/qa-503e24e10d-upgrade-from-69e6039f8f-20261003-1856/rehearsal.log`.
+
+RC2 upgrade passed (see `upgrade/`); S3 passed107s (`s3/`); mixed-install
+pair migration passed42/42 (`pair/`). All completed jobs stopped their owned
+guests and endpoints. The WebDAV link-loss run started19:06:03 under
+`/workspace/tmp/rasteratops-m7-link-01/`, active waiter73538. All15 default
+suites have passing evidence; this does not complete the opt-ins, guest-d
+matrix, memory/RA/UI or replacement-image gates.
+
+The first link run ended19:15UTC with three stale-host-assertion failures
+(#398), all retained. Corrected actual parser controls pass14/14; all-seven
+rerun began19:20:11 under link-02, waiter15271. WebDAV LINK5's known fixture
+skip requires strict S3 coverage. No production timeout was relaxed.
+
+Fresh independent read-only resume proof verified source/candidate hashes,
+actual process monitoring and all completed receipts. Its two wording
+findings (#383's old opening and ambiguous host-harness guidance) were
+corrected and rechecked with no unresolved finding.
