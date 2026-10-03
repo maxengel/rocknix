@@ -8,7 +8,8 @@
 
 . /etc/profile
 
-LED_PATH="/sys/devices/platform/"
+LED_PATH="${LED_PATH:-/sys/devices/platform/}"
+BATTERY_PATH="${BATTERY_PATH:-/sys/class/power_supply/battery}"
 
 function bat_led_off() {
   n=1
@@ -24,8 +25,8 @@ function bat_led_off() {
 function bat_led_red() {
   n=1
   while [ "$n" -lt 5 ]; do
-    echo 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
-    echo 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
     echo 0 0 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/multi_intensity
     echo 0 0 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/multi_intensity
     n=$(( n + 1 ))
@@ -35,8 +36,8 @@ function bat_led_red() {
 function bat_led_green() {
   n=1
   while [ "$n" -lt 5 ]; do
-    echo 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
-    echo 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
     echo 0 255 0 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/multi_intensity
     echo 0 255 0 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/multi_intensity
     n=$(( n + 1 ))
@@ -46,8 +47,8 @@ function bat_led_green() {
 function bat_led_orange() {
   n=1
   while [ "$n" -lt 5 ]; do
-    echo 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
-    echo 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
     echo 0 20 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/multi_intensity
     echo 0 20 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/multi_intensity
     n=$(( n + 1 ))
@@ -57,8 +58,8 @@ function bat_led_orange() {
 function bat_led_yellow() {
   n=1
   while [ "$n" -lt 5 ]; do
-    echo 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
-    echo 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/brightness
+    echo "${LED_BRIGHTNESS}" >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/brightness
     echo 0 125 255 >  ${LED_PATH}/multi-ledl${n}/leds/rgb:l${n}/multi_intensity
     echo 0 125 255 >  ${LED_PATH}/multi-ledr${n}/leds/rgb:r${n}/multi_intensity
     n=$(( n + 1 ))
@@ -72,8 +73,14 @@ while true
   if [ ! ${BAT_LED_STATE} == "battery" ]; then
     break
   else
-    CAP=$(cat /sys/class/power_supply/battery/capacity)
-    STAT=$(cat /sys/class/power_supply/battery/status)
+    # Keep the selected level across color changes and low-battery blinks.
+    case "$(get_setting led.brightness)" in
+      min) LED_BRIGHTNESS=32 ;;
+      mid) LED_BRIGHTNESS=128 ;;
+      *) LED_BRIGHTNESS=255 ;;
+    esac
+    CAP=$(cat "${BATTERY_PATH}/capacity")
+    STAT=$(cat "${BATTERY_PATH}/status")
       if [ ${STAT} == "Discharging" ]; then
         if (( ${CAP} <= 10 ))
           then

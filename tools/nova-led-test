@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""#332: real Nova scripts with only profile/path/service boundaries adapted."""
+from pathlib import Path
+import os
+import argparse
+import subprocess
+import sys
+import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--source-root', type=Path, default=Path(__file__).resolve().parents[1])
+args = parser.parse_args()
+repo = args.source_root.resolve()
+source = repo/'projects/ROCKNIX/packages/hardware/quirks/devices/Retroid Pocket Nova/bin'
+failed = 0
+checked = 0
+with tempfile.TemporaryDirectory(prefix='m7-nova-led-') as temp:
+    root=Path(temp); settings=root/'settings'; settings.touch()
+    led=root/'sys'; battery=root/'battery'; battery.mkdir()
+    (battery/'capacity').write_text('75\n'); (battery/'status').write_text('Discharging\n')
+    dirs=[]
+    for side in 'lr':
+        for n in range(1,5):
+            d=led/f'multi-led{side}{n}/leds/rgb:{side}{n}'; d.mkdir(parents=True); dirs.append(d)
+            (d/'brightness').write_text('0\n'); (d/'multi_intensity').write_text('0 0 0\n')
+    profile=root/'profile'
+    profile.write_text('''get_setting() { grep -F "$1=" "$QA_SETTINGS" | tail -1 | cut -d= -f2-; }
+set_setting() { printf '%s=%s\\n' "$1" "$2" >> "$QA_SETTINGS"; }
+systemctl() { [ "$*" = "restart batteryledstatus.service" ] || return 9; bash "$QA_ROOT/battery_led_status"; }
+sleep() { cat "$LED_PATH"/multi-*/leds/*/brightness >> "$QA_ROOT/sleep-brightness"; QA_SLEEP_COUNT=$((${QA_SLEEP_COUNT:-0}+1)); [ "$QA_SLEEP_COUNT" -lt "${QA_SLEEP_STEPS:-1}" ] || exit 0; }
+''')
+    for name in ['ledcontrol','analog_sticks_ledcontrol','battery_led_status']:
+        text=(source/name).read_text().replace('. /etc/profile',f'. "{profile}"')
+        text=text.replace('/usr/bin/analog_sticks_ledcontrol',str(root/'analog_sticks_ledcontrol'))
+        # Redirect immutable hardware paths only; run all production branches.
+        text=text.replace('LED_PATH="/sys/devices/platform/"','LED_PATH="${LED_PATH:-/sys/devices/platform/}"')
+        text=text.replace('/sys/class/power_supply/battery/',str(battery)+'/')
+        (root/name).write_text(text); (root/name).chmod(0o755)
+    env=dict(os.environ, LED_PATH=str(led), QA_ROOT=str(root), QA_SETTINGS=str(settings), BATTERY_PATH=str(battery))
+    def set_setting(k,v):
+        with settings.open('a') as f: f.write(f'{k}={v}\n')
+    def values(field): return [p.joinpath(field).read_text().strip() for p in dirs]
+    def check(label, test):
+        global failed, checked
+        checked+=1; ok=bool(test); failed+=not ok; print(('PASS ' if ok else 'FAIL ')+label)
+    def run(*args):
+        r=subprocess.run(['bash',str(root/'ledcontrol'),*args],env=env,text=True,capture_output=True,timeout=10)
+        assert r.returncode==0,(args,r.stderr)
+    for name,value in [('max','255'),('mid','128'),('min','32')]:
+        run('brightness',name); check(f'{name}: all eight brightness files = {value}',values('brightness')==[value]*8)
+    run('rgb'); check('unset custom RGB: actual helper writes white at saved min', values('brightness')==['32']*8 and values('multi_intensity')==['255 255 255']*8)
+    set_setting('analogsticks.led','200 255 0 0 0 0 255'); run('rgb')
+    check('explicit custom RGB tuple preserved',values('brightness')==['200']*8 and values('multi_intensity')==['255 0 0']*4+['0 0 255']*4)
+    run('off'); check('off clears every brightness and color',values('brightness')==['0']*8 and values('multi_intensity')==['0 0 0']*8)
+    for cap,status,color in [('75','Discharging','0 255 0'),('25','Discharging','0 20 255'),('35','Discharging','0 125 255'),('15','Discharging','0 0 255'),('50','Charging','0 20 255'),('98','Charging','0 255 0'),('5','Discharging','0 0 255')]:
+        (battery/'capacity').write_text(cap+'\n'); (battery/'status').write_text(status+'\n')
+        run('brightness','min'); run('battery')
+        check(f'battery {cap}% {status}: saved min and expected color',values('brightness')==['32']*8 and values('multi_intensity')==[color]*8)
+    # One complete critical-charge blink sequence: on/off five times.
+    (battery/'capacity').write_text('5\n'); (battery/'status').write_text('Discharging\n')
+    (root/'sleep-brightness').unlink(missing_ok=True)
+    env['QA_SLEEP_STEPS']='10'; run('battery')
+    blink=(root/'sleep-brightness').read_text().splitlines()
+    check('critical battery: five min-brightness/on and zero/off pairs',blink==(['32']*8+['0']*8)*5)
+print(f'{checked-failed} PASS, {failed} FAIL')
+raise SystemExit(bool(failed))
