@@ -1,0 +1,70 @@
+[
+  {
+    "mode": "--join",
+    "before": {
+      "SAVES_REMOTE": "/Rasteratops/Saves",
+      "SETTINGS_REMOTE": "/Rasteratops/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "after": {
+      "SAVES_REMOTE": "/ROCKNIX/Saves",
+      "SETTINGS_REMOTE": "/ROCKNIX/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "output": "Now using /ROCKNIX/Saves for your saves.\nNow using /ROCKNIX/Backups for your settings backups.\nNow using the root of your cloud for your ROMs, BIOS, and game content.\nJoined: this device now uses qa-cloud:/ROCKNIX/Saves, where your saves already are.",
+    "scan": "bios|19|1|0|1|0|19|0\nnes|18|1|0|1|0|18|0\npico-8|0|1|0|0|1|0|0"
+  },
+  {
+    "mode": "--follow",
+    "before": {
+      "SAVES_REMOTE": "/ROCKNIX/Saves",
+      "SETTINGS_REMOTE": "/ROCKNIX/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "after": {
+      "SAVES_REMOTE": "/Rasteratops/Saves",
+      "SETTINGS_REMOTE": "/Rasteratops/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "output": "Now using /Rasteratops/Saves for your saves.\nNow using /Rasteratops/Backups for your settings backups.\nFollowed: this device now uses qa-cloud:/Rasteratops/Saves, which another device already made.",
+    "scan": "bios|19|1|19|0|0|0|0\nnes|18|1|18|0|0|0|0\npico-8|0|1|0|0|1|0|0"
+  },
+  {
+    "mode": "--settle",
+    "before": {
+      "SAVES_REMOTE": "/ROCKNIX/Saves",
+      "SETTINGS_REMOTE": "/ROCKNIX/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "after": {
+      "SAVES_REMOTE": "/Rasteratops/Saves",
+      "SETTINGS_REMOTE": "/Rasteratops/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "output": "Now using /Rasteratops/Saves for your saves.\nNow using /Rasteratops/Backups for your settings backups.\nYour cloud had nothing in qa-cloud:/ROCKNIX/Saves; this device now uses qa-cloud:/Rasteratops/Saves.",
+    "scan": "bios|19|1|19|0|0|0|0\nnes|18|1|18|0|0|0|0\npico-8|0|1|0|0|1|0|0"
+  },
+  {
+    "mode": "--apply",
+    "before": {
+      "SAVES_REMOTE": "/ROCKNIX/Saves",
+      "SETTINGS_REMOTE": "/ROCKNIX/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "after": {
+      "SAVES_REMOTE": "/Rasteratops/Saves",
+      "SETTINGS_REMOTE": "/Rasteratops/Backups",
+      "CONTENT_REMOTE": "",
+      "LAYOUT_KEEP": ""
+    },
+    "output": "This device stores:\n  saves    qa-cloud:/ROCKNIX/Saves\n  backups  qa-cloud:/ROCKNIX/Backups\n\nThe current layout is:\n  saves    qa-cloud:/Rasteratops/Saves\n  backups  qa-cloud:/Rasteratops/Backups\n\nWould move, server-side, leaving anything else where it is:\n  qa-cloud:/ROCKNIX/Saves  ->  qa-cloud:/Rasteratops/Saves\n\nNow using /Rasteratops/Backups for your settings backups.\n>>> unit SAVES|1|1\nCopying saves...\n>>> doing copy\nTransferred:   \t         18 B / 18 B, 100%, 0 B/s, ETA -\nChecks:                 0 / 0, -, Listed 2\nTransferred:            1 / 1, 100%\nServer Side Copies:     1 @ 18 B\nElapsed time:         0.0s\nVerifying saves...\n>>> doing verify\nNow using /Rasteratops/Saves for your saves.\nRemoving the old saves folder...\n>>> doing remove\n\nDone. Saves are at qa-cloud:/Rasteratops/Saves, backups at qa-cloud:/Rasteratops/Backups.\nOld folders were left in place if anything else was in them.",
+    "scan": "bios|19|1|19|0|0|0|0\nnes|18|1|18|0|0|0|0\npico-8|0|1|0|0|1|0|0"
+  }
+]

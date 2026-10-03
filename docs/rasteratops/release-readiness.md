@@ -66,28 +66,29 @@ and trademark policy. The correction passes byte/mode/failure staging controls
 and exact assembled134e89 payload checks. The immutable replacement exists;
 clean and actual RC2-upgraded guest readbacks now pass exact bytes/modes.
 Receipts: `docs/qa-logs/2026-10-03-m7-replacement-qa/`.
-**Next:** published #397/#401 corrections completed the replacement
-from next134e89c4fc, with6,611 file hashes and180 raw symlink targets frozen.
-The original immutable bundle remains retained. Replacement default has14PASS/1SKIP; the omitted baseline was compared
-separately, finding one live-statistics sample expectation (#406). Its narrow
-claim and negative controls pass all78frames without changing the baseline.
-RC2 upgrade passed; a separate restart of its retained upgraded disk verified
-policy/content bytes after the original wrapper tried reading a stopped guest.
-WebDAV/S3 full link matrices pass477/463s. EN/FR640x480 and1280x960
-captures complete; offline/cloud/tier pages are visually reviewed. Actual
-RC2 archive local/cloud recovery, new-writer recovery and settings-only
-follow/settle pass24 assertions. Complete remaining archive selection/UI,
-S3 failed-listing, content-root, repeated timing and RA proofs. #402/#403/#404/#405 are closed from their own published evidence. Shared recorder and
-active waiter delivered failure and success without a status request; no
-disconnected alert is configured (#395, D-WORKFLOW-143).
-#393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
-the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
-instruction-only530b334 are published after explicit owner approval, with
-normal-push/remote-hash receipts. The recipe selects full QA commit
-e6e1e4d0f91e177e182cc05b1cea74991e1cc45b; splash's product pin stays unchanged.
-Freshness recheck exits0. Then run P3 artifact checks and the already approved
-P4 fixes review. The milestone and canonical checkpoint carry live job state.
-The audit cadence is due and remains unwaived; no RC claim is made.
+**Replacement01 (134e89) completed:** clean/default plus separate78-frame
+comparison, actual RC2 upgrade/readbacks, seven WebDAV and seven S3 link cases,
+archive24+56 assertions, strict root22, local recovery23 and S3 refusal10.
+All24 EN/FR640/1280 frames visually reviewed. #397/#401/#406 closed from their
+published proof. Public-site screenshot4f6df54 remains local because GitHub
+refused Blitterbot403; #327 remains open for delivery.
+
+**Current replacement02 (61b64817bf):** build completed642tasks23:16:46UTC,
+immutable bundle87b8c01d65dc22b4f29049bd0d69307a59c14c16f5223534e95058b2234ca5cd.
+Includes directory-probe timing #364, root wording #407 and canonical proxy
+account discovery #408. Full source regression1373+322PASS. Installed proxy
+proof20, S3 refusal10, root transitions/sentence22 and archive writer/selected
+journal8 now PASS. Full default/RC2-upgrade QA remains active with shared
+watcher; final isolated installed timing is next. Source-bound timing20ms
+passes30ms, but is not yet the installed-image timing receipt. See the
+canonical checkpoint and live milestone for current process/phase state.
+
+Shared recorder and active session report failures, stalls and completion;
+no disconnected delivery destination is configured (#395). RA ordinary award
+needs the outstanding QA-account fixture answer. P4's approved primary plus
+Fable5.1/xhigh Facilitator fixes review follows completed qualification. Audit
+cadence remains due and unwaived; no RC claim. P5 source/licence/publication
+and named device-action gates remain distinct.
 
 **Historical review below:** all tables, numbered gaps and diagnostics below
 record the2026-10-02 baseline. Their then-open source tasks are superseded by

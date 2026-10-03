@@ -1,0 +1,16 @@
+PASS actual packaged modules, no source override
+PASS packaged detector recognizes Rasteratops
+PASS canonical account path is discovered without override
+PASS reopen 1 retains all predecessor cache rows
+PASS reopen 1 retains all predecessor pending rows
+PASS reopen 1 retains base/subset award mapping
+PASS reopen 1 retains synthetic cached sign-in
+PASS reopen 2 retains all predecessor cache rows
+PASS reopen 2 retains all predecessor pending rows
+PASS reopen 2 retains base/subset award mapping
+PASS reopen 2 retains synthetic cached sign-in
+Traceback (most recent call last):
+  File "/storage/.cache/m7-proxy-runtime/guest-proof.py", line 21, in <module>
+    check(image_cache.resolve_cached_static_asset('/Badge/old.png').read_bytes()==(root/'static/Badge/old.png').read_bytes(),'legacy unsharded image path remains readable')
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'read_bytes'

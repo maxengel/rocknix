@@ -1,0 +1,16 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/conflict-resolution/.build-runs/20261003T233908Z-950ce566
+up: webdav serving /workspace/tmp/rasteratops-m7-archive-journal-02/cloud/data at http://127.0.0.1:9040 (guest: http://10.0.2.2:9040)
+[W][23:39:09.826436] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:39:09.826461] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+PASS safe actual device id/label read
+PASS production writer retains compatible ROCKNIX suffix
+PASS scan selects actual per-device writer archive
+PASS writer, scan and local archive bytes agree
+PASS production cloud/local restore recovers sentinel writer-proof
+PASS transfer journal names the exact selected archive copied by production restore
+PASS production recovery restored exact writer sentinel hash
+PASS installed writer/reader/local recovery bytes and transfer journal
+PASS archive writer and selected recovery journal
+down

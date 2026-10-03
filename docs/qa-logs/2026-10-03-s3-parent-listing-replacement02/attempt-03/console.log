@@ -1,0 +1,19 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/conflict-resolution/.build-runs/20261003T233621Z-c14ecea5
+up: s3 bucket rocknix-qa on port 9032
+note: SAVES_REMOTE must start with the bucket, e.g. /rocknix-qa/Rasteratops/Saves
+[W][23:36:22.528799] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:36:22.528831] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+PASS present S3 folder restores exact cloud sentinel
+PASS actual parent-prefix ListObjects request refused by proxy
+PASS child directory listing succeeds before parent predicate is refused
+PASS failed parent listing produces nonzero whole-script outcome
+PASS failed parent listing cannot offer folder creation
+PASS refusal reports failed restore in player language
+PASS refused listing preserves local sentinel
+PASS refused listing preserves cloud sentinel
+PASS fault removal permits successful exact-byte retry
+PASS actual S3 parent-read failure, truthful refusal, preservation and retry
+PASS S3 parent-listing qualification
+down
