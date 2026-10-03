@@ -93,6 +93,20 @@ with tempfile.TemporaryDirectory(prefix='watch-build-394-') as temporary:
                 and (r / 'build.status').read_text().startswith('state:       finished\n')
                 and (r / 'watch-job').exists())
 
+    d = fixture()
+    activity = d / 'qa artifacts'
+    activity.mkdir()
+    script = d / 'qa.py'
+    script.write_text('import time\nfrom pathlib import Path\ntime.sleep(1.2)\n'
+                      'p=Path("qa artifacts/suite")\np.mkdir()\n'
+                      '(p/"proof.log").write_text("case advanced\\n")\n')
+    result = run(d, ['./tools/watch-build', '--interval', '1', '--stall-min', '1',
+                     '--activity-dir', str(activity), '--recursive-activity',
+                     '--', 'python3', str(script)])
+    check(result.returncode == 0 and finished(d, 0)
+          and str(activity / 'suite/proof.log') in (only_run(d) / 'build.status').read_text(),
+          'shared runner observes nested QA logs and retains terminal result')
+
     for name in entries:
         d = fixture()
         result = run(d, ['./scripts/' + name, 'an argument', 'literal;$value'])

@@ -95,6 +95,27 @@ with tempfile.TemporaryDirectory(prefix='watch-job-393-') as temporary:
         stop(p)
 
         if not args.baseline:
+            d = setup('nested QA')
+            old(d / 'build.log')
+            nested = d / 'package logs' / 'suite' / 'cases'
+            nested.mkdir(parents=True)
+            (nested / 'proof.log').write_text('case advanced\n')
+            p = start(d)
+            check('suspected stall' in status(d, 'stalled'),
+                  'nested QA logs are opt-in; default build observation stays shallow')
+            stop(p)
+            p = start(d, extra=['--recursive-activity'])
+            check(str(nested / 'proof.log') in status(d, 'running'),
+                  'recursive QA activity prevents a false stall from a quiet summary')
+            old(nested / 'proof.log')
+            (nested / 'heartbeat.status').write_text('alive\n')
+            check('suspected stall' in status(d, 'stalled'),
+                  'nested non-log heartbeat does not mask quiet QA')
+            stop(p)
+            result = subprocess.run(command(d, ['--recursive-activity'], activity=False),
+                                    capture_output=True, text=True, timeout=5)
+            check(result.returncode == 2, 'recursive activity refuses a missing scope')
+
             d = setup('quiet build')
             old(d / 'build.log')
             (d / 'package logs' / '580.log').write_text('quiet\n')

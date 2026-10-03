@@ -39,7 +39,7 @@
 
 set -u
 LOG=""; RC=""; PID=""; PATTERN='\[[0-9]+/[0-9]+\]'; STALL=15; STATUS=""; DETACH=0; INTERVAL=30
-ACTIVITY_DIR=""; ACTIVITY_ROOT=""
+ACTIVITY_DIR=""; ACTIVITY_ROOT=""; RECURSIVE_ACTIVITY=0
 
 usage() {
   cat <<'EOF'
@@ -47,6 +47,7 @@ usage: tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
                        [--stall-min N] [--status FILE] [--interval N] [--detach]
                        [--activity-dir DIR]
                        [--activity-root WORKTREE]
+                       [--recursive-activity]
 
 --pid N       The running job's process ID, used to detect a job that died.
 --pattern RE  A regex matching progress lines in the LOG, never a process match.
@@ -55,6 +56,8 @@ usage: tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
                    For parallel builds use the frozen build root's .threads/logs.
 --activity-root DIR Discover build.*/.threads/logs as roots appear during this run.
                    For the exclusive top-level build runner; not shared jobs.
+--recursive-activity Include nested *.log files under --activity-dir.
+                     Use a fresh, exclusively owned QA artifact directory.
 --rc FILE     The result file the job writes when it finishes.
 --status FILE Heartbeat/result output (default: beside the result file).
 --interval N  Seconds between observations (default: 30).
@@ -85,6 +88,7 @@ while [ $# -gt 0 ]; do
     --interval)   INTERVAL="$2"; shift 2 ;;
     --activity-dir) ACTIVITY_DIR="$2"; shift 2 ;;
     --activity-root) ACTIVITY_ROOT="$2"; shift 2 ;;
+    --recursive-activity) RECURSIVE_ACTIVITY=1; shift ;;
     --detach)     DETACH=1; shift ;;
     *) echo "watch-job: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -100,6 +104,7 @@ grep -E "$PATTERN" /dev/null >/dev/null 2>&1
 [ $? -le 1 ] || die "invalid --pattern regex"
 [ -z "$ACTIVITY_DIR" ] || [ -d "$ACTIVITY_DIR" ] || die "activity directory does not exist"
 [[ -z "$ACTIVITY_DIR" || -z "$ACTIVITY_ROOT" ]] || die "choose activity-dir or activity-root"
+[[ "$RECURSIVE_ACTIVITY" = 0 || -n "$ACTIVITY_DIR" ]] || die "recursive activity needs activity-dir"
 # Outputs must never overwrite inputs or create their own activity signal.
 status_path=$(readlink -m -- "$STATUS") || die "cannot resolve status path"
 for input in "$LOG" "$RC"; do
@@ -129,6 +134,7 @@ if [ "$DETACH" = 1 ]; then
   [ -z "$PID" ] || args+=(--pid "$PID")
   [ -z "$ACTIVITY_DIR" ] || args+=(--activity-dir "$ACTIVITY_DIR")
   [ -z "$ACTIVITY_ROOT" ] || args+=(--activity-root "$ACTIVITY_ROOT")
+  [ "$RECURSIVE_ACTIVITY" = 0 ] || args+=(--recursive-activity)
   setsid nohup "$0" "${args[@]}" >/dev/null 2>"$STATUS.err" &
   watcher=$!
   for ((attempt=0; attempt<50; attempt++)); do
@@ -179,7 +185,9 @@ while :; do
   for directory in "${activity_dirs[@]}"; do
     # Capture find's exit status rather than hiding it in process substitution.
     scan=$(mktemp "${STATUS}.scan.XXXXXX") || die "cannot create activity scan"
-    if find "$directory" -maxdepth 1 -type f -name '*.log' -printf '%T@ %p\0' > "$scan"; then
+    depth=(-maxdepth 1)
+    [ "$RECURSIVE_ACTIVITY" = 0 ] || depth=()
+    if find "$directory" "${depth[@]}" -type f -name '*.log' -printf '%T@ %p\0' > "$scan"; then
       while IFS= read -r -d '' entry; do
         stamp=${entry%% *}; stamp=${stamp%%.*}
         if [ "$stamp" -gt "$newest" ]; then

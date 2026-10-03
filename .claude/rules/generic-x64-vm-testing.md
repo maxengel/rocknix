@@ -762,6 +762,22 @@ the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
 
 ## One command for every check
 
+**Supervise long QA runs as well as builds (#395, D-WORKFLOW-143).** Use the
+shared `tools/watch-build` runner around the frozen checkout's test command.
+Give each run a fresh `ROCKNIX_ARTIFACTS` directory and pass that same root as
+`--activity-dir DIR --recursive-activity`; suite logs below its generated
+report directory are the activity signal when the summary is quiet. Set
+`--interval 5 --stall-min 5` for the first M7 qualification runs. Monitor
+outputs stay outside that activity directory. Keep the runner/watcher copies
+unchanged while executing, along with the exact command and source identities.
+
+Pair the recorder with an active harness waiter, checked within 60 seconds.
+Announce named suite failures, stale/dead monitoring, suspected stalls and
+terminal results promptly. A suspected stall triggers process/log inspection,
+not automatic termination. An active waiter cannot alert after disconnection;
+that separate destination remains #395. Preserve failed runs and stop owned
+guests/endpoints when their job ends.
+
 `./tools/vm-qa <ROCKNIX-GENERIC_X64...img.gz>` brings the pair up from the
 image and runs the scripts test, the round-trip suite, the emulator-exit cell
 and every walk, leaving `report.md` and the logs and frames under
