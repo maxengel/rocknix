@@ -1,0 +1,33 @@
+{
+  "id": "ab84957fd9d91b8e2d46d9c853882067e6edd91b605aee94b0023cba92847a06",
+  "image": "sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39",
+  "configured_image": "ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39",
+  "user": "1000:1000",
+  "working_dir": "/workspace/repos/rocknix.worktrees/m7-generic-x64",
+  "mounts": [
+    {
+      "Type": "bind",
+      "Source": "/home/max/.ROCKNIX/options",
+      "Destination": "/home/max/.ROCKNIX/options",
+      "RW": true
+    },
+    {
+      "Type": "bind",
+      "Source": "/workspace/repos/rocknix.worktrees/m7-generic-x64",
+      "Destination": "/workspace/repos/rocknix.worktrees/m7-generic-x64",
+      "RW": true
+    },
+    {
+      "Type": "bind",
+      "Source": "/workspace/repos/rocknix/.git",
+      "Destination": "/workspace/repos/rocknix/.git",
+      "RW": true
+    },
+    {
+      "Type": "bind",
+      "Source": "/workspace/cache/rocknix-sources",
+      "Destination": "/workspace/repos/rocknix.worktrees/m7-generic-x64/sources",
+      "RW": true
+    }
+  ]
+}

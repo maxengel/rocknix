@@ -55,15 +55,21 @@ on host and candidate BusyBox, and six complete-script checks pass. The full
 candidate-binary host rerun passes1373 broad+322 layout checks under #403,
 0FAIL/0SKIP; its predecessor's stale assertion failure is retained. #404 corrects recorded frame counts;
 #405 corrects sign-in-tool help. Production virgl10 passes (VmSize0KiB,
-RSS+620KiB); software10 also passes (0/52KiB), and software50/sign-in memory are running. RA award100359
+RSS+620KiB); software10 also passes (0/52KiB). Software50 with exit sync
+passes0/1228KiB with55 unique success stamps; sign-in page loading/memory
+passes30s, peak total RSS292788KiB (not provider authentication). RA award100359
 is already earned; the owner reset/alternate-QA-account question is pending.
 Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
 `docs/qa-logs/2026-10-03-archive-harness/rerun/`.
 **New image gate #397:** SYSTEM lacks the approved branding licence and
 trademark policy. Image-assembly correction passes byte/mode/failure staging
 controls; a replacement immutable image and clean/upgrade readback are owed.
-**Next:** finish active host/memory qualification, deliver #401/#403 corrections and complete remaining P3 tests, then assemble
-and qualify the replacement with all observed fixes. Shared recorder and
+**Next:** published #397/#401 corrections completed the replacement
+from next134e89c4fc, with6,611 file hashes and180 raw symlink targets frozen.
+The original immutable bundle remains retained. Replacement default/RC2-upgrade
+and installed policy/content readback are running since21:02:57UTC. Qualify clean/upgrade
+and affected provider paths, then complete remaining P3 preservation/UI/timing
+and RA proofs. #402/#403/#404/#405 are closed from their own published evidence. Shared recorder and
 active waiter delivered failure and success without a status request; no
 disconnected alert is configured (#395, D-WORKFLOW-143).
 #393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
