@@ -1,0 +1,16 @@
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=begin
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=backups
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=saves
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=discarded
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=content
+-t cloud_migrate_layout could not write .layout at qa:/Rasteratops
+-t cloud_migrate_layout migration step=1 from=1 to=2 resume
+-t cloud_scan scan: folder done (migration-pending)
+-t cloud_migrate_layout migration step=1 from=1 to=2 resume
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=begin
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=backups
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=saves
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=discarded
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=content
+-t cloud_migrate_layout migration step=1 from=1 to=2 stage=complete
+-t cloud_migrate_layout followed the fleet from /ROCKNIX/Saves to /Rasteratops/Saves

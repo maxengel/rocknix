@@ -22,10 +22,10 @@ now named **M7: Rasteratops 0.0.1**. D-WORKFLOW-139 and the newly adopted
 `.claude/rules/milestone-phase-naming.md` make it authoritative. The rules now
 number30; the delivery/futro/retro naming references resolve locally.
 
-**Current priority: M7.P1** state/migration/recovery (#365/#356/#320).
-Its strict marker, interrupted-retry and settings-record source fixes now pass;
-the explicit actor/predecessor map and guest-case promotion remain next.
-Then M7.P2 qualified inputs; M7.P3 cold build plus image qualification;
+**Current priority: M7.P2** qualified inputs. P1's source gate now passes:
+explicit actor/predecessor coverage, conservative inherited recovery, no-remote
+refusal and guest recovery promotion. Image-only acceptance remains P3.
+Continue M7.P2 qualified inputs; M7.P3 cold build plus image qualification;
 M7.P4 approved independent fixes audit; M7.P5 separately gated release
 staging. M7.P0 records the tracking-convention prerequisite #388. Open issue
 titles now carry their phase; #383/#344/#354 are milestone-wide umbrellas.
@@ -39,82 +39,87 @@ read back the live result in the same session. Keep this checkpoint and
 secondary plans aligned. Image-only criteria remain open until an engineering
 build provides their proof; they do not prohibit creating that build.
 
-> Saved: 2026-10-03T00:56:55Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T005655Z.md.
+> Saved: 2026-10-03T04:35:40Z. Branch: feature/conflict-resolution.
+> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T043540Z.md.
 
-## Latest execution — 2026-10-03
+## Latest execution — 2026-10-03, M7.P1 source exit
 
-The maintainer authorized remaining instruction fixes and continuing M7 toward
-the first branded build. **Source work resumed; no new image has been built.**
-Do not repeat the initial audit, identity migration, workflow cleanup or fixed
-source work below.
+The user asked to proceed with M7. **Continue P2 implementation; do not stop at
+another resume/status response.** The live milestone and #383 now name P2 as
+current. #365/#356/#391/#392 carry final source evidence while candidate guest,
+upgrade and pair criteria stay open. No branded build exists.
 
-- Workflow #389/D-WORKFLOW-140: five delivery/resume/stash skills now reference
-  this fork's actual rules; resume reconciles canonical next and the live
-  milestone and continues already authorized work without a redundant menu.
-  Feature1a2ce256cf → next4b0899328f. Five skill validators/local links, rules,
-  register, work-log index and ceremony gate pass.
-- Migration #356/#365: complete-byte layout1/layout2 validation, a shared
-  marker writer, explicit migration_step_1 and a synchronized local JSON
-  recovery record retain original source paths after pointers advance.
-  Copy/delete/marker failures remain retryable and visible to scan/boot;
-  setup cannot label an unfinished move complete. OAuth token refresh does
-  not invalidate the provider/root fingerprint. The record is not a cloud lock.
-- Twelve unsupported-marker controls fail before and pass after. Nine final
-  copy/delete/marker retry controls fail before and pass after, including
-  retained payloads, retry visibility, safe repeat and an independent follower.
-  All93 focused cases pass. Full host suite:1,367 harness PASS/0 FAIL/0 SKIP,
-  plus those93 cases. #390 repairs C2/LY marker doubles exposed by this change;
-  one actual missing storage-failure reason was also corrected.
-- ES retry UI68e8c7da5 and settings race fix39f888354 are pushed to the fork's
-  test/qa-integration. **Current pin39f8883545537d5274708ea85c4683612078a957**.
-  #320 recordLastGood now locks and revalidates the complete current choice
-  for both load/save; LockBusy recovery records nothing. Both new controls
-  fail before, then all10 cases/119 assertions pass. Image-compiler checks
-  and French msgfmt validation pass. Guest race/byte criteria remain open.
-- Distribution source/evidence feature**d82d40cc7e** → next**a48029fa50**.
-  Exact inputs/receipts: docs/qa-logs/2026-10-03-m7-p1/ and its README.
-  A later checkpoint commit does not change product inputs. Both trees were
-  clean before this checkpoint. No distribution push claimed (#371 remains).
-- Product issues remain open for their image criteria. Source passes do not
-  qualify an image. Numbered actor coverage, actual predecessor partial
-  states, two-guest/provider recovery and frames are not silently completed.
+- P1 final host run:1,367 harness PASS plus322 focused PASS,0 FAIL/0 SKIP.
+  `docs/qa-logs/2026-10-03-m7-coverage/` retains receipts, exact hashes, the208
+  actor/state assignments, initial failures and final broad transcript.
+- #391: actual RC2/run101 scripts produce inherited partial states. Recovery
+  preserves current primary pointers, old live saves/backups, independent
+  custom/root content and foreign collision protection. The discarded shelf
+  is an optional independent source field in schema1; earlier records still
+  load. Initial319 focused passes hid11 broad regressions; the corrected
+  boundary passes28 targeted cases and the full suite above.
+- #392: missing remote prefixes are refused before a cloud path can be
+  interpreted locally. Four writable-local-path controls fail before; all13
+  T19 controls pass after. Backup previously wrote locally; restore constructed
+  the path but refused later. Do not claim restore copied bytes in that proof.
+- Guest T17/T19/T23/T26 live in tools/rasteratops-vm-cloud-epic and its new
+  migration-protocol.sh helper: fixture resets, image calls, temporary fault
+  shim, retained statuses/hashes, cleanup. Parsing/negative assertion verified;
+  **new guest cases have not run**. One follower configuration is not two guests.
+- ES is unchanged:39f8883545537d5274708ea85c4683612078a957, already pushed to
+  origin/test/qa-integration. Prior10 cases/119 assertions and compiler/French
+  checks remain the evidence. No distribution push (#371 remains unresolved).
 
-**Next concrete action:** read the appended execution notes in
-`docs/rasteratops/cloud-folder-state-table.md` and `cloud-layout.md`, map the
-remaining actor × state/predecessor cells to assertions, and extend the promoted
-`tools/rasteratops-vm-cloud-epic` with T23 retry/T26 unsupported-marker cases.
-Do not repeat the same unchanged host suite for another green count. Once P1's
-source/coverage prerequisites are explicit, advance to the P2 proxy refresh and
-qualified dependencies. Image-only acceptance stays open for P3 and does not
-forbid creating the engineering build that must provide it.
+## P2 work in progress — current proxy
 
-No build, VM or source-test job is intentionally running. All checks above ended.
-Optional version/scan-pacing questions still do not block the authorized route.
+Fresh temporary integration: `/tmp/rasteratops-proxy-refresh-20261003/`.
+**The packaged recipe and helpers still use the old proxy.** Do not confuse
+this preparation with a shipped refresh.
+
+- Current main verified5866cd9ba784c13771a99c52dd6b6f2acc546842; one commit
+  after bdcd229, changing only statistics-page hardware labels. Archive SHA256
+  1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e.
+- `integration/` is a fresh git tree with individually prepared semantic
+  patches; generated series in `patches/`.001/002/003/005/007/008/009/010/
+  011/012/013/015/016 are rebased;004 now adds an opt-in budgeted=False API
+  for the deliberate OS whole-library scanner.014 connection reuse and017
+  subset mapping are candidates for retirement after equivalence proof.
+  Do not use yesterday's conflicted rebased/ tree.
+- `cache-indexed.after` is the temporary integrating helper. Through the
+  actual old helper,125 unindexed games reported125 cached but only100
+  reached the store. `whole-library-before.log` reproduces it; the prepared
+  API/helper correction caches all125 (`whole-library-after.log`). It checks
+  queued status, retains upstream queue locks/pacing and persists429 pauses
+  for indexed work. Further indexed/unindexed/retry/429/preservation controls
+  are required before copying it into the recipe.
+-180 upstream award/queue/consent/image/network/refresh tests pass on this
+  temporary integration (`upstream-integration-host.log`). A sandboxed attempt
+  failed socket/DNS access; the host run passed. Existing fork predicates
+  reference retired fetch_static_asset: adapt them to current image APIs while
+  preserving validation, redirect, timeout, absence and concurrency assertions.
+- #361 records the current head and reproduced readiness error. #384's stale
+  backport-only instruction is reconciled with D-WORKFLOW-138. Remaining
+  proxy/dependency/source gates are the live milestone's ordered P2 work.
 
 ## Authorization and worktrees
 
-- #383 retains the approved order: regressions, fixes, combined branded cold
-  build/VM qualification, independent other-lab audit of fixes. Continue
-  those steps without asking again. No publication, personal-cloud writes
-  or physical-device actions are authorized by this scope.
-- Main `/workspace/repos/rocknix` stays on `next`. Work here is
-  `/workspace/repos/rocknix.worktrees/conflict-resolution`. Current product
-  source: feature d82d40cc7e, integrated as next a48029fa50. Later stash commits
-  do not change those product inputs; read git log for current HEAD.
-  Earlier implementation commits are already integrated: do not repeat them.
-- Integrate new feature commits by cherry-pick into next. Do not merge this
-  branch's historical merges or push it: #371's hook defect is still open.
-- ES: `/home/max/Development/emulationstation-next.worktrees/cloud-epic`,
-  39f8883545537d5274708ea85c4683612078a957, pushed to test/qa-integration.
-  Splash: 7450aa8180ae66684814dd460f31eb502b2abf61, pushed to fork.
-- Build tree `/workspace/repos/rocknix.worktrees/generic-x64`, branch
-  build/generic-x64 at b2378d9c33. Previously dirty only with generated docs;
-  inspect again and preserve unrelated changes before advancing to next.
-- Blitterbot migration #374 is complete. Existing credentials work. Never
-  request/print tokens. Process/config reads use the rule's secret filter.
-  Use `gh --repo rasteratops/distribution` explicitly. Host jobs are invisible
-  in the sandbox PID namespace; inspect/watch in the host namespace.
+Continue regressions → fixes → combined branded cold build/VM qualification →
+independent fixes audit without asking again. Publication, personal-cloud and
+physical-device actions retain their separate gates. No build, VM or test job
+is intentionally running after the completed P1 run.
+
+Primary `/workspace/repos/rocknix` stays on clean `next`. Work here is
+feature/conflict-resolution. Integrate only exact new single-commit hashes by
+cherry-pick; never merge this feature branch's old historical merges. The prior
+clean heads were feature160aaff8f56458dfa7cf579cb7f75bdbd2b12a41 and
+next4903e2ef96; this checkpoint accompanies the new P1 source commit. Read git
+log for its hash. Build worktree generic-x64 remains b2378d9c33; preserve its
+unrelated generated document before advancing. No cold RASTERATOPS root yet.
+
+Blitterbot identity is complete. Existing credentials work; never request/print
+them. Use explicit fork repo with gh. Host jobs and watch-job must share the
+host PID namespace. The main build requires writable paths outside this
+sandbox and uses the already selected container digest recorded below.
 
 ## Historical readiness review (#385, 2026-10-02)
 

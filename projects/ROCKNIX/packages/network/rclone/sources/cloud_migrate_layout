@@ -713,6 +713,20 @@ derived_content() {
     echo "${parent%/}/Content"
 }
 
+# RC2 could finish its saves/backups moves before /GAMES/Content; run101
+# could finish both pointers before its discarded/content tiers (#391).
+# Only these exact earlier defaults are inherited derived content. A custom
+# path ending in /Content is still the player's independent choice.
+historical_content() {
+    same_folder "$1" /GAMES/Content || same_folder "$1" /ROCKNIX/Content
+}
+
+moving_content() { # <saves source> <content pointer>
+    [ -n "$2" ] && ! same_folder "$2" "${NEW_CONTENT}" || return 1
+    same_folder "$2" "$(derived_content "$(folder_abs "$1")")" && return 0
+    { superseded_default "$1" || same_folder "$1" "${NEW_SAVES}"; } && historical_content "$2"
+}
+
 # Move content to the current namespace if it is safe to, and repoint the
 # config. Never merges into an existing destination -- that is the same
 # interruptible half-migrated state the saves move refuses.
@@ -777,7 +791,7 @@ migrate_content() {
 #   CURRENT_EXISTS=0|1          whether the current default's saves folder lists
 #   MARKER=layout=<n> | -       the cloud's marker, when one is there
 layout_state() { # <remote> <saves> <backups> <content>
-    local remote="$1" saves="$2" backups="$3" content="$4" state keep cur=0 marker
+    local remote="$1" saves="$2" backups="$3" content="$4" state keep cur=0 marker old_replaced=""
     if [ -e "${MIGRATION_RECORD}" ]; then
         migration_record_load "${remote}" || return $?
         printf 'STATE=migration-pending\nSOURCE=%s\nCURRENT=%s\n' "${saves}" "${NEW_SAVES}"
@@ -799,6 +813,19 @@ layout_state() { # <remote> <saves> <backups> <content>
     local source=""
     if same_folder "${saves}" "${NEW_SAVES}"; then
         state=current
+        # Older builds wrote no recovery record. Their current primary
+        # pointers do not prove the derived content or discarded shelf moved.
+        # This is a folder-page read, never an extra probe on a direct sync.
+        if same_folder "${backups}" "${NEW_BACKUPS}"; then
+            local earlier
+            if historical_content "${content}"; then
+                state=migration-pending
+            else
+                for earlier in "${SUPERSEDED_DEFAULT_SAVES[@]}"; do
+                    if has_entries "${remote}${earlier}-replaced/"; then state=migration-pending; break; fi
+                done
+            fi
+        fi
     elif [ -n "${keep}" ] && same_folder "${saves}" "${keep}"; then
         state=kept
     elif superseded_default "${saves}"; then
@@ -1010,10 +1037,11 @@ migration_record_write() { # <stage>; consumes the calling step's local paths
     else
         jq -n --arg remote "${remote}" --arg fingerprint "${fingerprint}" \
             --arg saves "${saves}" --arg backups "${backups}" --arg content "${content}" \
+            --arg discarded "${old_replaced}" \
             --arg cs "$(conf_value SAVES_REMOTE)" --arg cb "$(conf_value SETTINGS_REMOTE)" \
             --arg cc "$(conf_value CONTENT_REMOTE)" --arg stage "${stage}" \
             '{schema:1,step:1,from:1,to:2,remote:$remote,fingerprint:$fingerprint,
-              source:{saves:$saves,backups:$backups,content:$content},
+              source:{saves:$saves,backups:$backups,content:$content,discarded:$discarded},
               configured:{saves:$cs,backups:$cb,content:$cc},stage:$stage}' > "${tmp}"
     fi
     if [ "$?" -ne 0 ] || ! sync || ! mv -f "${tmp}" "${MIGRATION_RECORD}" || ! sync; then
@@ -1035,7 +1063,9 @@ migration_record_load() { # <remote>; restores the calling step's source paths
         .remote==$remote and .fingerprint==$fingerprint and
         ([.source.saves,.source.backups,.source.content,
           .configured.saves,.configured.backups,.configured.content] |
-          all(.[]; type=="string" and (explode | all(.[]; .>=32))))
+          all(.[]; type=="string" and (explode | all(.[]; .>=32)))) and
+        ((.source | has("discarded") | not) or
+          (.source.discarded | type=="string" and (explode | all(.[]; .>=32))))
         ' "${MIGRATION_RECORD}" >/dev/null 2>&1; then
         say "The previous cloud move couldn't be read safely. Nothing more was changed."
         return 5
@@ -1055,6 +1085,11 @@ migration_record_load() { # <remote>; restores the calling step's source paths
         value=$(clean_path "${value}") || return 5
         printf -v "${key}" '%s' "${value}"
     done
+    # Optional in schema1: records written before #391 derive this shelf
+    # from their retained saves source. New records keep it independently,
+    # so recovering an old shelf never reselects a live saves folder.
+    value=$(jq -r '.source.discarded // (.source.saves | rtrimstr("/") + "-replaced")' "${MIGRATION_RECORD}") || return 5
+    old_replaced=$(clean_path "${value}") || return 5
     MIGRATION_ACTIVE=1
     logger -t cloud_migrate_layout "migration step=1 from=1 to=2 resume" 2>/dev/null
     return 0
@@ -1179,7 +1214,7 @@ main() {
 }
 
 migration_step_1() {
-    local remote="$1" saves="$2" backups="$3" content="$4" mode="$5"
+    local remote="$1" saves="$2" backups="$3" content="$4" mode="$5" old_replaced=""
     migration_record_load "${remote}" || return $?
 
     local sabs sib_parent
@@ -1196,26 +1231,27 @@ migration_step_1() {
         fi
     fi
 
-    if same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${NEW_BACKUPS}"; then
-        # Saves and backups are current, but a device migrated before
-        # CONTENT_REMOTE was carried along is still pointing its ROMs at the old
-        # namespace. Repair that here rather than making it a separate flow --
-        # this is the state every early migration left behind.
-        # The old SAVES_REMOTE is gone by now, so the derived value cannot be
-        # recomputed. The signature is enough: the helper always appends
-        # "/Content", so a path shaped that way and not already the current
-        # one is one of ours, left behind.
-        if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
-            case "${content}" in
-                */Content)
-                    say "Saves and backups are current, but content still points at ${remote}${content}."
-                    migrate_content "${remote}" "${content}"  "${mode}"
-                    return $?
-                ;;
-            esac
+    if [ "${MIGRATION_ACTIVE}" = 0 ] && same_folder "${saves}" "${NEW_SAVES}" \
+       && same_folder "${backups}" "${NEW_BACKUPS}"; then
+        # The live primary pointers are authoritative. Another device may
+        # still write old saves/backups: only the retained content pointer
+        # and an owned discarded shelf are eligible for this recovery.
+        local earlier
+        for earlier in "${SUPERSEDED_DEFAULT_SAVES[@]}"; do
+            if has_entries "${remote}${earlier}-replaced/"; then
+                old_replaced="${earlier}-replaced"; break
+            fi
+        done
+        if [ -z "${old_replaced}" ] && ! moving_content "${saves}" "${content}"; then
+            # An older build may have stopped just before publication. An
+            # explicit apply finishes that marker without inventing a move
+            # or rewriting equivalent pointer spellings (PL-001).
+            if [ "${mode}" = "--apply" ] && [ "${REMOTE_LAYOUT}" != "${LAYOUT_VERSION}" ]; then
+                write_marker "${remote}" || return $?
+            fi
+            say "Already on the current layout (${NEW_SAVES}, ${NEW_BACKUPS})."
+            return 3
         fi
-        say "Already on the current layout (${NEW_SAVES}, ${NEW_BACKUPS})."
-        return 3
     fi
 
     # The move starts from the folder that holds the saves. A device whose
@@ -1243,6 +1279,7 @@ migration_step_1() {
             sib_parent="${sabs%/*}"; [ -n "${sib_parent}" ] || sib_parent="${sabs}"
         fi
     fi
+    [ -n "${old_replaced}" ] || old_replaced="${sabs%/}-replaced"
 
     say "This device stores:"
     say "  saves    ${remote}${saves}"
@@ -1315,6 +1352,14 @@ migration_step_1() {
             blocked=1
         fi
     fi
+    if ! same_folder "${old_replaced}" "${NEW_SAVES}-replaced" && has_entries "${remote}${old_replaced}/" \
+       && exists "${remote}${NEW_SAVES}-replaced" \
+       && ! resumable "${remote}${old_replaced}" "${remote}${NEW_SAVES}-replaced"; then
+        if fleet_made "${remote}"; then merging=1; else
+            say "REFUSING: ${remote}${NEW_SAVES}-replaced already exists."
+            blocked=1
+        fi
+    fi
     if [ "${blocked}" = "1" ]; then
         [ "${mode}" = "--apply" ] && echo ">>> why THE NEW FOLDER ALREADY HAS FILES IN IT"
         return 4
@@ -1336,16 +1381,13 @@ migration_step_1() {
     # (<saves>-replaced, cloud_backup's) is ours and travels with the saves
     # (D-CLOUD-165): to a player the change is a renamed shelf, not a new
     # one, and nothing of ours stays under the old name.
-    local old_replaced="${saves%/}-replaced"
-    if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
+    if ! same_folder "${old_replaced}" "${NEW_SAVES}-replaced" && has_entries "${remote}${old_replaced}/"; then
         say "  ${remote}${old_replaced}  ->  ${remote}${NEW_SAVES}-replaced"; plan="${plan:+${plan},}discarded"
     fi
     # The content folder derived beside the saves moves too (the same test
     # the items count makes below). It was moved and never listed here, so
     # the hub's preview said less than --apply did (2026-10-01).
-    if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
-       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
-       && has_entries "${remote}${content}/"; then
+    if moving_content "${saves}" "${content}" && has_entries "${remote}${content}/"; then
         say "  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"; plan="${plan:+${plan},}content"
     fi
 
@@ -1370,10 +1412,8 @@ migration_step_1() {
     local items=0 item=0
     ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" && items=$((items + 1))
     ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" && items=$((items + 1))
-    ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/" && items=$((items + 1))
-    [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
-       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")" \
-       && has_entries "${remote}${content}/" && items=$((items + 1))
+    ! same_folder "${old_replaced}" "${NEW_SAVES}-replaced" && has_entries "${remote}${old_replaced}/" && items=$((items + 1))
+    moving_content "${saves}" "${content}" && has_entries "${remote}${content}/" && items=$((items + 1))
     announce() { item=$((item + 1)); echo ">>> unit $1|${item}|${items}"; }
     # The backups first (PL-025). In the original layout they sit inside the
     # saves folder; moved first, they are out of it before the saves move
@@ -1412,7 +1452,7 @@ migration_step_1() {
         fi
     fi
     migration_record_save saves || return $?
-    if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
+    if ! same_folder "${old_replaced}" "${NEW_SAVES}-replaced" && has_entries "${remote}${old_replaced}/"; then
         announce "DISCARDED SAVES"
         if ! relocate "${remote}${old_replaced}" "${remote}${NEW_SAVES}-replaced" "discarded saves" ""; then
             say "Your discarded saves didn't finish moving; they are still at ${remote}${old_replaced}. Try again."
@@ -1430,8 +1470,7 @@ migration_step_1() {
     # Compared as folders, and never onto itself (PL-001): a saves folder at
     # /ROCKNIX derives /ROCKNIX/Content, the new folder itself, which the
     # string compare sent through the move and so onto itself.
-    if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
-       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")"; then
+    if moving_content "${saves}" "${content}"; then
         has_entries "${remote}${content}/" && announce "ROMS, BIOS, AND GAME CONTENT"
         migrate_content "${remote}" "${content}" "${mode}" || content_rc=$?
     elif [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
@@ -1473,6 +1512,14 @@ if [ "${1:-}" = "--needs-step" ]; then
     fi
     _saves=$(conf_value SAVES_REMOTE) || exit 2
     _keep=$(conf_value LAYOUT_KEEP) || exit 2
+    if same_folder "${_saves}" "${NEW_SAVES}"; then
+        _backups=$(conf_value SETTINGS_REMOTE) || exit 2
+        _content=$(conf_value CONTENT_REMOTE) || exit 2
+        if same_folder "${_backups}" "${NEW_BACKUPS}" && historical_content "${_content}"; then
+            grep -q '^\[' /storage/.config/rclone/rclone.conf 2>/dev/null || exit 1
+            exit 0
+        fi
+    fi
     superseded_default "${_saves}" || exit 1
     [ -n "${_keep}" ] && same_folder "${_saves}" "${_keep}" && exit 1
     grep -q '^\[' /storage/.config/rclone/rclone.conf 2>/dev/null || exit 1

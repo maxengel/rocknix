@@ -158,3 +158,150 @@ transfer-page and retry-dialog frames and real provider/upgrade runs remain open
 
 See `cloud-layout.md` for the local recovery record, numbered step and actual
 predecessor compatibility boundary. Host receipts: `../qa-logs/2026-10-03-m7-p1/`.
+
+## Executable actor coverage — M7.P1 continuation (2026-10-03)
+
+The historical table above records the reviewed baseline. This map describes
+current source and **host coverage**, not a candidate image. List the actual
+case names without running anything:
+
+```sh
+tools/last-good-scripts-test --cloud-layout --list
+tools/last-good-scripts-test --cloud-layout --case T23-predecessor --output /tmp/new-proof-directory
+```
+
+`Axx/actor` below is the executable `Txx-actor-actor`. The eight suffixes are
+`wizard`, `transfer`, `boot`, `startup-restore`, `startup-backup`, `exit`,
+`saves-restore` and `saves-backup`; splitting the two saves-row verbs preserves
+the original seven actors. Each case constructs its own config, remote bytes,
+local progress and cache. `actor_case` checks the independently specified
+pointer result, preserves every pre-existing cloud payload, verifies exact
+restored/uploaded bytes and absent-folder offers, and asserts that a direct
+saves call never changes pointers. Wizard cases decline MOVE then finish
+seeding; MOVE itself is exercised by T23 and the separate apply controls.
+
+Boot/startup cases run the local eligibility gate and conditional folder scan
+before the relevant transfer half, matching pinned ES main.cpp's startup
+command. They do not prove that ES schedules it correctly: whole-image boot
+cases T08/T11/T12 and the card-order frames still provide that P3 evidence.
+`transfer` is the shared folder scan; T24's writer-shaped archive cases also
+exercise the full scan and restore reader.
+
+| Cell | Wizard | Transfer | Boot | Startup restore | Startup backup | Exit sync | Saves rows |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T01 | A01/wizard | A01/transfer | A01/boot | A01/startup-restore | A01/startup-backup | A01/exit | A01/saves-restore + saves-backup |
+| T02 | A02/wizard | A02/transfer | A02/boot | A02/startup-restore | A02/startup-backup | A02/exit | A02/saves-restore + saves-backup |
+| T03 | A03/wizard | A03/transfer | A03/boot | A03/startup-restore | A03/startup-backup | A03/exit | A03/saves-restore + saves-backup |
+| T04 | A04/wizard | A04/transfer | A04/boot | A04/startup-restore | A04/startup-backup | A04/exit | A04/saves-restore + saves-backup |
+| T05 | A05/wizard | A05/transfer | A05/boot | A05/startup-restore | A05/startup-backup | A05/exit | A05/saves-restore + saves-backup |
+| T06 | A06/wizard | A06/transfer | A06/boot | A06/startup-restore | A06/startup-backup | A06/exit | A06/saves-restore + saves-backup |
+| T07 | A07/wizard | A07/transfer | A07/boot | A07/startup-restore | A07/startup-backup | A07/exit | A07/saves-restore + saves-backup |
+| T08 | A08/wizard | A08/transfer | A08/boot | A08/startup-restore | A08/startup-backup | A08/exit | A08/saves-restore + saves-backup |
+| T09 | A09/wizard | A09/transfer | A09/boot | A09/startup-restore | A09/startup-backup | A09/exit | A09/saves-restore + saves-backup |
+| T10 | A10/wizard | A10/transfer | A10/boot | A10/startup-restore | A10/startup-backup | A10/exit | A10/saves-restore + saves-backup |
+| T11 | A11/wizard | A11/transfer | A11/boot | A11/startup-restore | A11/startup-backup | A11/exit | A11/saves-restore + saves-backup |
+| T12 | A12/wizard | A12/transfer | A12/boot | A12/startup-restore | A12/startup-backup | A12/exit | A12/saves-restore + saves-backup |
+| T13 | A13/wizard | A13/transfer | A13/boot | A13/startup-restore | A13/startup-backup | A13/exit | A13/saves-restore + saves-backup |
+| T14 | A14/wizard | A14/transfer | A14/boot | A14/startup-restore | A14/startup-backup | A14/exit | A14/saves-restore + saves-backup |
+| T15 | A15/wizard | A15/transfer | A15/boot | A15/startup-restore | A15/startup-backup | A15/exit | A15/saves-restore + saves-backup |
+| T16 | A16/wizard | A16/transfer | A16/boot | A16/startup-restore | A16/startup-backup | A16/exit | A16/saves-restore + saves-backup |
+| T17 | A17/wizard | A17/transfer | A17/boot | A17/startup-restore | A17/startup-backup | A17/exit | A17/saves-restore + saves-backup |
+| T18 | A18/wizard | A18/transfer | A18/boot | A18/startup-restore | A18/startup-backup | A18/exit | A18/saves-restore + saves-backup |
+| T19 | A19/wizard | A19/transfer | A19/boot | A19/startup-restore | A19/startup-backup | A19/exit | A19/saves-restore + saves-backup |
+| T20 | A20/wizard | A20/transfer | A20/boot | A20/startup-restore | A20/startup-backup | A20/exit | A20/saves-restore + saves-backup |
+| T21 | A21/wizard | A21/transfer | A21/boot | A21/startup-restore | A21/startup-backup | A21/exit | A21/saves-restore + saves-backup |
+| T22 | A22/wizard | A22/transfer | A22/boot | A22/startup-restore | A22/startup-backup | A22/exit | A22/saves-restore + saves-backup |
+| T24 | A24/wizard | A24/transfer | A24/boot | A24/startup-restore | A24/startup-backup | A24/exit | A24/saves-restore + saves-backup |
+| T25 | A25/wizard | A25/transfer | A25/boot | A25/startup-restore | A25/startup-backup | A25/exit | A25/saves-restore + saves-backup |
+| T23 | R/seed refusal | R/pending state | R/local eligibility | R/automatic restore | R/automatic backup | R/recent backup | R/direct restore + backup |
+| T26 | marker-*-seed | marker-*-scan | eligible legacy gate + refused scan | same preflight refusal | same preflight refusal | direct-exit | direct-saves-restore + direct-saves-backup |
+
+- **T17:** `failure_actor` fails provider reads/writes, verifies a nonzero
+  outcome and no changed pointers/bytes. The two `T17-seed-*` controls also
+  distinguish a failed settlement from a successful one; the wizard can
+  finish without seeding. Follow-call and second-read failures have separate
+  controls. This does not equate an inaccessible cloud with an empty one.
+- **T18:** the direct transfer actors exercise their exact flags with the
+  bucket helper's failed parent listing. The wizard/transfer/boot cases
+  assert that their own classifier reads the selected folder without asking
+  that helper's parent-listing question. They preserve the selected path and
+  payloads. Permission failure on the selected folder is T17, not a false
+  assumption that the two actors call the same predicate.
+- **T19:** all actors handle no linked remote. An ineligible boot is asserted
+  to do nothing. `T19-local-path-*` additionally proves that neither transfer
+  script treats a writable local path as cloud storage when discovery is empty
+  or fails (#392). Existing empty config files are included.
+- **T20:** actor cases retain independently populated settings bytes and the
+  old settings pointer through folder preparation. `T20-{follow,settle}-*`
+  cover both old defaults and a custom settings path; apply/discovered-source
+  cases cover the copying route. Saves-only actors never transfer archives.
+- **T21:** actor cases preserve the explicit empty content root and its game
+  bytes. The join/follow/settle/apply × missing/root/derived/custom controls
+  cover the other independent choices. Direct saves actors do not interpret
+  content selection; their assertions establish that it remains unchanged.
+- **T22:** each actor uses distinguishable payloads in both earlier defaults;
+  the configured root wins, and the other root's bytes remain intact.
+- **T23 / R:** every `T23-retry-*` fixture (four copy failures, four source
+  deletion failures, marker publication) runs the pending-state checks,
+  wizard refusal and all five direct/automatic transfer variants before
+  retry. Each asserts unchanged cloud bytes and pointers while pending, then
+  complete payload recovery, repeat stability and a separate follower config.
+  `T23-content-collision` retains the refusal of unmarked foreign content.
+- **T24:** actor cases contain a valid per-device settings archive beside
+  saves and assert its bytes are untouched. The full production backup →
+  scan → restore round trip and current/legacy/healed/flat/foreign archive
+  selection cases provide the settings-reader assertions. Archive *selection*
+  is inapplicable to the boot folder check and saves-only actors: neither
+  reads that tier, and the archive-preservation assertion proves isolation.
+- **T25:** the fixture denies cloud-root `lsf` enumeration while selected
+  folders are readable. Folder preparation/direct transfers keep working;
+  the full scan's content chooser reports its denied root enumeration and
+  changes no cloud bytes/pointers. This is the precise permission exercised,
+  not a claim that a provider denying every root operation is supported.
+  Actual S3 policy/prefix behavior remains candidate qualification.
+- **T26:** `T26-marker-{malformed,future,trailing}-{apply,follow,settle,join,state,seed,scan}`
+  refuse unsupported transitions and preserve exact marker/pointer/payload
+  bytes. Boot eligibility is local and does not read a remote marker; an
+  eligible startup stops at that refused scan. Direct saves/exit calls retain
+  their documented configured-path routing (D-CLOUD-169/170), proved by the
+  three `T26-direct-*` controls. They do not migrate or overwrite the marker.
+
+There is no unassigned actor/state cell in this map. Inapplicable *sub-actions*
+are identified above rather than marking whole actors inapplicable: a boot
+that is locally ineligible and a saves call that ignores archives are both
+executed and asserted. Native UI ordering/presentation, real provider behavior,
+paired guests and upgrade application remain P3 criteria on the owning issues.
+
+### Actual predecessor states and the guest boundary
+
+`T23-predecessor-RC2-*` runs the historical script from `69e6039f8f`; it moves
+`/GAMES` to `/ROCKNIX`. `T23-predecessor-run101-*` runs `b2378d9c33`, moving
+`/ROCKNIX` to `/Rasteratops`. Their actual interrupted pointers/cloud hashes
+and script hashes are recorded before replacing the script with candidate
+source. No recovery record is fabricated. Four of the original ten controls
+failed before #391's fix. Additional cases interrupt the recovery again,
+preserve custom/root content choices, refuse foreign shelves and preserve both
+versions in a marked merge.
+
+Known old derived content and discarded shelves now take the normal recorded
+step, rather than an early content-only return. The shelf is retained separately
+in the recovery record: current saves/backups pointers remain authoritative,
+including when another device still writes either old tier. Populated/empty
+content-only controls and the stronger shelf boundary controls cover the11
+broad regressions found in the initial fix. Earlier schema1 records without the
+optional shelf field still retry from their original saves source. Current primary pointers with
+old derived content are eligible for the boot retry; a remaining old shelf is
+also reported by the folder scan. A marker-only interruption has no local
+historical clue: explicit apply or ordinary wizard seeding finishes publication;
+we do not add a network probe to every boot/direct transfer or invent a record
+on an unmarked cloud just because its name resembles our default.
+
+Guest runner `tools/rasteratops-vm-cloud-epic` now has T17 settlement fault/recovery,
+T19 unlinked/local-path refusal, T23 tier/delete/marker retry and follower-config,
+and T26 unsupported-marker controls. `migration-protocol.sh` is sourced only
+after the runner verifies guest d and the synthetic backend. It uses the
+image's own scripts/rclone, a temporary provider-operation fault shim, separate
+fixture resets, saved statuses/pointers/hashes, and cleanup of the shim. The
+follower-config assertion on one guest is **not** the required two-guest proof.
+Shell parsing and the runner's constructed failure are host checks; these new
+guest cases are not claimed executed until P3 supplies their image receipts.

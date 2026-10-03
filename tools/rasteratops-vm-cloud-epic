@@ -4,11 +4,11 @@
 # The cloud epic's guest-d proof, promoted from run101 (#365).
 # Requires an isolated GENERIC_X64 guest d and the synthetic WebDAV backend.
 # Usage: tools/rasteratops-vm-cloud-epic --output DIR [--case CASE]
-# Cases: A B C D E F G H I J K L T08 T11 T12
+# Cases: A B C D E F G H I J K L T08 T11 T12 T17 T19 T23 T26
 # --inject-failure exercises the exact assertion/exit path without a guest.
 set -uo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd)
-P=""; requested="H A C D B E I J K L F G T08 T11 T12"; injected=0
+P=""; requested="H A C D B E I J K L F G T08 T11 T12 T17 T19 T23 T26"; injected=0
 while [ $# -gt 0 ]; do
  case "$1" in
   --output) P="$2"; shift 2;; --case) requested="$2"; shift 2;;
@@ -28,7 +28,7 @@ if [ "$injected" = 1 ]; then check 1 'constructed assertion failure'; done_line;
 if [ -z "${PROOF_CASE:-}" ]; then
  total_rc=0
  for letter in $requested; do
-  case "$letter" in A|B|C|D|E|F|G|H|I|J|K|L|T08|T11|T12) ;; *) echo "unknown case $letter" >&2; exit 2;; esac
+  case "$letter" in A|B|C|D|E|F|G|H|I|J|K|L|T08|T11|T12|T17|T19|T23|T26) ;; *) echo "unknown case $letter" >&2; exit 2;; esac
   PROOF_CASE="$letter" "$0" --output "$P/$letter" --case "$letter" || total_rc=1
  done
  exit "$total_rc"
@@ -44,7 +44,10 @@ qa_pid=$(cat /tmp/rocknix-qemu-d.pid)
 [[ "$qa_pid" =~ ^[0-9]+$ ]] && [ -r "/proc/$qa_pid/cmdline" ] && tr '\0' '\n' < "/proc/$qa_pid/cmdline" | grep -q 'qemu-system-x86_64' || { say 'guest pidfile is not a QEMU process'; exit 2; }
 [ "${CLOUD_QA_BACKEND:-webdav}" = webdav ] && [ -d "$DATA" ] && [ ! -L "$DATA" ] || { say 'requires isolated WebDAV QA data'; exit 2; }
 GRABPID=""
-cleanup() { [ -z "$GRABPID" ] || { kill "$GRABPID" 2>/dev/null || :; wait "$GRABPID" 2>/dev/null || :; }; }
+cleanup() {
+ [ -z "$GRABPID" ] || { kill "$GRABPID" 2>/dev/null || :; wait "$GRABPID" 2>/dev/null || :; }
+ if declare -F protocol_cleanup >/dev/null; then protocol_cleanup; fi
+}
 trap cleanup EXIT INT TERM
 walk() {
  local rc
@@ -115,7 +118,7 @@ esl() { G_ "grep -a -E \"$1\" /var/log/es_log.txt 2>/dev/null" | maskl; }
 boot_frames() { # <tag> <seconds after the guest is idle>
   grab_start "$1" 0.7; debug_reboot; sleep "$2"; grab_stop "$1"; require_no_game >/dev/null 2>&1
   say "  $1: $(ls "$FR/$1" 2>/dev/null | wc -l) frames under $FR/$1"; }
-G_ 'systemctl stop essway; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; rm -f /storage/.config/.restore-finish-pending; rm -rf /storage/.cache/cloud_sync/scan; find /storage/roms -type f -name "*.srm" -delete' >/dev/null || exit 2
+G_ 'systemctl stop essway; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; rm -f /storage/.config/.restore-finish-pending /storage/.config/cloud-layout-migration.json; rm -rf /storage/.cache/cloud_sync/scan; find /storage/roms -type f -name "*.srm" -delete' >/dev/null || exit 2
 say "== setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it"
 "$R/tools/cloud-test-backend" rclone-conf > $P/epic-rclone.conf && scp -q -i $KEY -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $P/epic-rclone.conf root@127.0.0.1:/tmp/rclone.conf; rm -f $P/epic-rclone.conf
 G_ 'mkdir -p /storage/.config/rclone && mv /tmp/rclone.conf /storage/.config/rclone/rclone.conf && chmod 600 /storage/.config/rclone/rclone.conf && /usr/bin/cloud_sync_helper >/dev/null 2>&1; echo "remote: $(rclone listremotes | head -1)"' | tee -a "$LOG"
@@ -135,6 +138,12 @@ case "$PROOF_CASE" in
  *) mv "$DATA/ROCKNIX" "$DATA/Rasteratops"; conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content >/dev/null;;
 esac
 if [ "$PROOF_CASE" = E ]; then cp -a "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; fi
+case "$PROOF_CASE" in
+ T17|T19|T23|T26)
+  . "$R/tools/vm-walks/cloud-epic/migration-protocol.sh"
+  protocol_main "$PROOF_CASE"
+  done_line; [ "$FAILS" -eq 0 ]; exit $?;;
+esac
 reset_picks
 G_ 'systemctl stop essway; rm -f /storage/.config/.restore-finish-pending; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; systemctl start essway' >/dev/null || exit 2
 sleep 20

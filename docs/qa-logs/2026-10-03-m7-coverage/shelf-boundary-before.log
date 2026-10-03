@@ -1,0 +1,26 @@
+rclone: rclone v1.75.1 (/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/bin/rclone)
+FAIL T23-predecessor-boundary-root root: recovery failed: This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/Rasteratops/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+REFUSING: qa:/Rasteratops/Saves already exists.
+>>> why THE NEW FOLDER ALREADY HAS FILES IN IT
+
+FAIL T23-predecessor-boundary-custom custom: recovery failed: This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/Rasteratops/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+REFUSING: qa:/Rasteratops/Saves already exists.
+>>> why THE NEW FOLDER ALREADY HAS FILES IN IT
+
+PASS T23-predecessor-boundary-foreign 
+FAIL T23-predecessor-boundary-fleet recovering the shelf moved an unselected live tier
+cloud-layout-test: 1 PASS, 3 FAIL; artifacts: /tmp/rasteratops-m7-shelf-boundary-before-20261003

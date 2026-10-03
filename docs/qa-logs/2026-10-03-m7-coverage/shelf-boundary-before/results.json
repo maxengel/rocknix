@@ -1,0 +1,21 @@
+[
+  {
+    "case": "T23-predecessor-boundary-root",
+    "status": "FAIL",
+    "why": "root: recovery failed: This device stores:\n  saves    qa:/ROCKNIX/Saves\n  backups  qa:/Rasteratops/Backups\n\nThe current layout is:\n  saves    qa:/Rasteratops/Saves\n  backups  qa:/Rasteratops/Backups\n\nREFUSING: qa:/Rasteratops/Saves already exists.\n>>> why THE NEW FOLDER ALREADY HAS FILES IN IT\n"
+  },
+  {
+    "case": "T23-predecessor-boundary-custom",
+    "status": "FAIL",
+    "why": "custom: recovery failed: This device stores:\n  saves    qa:/ROCKNIX/Saves\n  backups  qa:/Rasteratops/Backups\n\nThe current layout is:\n  saves    qa:/Rasteratops/Saves\n  backups  qa:/Rasteratops/Backups\n\nREFUSING: qa:/Rasteratops/Saves already exists.\n>>> why THE NEW FOLDER ALREADY HAS FILES IN IT\n"
+  },
+  {
+    "case": "T23-predecessor-boundary-foreign",
+    "status": "PASS"
+  },
+  {
+    "case": "T23-predecessor-boundary-fleet",
+    "status": "FAIL",
+    "why": "recovering the shelf moved an unselected live tier"
+  }
+]

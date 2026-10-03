@@ -1,0 +1,39 @@
+listremotes
+lsd qa: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1
+mkdir qa:/Rasteratops/Backups/QA-deadbeef01/ --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+help
+copyto /storage/roms/backup/2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz qa:/Rasteratops/Backups/QA-deadbeef01/2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 --progress --log-file /var/log/cloud_sync.log --stats 1s --ignore-times
+copyto /storage/.cache/cloud_sync/device.json qa:/Rasteratops/Backups/QA-deadbeef01/device.json --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 --log-file /var/log/cloud_sync.log --progress
+size qa:/Rasteratops/Backups/QA-deadbeef01/2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz --json --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only --include *.{zip,tar.gz} qa:/Rasteratops/Backups/QA-deadbeef01/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt --exclude /README.txt qa:/Rasteratops/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/GAMES-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only --include /*.{zip,tar.gz} qa:/Rasteratops/Backups/QA-deadbeef01/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+listremotes
+lsf --dirs-only qa:Rasteratops/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1
+ls qa:/Rasteratops/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+help
+lsf --files-only --include /*.{zip,tar.gz} qa:/Rasteratops/Backups/QA-deadbeef01/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto qa:/Rasteratops/Backups/QA-deadbeef01/2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz /storage/roms/backup/2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 --progress --log-file /var/log/cloud_sync.log --log-level INFO --stats 1s --ignore-times

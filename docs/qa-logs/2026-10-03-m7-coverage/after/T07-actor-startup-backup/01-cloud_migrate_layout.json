@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "cloud_migrate_layout",
+    "--needs-step"
+  ],
+  "rc": 0,
+  "pointers": {
+    "SAVESPATH": "/storage/roms",
+    "SAVES_REMOTE": "/GAMES",
+    "SETTINGS_BACKUPS": "/storage/roms/backup",
+    "SETTINGS_REMOTE": "/GAMES/backup",
+    "BACKUPMETHOD": "copy",
+    "RESTOREMETHOD": "copy",
+    "BACKUPFILE_BACKUP_OPTION": "no",
+    "BACKUPFILE_RESTORE_OPTION": "no",
+    "LOG_LEVEL": "INFO",
+    "LAYOUT_KEEP": "",
+    "RCLONEOPTS": "--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt",
+    "RCLONE_NET_OPTS": "--contimeout 1s --timeout 2s --low-level-retries 1 --retries 1",
+    "CONTENT_REMOTE": "/GAMES/Content"
+  }
+}

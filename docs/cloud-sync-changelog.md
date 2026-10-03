@@ -21,6 +21,19 @@ document is asking for help with.
 ---
 
 
+## Recover earlier cloud moves and refuse unlinked transfers (2026-10-03)
+
+Source changes with production-script host evidence; candidate VM qualification
+remains required.
+
+- **A move interrupted on an earlier build can finish its remaining folders.**
+  Known old content and discarded saves use the recorded migration path,
+  preserving independent content choices and conflicting progress (#391,
+  D-CLOUD-165, D-CLOUD-168).
+- **An empty cloud configuration cannot turn a local folder into the cloud.**
+  Back up and restore refuse with the existing setup message before using a
+  path when no remote is linked (#392).
+
 ## Keep newer settings during recovery (2026-10-03)
 
 - **A newer settings write keeps its recovery copy.** ES rechecks the selected

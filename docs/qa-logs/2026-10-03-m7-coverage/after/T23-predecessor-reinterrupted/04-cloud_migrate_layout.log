@@ -1,0 +1,41 @@
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/Rasteratops/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced
+  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+
+Now using /Rasteratops/Saves for your saves.
+>>> unit DISCARDED SAVES|1|2
+Copying discarded saves...
+>>> doing copy
+Transferred:   	         18 B / 18 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying discarded saves...
+>>> doing verify
+Removing the old discarded saves folder...
+>>> doing remove
+>>> unit ROMS, BIOS, AND GAME CONTENT|2|2
+Would copy, verify, then remove  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+Copying content...
+>>> doing copy
+Transferred:   	         11 B / 11 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 3
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying content...
+>>> doing verify
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Removing the old content folder...
+>>> doing remove
+Content is now at qa:/Rasteratops/Content.
+
+Your files moved, but the cloud folder setup didn't finish. Try the move again to finish it.
+>>> why SOME FILES DIDN'T FINISH

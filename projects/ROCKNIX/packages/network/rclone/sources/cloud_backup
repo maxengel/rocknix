@@ -2439,11 +2439,18 @@ main() {
     # anyway; only the system-only path has no such step of its own. After
     # load_config, which sets an automatic run's deadline: the probe ran
     # before it, outside the ceiling (#308 gpt F-CS-34).
-    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     
-    # Use the first configured remote in rclone
-    # Note: This assumes at least one remote is configured and the first one should be used
+    # An existing config file can contain no remote (#392). Without the
+    # prefix, rclone interprets SAVES_REMOTE as a local path. Refuse before
+    # any path operation instead of offering to create a "cloud" locally.
     REMOTENAME=$(first_remote)
+    case "${REMOTENAME}" in
+        ?*:) ;;
+        *) log_message "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first." "true" "ERROR"
+           say_why "YOUR CLOUD STORAGE ISN'T SET UP YET"
+           clean_exit 1 ;;
+    esac
+    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     
     # Begin main script operations with user-friendly header
     log_message "=> ${OS_NAME} CLOUD BACKUP\n"

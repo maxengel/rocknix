@@ -1,0 +1,32 @@
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/ROCKNIX/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Backups  ->  qa:/Rasteratops/Backups
+  qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves
+  qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced
+  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+
+>>> unit SETTINGS BACKUPS|1|4
+Copying backups...
+>>> doing copy
+Transferred:   	         15 B / 15 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying backups...
+>>> doing verify
+Now using /Rasteratops/Backups for your settings backups.
+Removing the old backups folder...
+>>> doing remove
+>>> unit SAVES|2|4
+Copying saves...
+>>> doing copy
+injected provider failure
+injected provider failure
+Couldn't finish copying saves. Nothing was removed from the old folder; some files may already be in the new one.
