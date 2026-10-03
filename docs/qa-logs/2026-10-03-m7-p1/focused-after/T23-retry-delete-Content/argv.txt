@@ -1,0 +1,100 @@
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt --exclude /saves/** qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf -R --files-only qa:/ROCKNIX/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copy qa:/ROCKNIX/Backups qa:/Rasteratops/Backups --files-from-raw /tmp/cloud_migrate_layout.qqVXOv --create-empty-src-dirs=false --progress --stats 2s --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+check qa:/ROCKNIX/Backups qa:/Rasteratops/Backups --files-from-raw /tmp/cloud_migrate_layout.qqVXOv --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+delete qa:/ROCKNIX/Backups --files-from-raw /tmp/cloud_migrate_layout.qqVXOv --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+rmdirs qa:/ROCKNIX/Backups --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf -R --files-only --exclude /backup/** --exclude /Backups/** qa:/ROCKNIX/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves --files-from-raw /tmp/cloud_migrate_layout.Llpi2e --create-empty-src-dirs=false --progress --stats 2s --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+check qa:/ROCKNIX/Saves qa:/Rasteratops/Saves --files-from-raw /tmp/cloud_migrate_layout.Llpi2e --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+delete qa:/ROCKNIX/Saves --files-from-raw /tmp/cloud_migrate_layout.Llpi2e --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+rmdirs qa:/ROCKNIX/Saves --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf -R --files-only qa:/ROCKNIX/Saves-replaced --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copy qa:/ROCKNIX/Saves-replaced qa:/Rasteratops/Saves-replaced --files-from-raw /tmp/cloud_migrate_layout.e1Cd6F --create-empty-src-dirs=false --progress --stats 2s --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+check qa:/ROCKNIX/Saves-replaced qa:/Rasteratops/Saves-replaced --files-from-raw /tmp/cloud_migrate_layout.e1Cd6F --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+delete qa:/ROCKNIX/Saves-replaced --files-from-raw /tmp/cloud_migrate_layout.e1Cd6F --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+rmdirs qa:/ROCKNIX/Saves-replaced --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf -R --files-only qa:/ROCKNIX/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copy qa:/ROCKNIX/Content qa:/Rasteratops/Content --files-from-raw /tmp/cloud_migrate_layout.OE3FWE --create-empty-src-dirs=false --progress --stats 2s --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+check qa:/ROCKNIX/Content qa:/Rasteratops/Content --files-from-raw /tmp/cloud_migrate_layout.OE3FWE --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+delete qa:/ROCKNIX/Content --files-from-raw /tmp/cloud_migrate_layout.OE3FWE --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt --exclude /saves/** qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+check qa:/Rasteratops/Content qa:/ROCKNIX/Content --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+lsf -R --files-only qa:/ROCKNIX/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copy qa:/ROCKNIX/Content qa:/Rasteratops/Content --files-from-raw /tmp/cloud_migrate_layout.MXVYhV --create-empty-src-dirs=false --progress --stats 2s --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+check qa:/ROCKNIX/Content qa:/Rasteratops/Content --files-from-raw /tmp/cloud_migrate_layout.MXVYhV --one-way --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+delete qa:/ROCKNIX/Content --files-from-raw /tmp/cloud_migrate_layout.MXVYhV --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+rmdirs qa:/ROCKNIX/Content --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+rcat qa:/Rasteratops/.layout --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --include *.{zip,tar.gz} qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1

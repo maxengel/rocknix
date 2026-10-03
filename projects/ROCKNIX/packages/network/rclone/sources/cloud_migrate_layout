@@ -69,6 +69,9 @@ SUPERSEDED_DEFAULT_SAVES=("/GAMES" "/ROCKNIX/Saves")
 # is offered; written after a move or a seeding.
 LAYOUT_VERSION=2
 LAYOUT_MARKER=".layout"
+REMOTE_LAYOUT=0
+MIGRATION_RECORD="/storage/.config/cloud-layout-migration.json"
+MIGRATION_ACTIVE=0
 
 # Which superseded default's saves folder holds files in this cloud, the
 # configured one first, then the others newest first: into SOURCE_FOUND,
@@ -564,9 +567,12 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     fi
     say "Removing the old ${what} folder..."
     [ "${MODE}" = "--apply" ] && echo ">>> doing remove"
-    { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-        && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
-        || say "(could not remove the old folder; the copy is complete and verified)"
+    if ! rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
+        say "The verified copy is in the new folder, but the old files couldn't be removed. Try again to finish."
+        rm -f "${list}"
+        return 1
+    fi
+    rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1 || :
     rm -f "${list}"
     return 0
 }
@@ -630,9 +636,12 @@ merge_into() { # <src> <dst> <what> <pointer key> <list>
     fi
     say "Removing the old ${what} folder..."
     [ "${MODE}" = "--apply" ] && echo ">>> doing remove"
-    { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-        && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
-        || say "(could not remove the old folder; the merge is complete and verified)"
+    if ! rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
+        say "The merged files are in the new folder, but the old files couldn't be removed. Try again to finish."
+        rm -f "${list}" "${differ}" "${missing}"
+        return 1
+    fi
+    rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1 || :
     rm -f "${list}" "${differ}" "${missing}"
     return 0
 }
@@ -769,6 +778,11 @@ migrate_content() {
 #   MARKER=layout=<n> | -       the cloud's marker, when one is there
 layout_state() { # <remote> <saves> <backups> <content>
     local remote="$1" saves="$2" backups="$3" content="$4" state keep cur=0 marker
+    if [ -e "${MIGRATION_RECORD}" ]; then
+        migration_record_load "${remote}" || return $?
+        printf 'STATE=migration-pending\nSOURCE=%s\nCURRENT=%s\n' "${saves}" "${NEW_SAVES}"
+        return 0
+    fi
     keep=$(conf_value LAYOUT_KEEP) || return 2
     echo "SAVES=${saves}"
     echo "BACKUPS=${backups}"
@@ -920,15 +934,129 @@ layout_settle() { # <remote> <saves> <backups> <content>
 # current folder with no marker is somebody's own folder of the same name,
 # which the refusals below still protect.
 fleet_made() { # <remote>
-    rclone cat "${1}${NEW_SAVES%/*}/${LAYOUT_MARKER}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1 | grep -q '^layout='
+    [ "${REMOTE_LAYOUT}" = "${LAYOUT_VERSION}" ]
+}
+
+# A marker is a version, not merely a prefix. Validate its complete bytes;
+# shell substitution would silently discard NULs and trailing newlines. A
+# failed read is not absence if the parent still lists the marker.
+read_marker() { # <remote>
+    local tmp rc version
+    REMOTE_LAYOUT=0
+    tmp=$(mktemp /tmp/cloud_layout_marker.XXXXXX) || return 5
+    rclone cat "${1}${NEW_ROOT}/${LAYOUT_MARKER}" "${RCLONE_LIST_OPTS[@]}" > "${tmp}" 2>/dev/null; rc=$?
+    if [ "${rc}" -ne 0 ]; then
+        rm -f "${tmp}"
+        list_or_stop "${1}${NEW_ROOT}/" --files-only
+        if printf '%s\n' "${LISTING}" | grep -qFx -- "${LAYOUT_MARKER}"; then
+            unreadable "${1}${NEW_ROOT}/${LAYOUT_MARKER}" "${rc}"
+        fi
+        return 0
+    fi
+    for version in 1 2; do
+        if printf 'layout=%s\n' "${version}" | cmp -s - "${tmp}"; then
+            REMOTE_LAYOUT="${version}"
+            rm -f "${tmp}"
+            return 0
+        fi
+    done
+    rm -f "${tmp}"
+    say "This cloud folder uses a layout this version can't read. No further changes were made. Check for a newer system version before trying again."
+    [ "${MODE}" = "--apply" ] && echo ">>> why YOUR CLOUD FOLDER COULDN'T BE READ"
+    logger -t cloud_migrate_layout "unsupported or malformed layout marker; refused" 2>/dev/null
+    return 4
 }
 
 write_marker() { # <remote>
+    # Another device may have changed the marker while the tiers moved.
+    read_marker "$1" || return $?
     if printf 'layout=%s\n' "${LAYOUT_VERSION}" | rclone rcat "${1}${NEW_SAVES%/*}/${LAYOUT_MARKER}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null; then
+        read_marker "$1" || return $?
+        [ "${REMOTE_LAYOUT}" = "${LAYOUT_VERSION}" ] || return 5
         return 0
     fi
-    say "The layout marker could not be written; the folders moved all the same."
+    say "Your files moved, but the cloud folder setup didn't finish. Try the move again to finish it."
+    [ "${MODE}" = "--apply" ] && echo ">>> why SOME FILES DIDN'T FINISH"
     logger -t cloud_migrate_layout "could not write ${LAYOUT_MARKER} at ${1}${NEW_SAVES%/*}" 2>/dev/null
+    return 5
+}
+
+# Local recovery state keeps the sources after their live pointers advance.
+# It is never sourced as shell and never grants permission to merge a foreign
+# destination. Each retry still verifies the actual cloud bytes. A record is
+# bound to the remote configuration and the original/current pointer choices.
+remote_fingerprint() {
+    # rclone refreshes OAuth tokens during ordinary transfers. Bind the
+    # configured provider/root, not that routinely changing credential.
+    local config
+    config=$(sed '/^[[:space:]]*token[[:space:]]*=/d' /storage/.config/rclone/rclone.conf) || return 1
+    printf '%s\n' "${config}" | sha256sum
+}
+
+migration_record_save() {
+    migration_record_write "$@" && return 0
+    say "Couldn't save the cloud move's progress on this device. Try again when storage is available."
+    [ "${MODE}" = "--apply" ] && echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED"
+    return 5
+}
+
+migration_record_write() { # <stage>; consumes the calling step's local paths
+    local stage="$1" tmp fingerprint
+    fingerprint=$(remote_fingerprint) || return 5
+    fingerprint="${fingerprint%% *}"
+    tmp=$(mktemp "${MIGRATION_RECORD}.XXXXXX" 2>/dev/null) || return 5
+    if [ "${MIGRATION_ACTIVE}" = 1 ]; then
+        jq --arg stage "${stage}" '.stage=$stage' "${MIGRATION_RECORD}" > "${tmp}"
+    else
+        jq -n --arg remote "${remote}" --arg fingerprint "${fingerprint}" \
+            --arg saves "${saves}" --arg backups "${backups}" --arg content "${content}" \
+            --arg cs "$(conf_value SAVES_REMOTE)" --arg cb "$(conf_value SETTINGS_REMOTE)" \
+            --arg cc "$(conf_value CONTENT_REMOTE)" --arg stage "${stage}" \
+            '{schema:1,step:1,from:1,to:2,remote:$remote,fingerprint:$fingerprint,
+              source:{saves:$saves,backups:$backups,content:$content},
+              configured:{saves:$cs,backups:$cb,content:$cc},stage:$stage}' > "${tmp}"
+    fi
+    if [ "$?" -ne 0 ] || ! sync || ! mv -f "${tmp}" "${MIGRATION_RECORD}" || ! sync; then
+        rm -f "${tmp}"
+        return 5
+    fi
+    MIGRATION_ACTIVE=1
+    logger -t cloud_migrate_layout "migration step=1 from=1 to=2 stage=${stage}" 2>/dev/null
+    return 0
+}
+
+migration_record_load() { # <remote>; restores the calling step's source paths
+    [ -e "${MIGRATION_RECORD}" ] || return 0
+    local fingerprint key live initial target value
+    fingerprint=$(remote_fingerprint) || return 5
+    fingerprint="${fingerprint%% *}"
+    if ! jq -e --arg remote "$1" --arg fingerprint "${fingerprint}" '
+        .schema==1 and .step==1 and .from==1 and .to==2 and
+        .remote==$remote and .fingerprint==$fingerprint and
+        ([.source.saves,.source.backups,.source.content,
+          .configured.saves,.configured.backups,.configured.content] |
+          all(.[]; type=="string" and (explode | all(.[]; .>=32))))
+        ' "${MIGRATION_RECORD}" >/dev/null 2>&1; then
+        say "The previous cloud move couldn't be read safely. Nothing more was changed."
+        return 5
+    fi
+    for key in saves backups content; do
+        case "${key}" in
+            saves) live=$(conf_value SAVES_REMOTE); target="${NEW_SAVES}" ;;
+            backups) live=$(conf_value SETTINGS_REMOTE); target="${NEW_BACKUPS}" ;;
+            content) live=$(conf_value CONTENT_REMOTE); target="${NEW_CONTENT}" ;;
+        esac
+        initial=$(jq -r --arg k "${key}" '.configured[$k]' "${MIGRATION_RECORD}") || return 5
+        if ! same_folder "${live}" "${initial}" && ! same_folder "${live}" "${target}"; then
+            say "Your cloud folder choices changed during the move. Nothing more was changed."
+            return 5
+        fi
+        value=$(jq -r --arg k "${key}" '.source[$k]' "${MIGRATION_RECORD}") || return 5
+        value=$(clean_path "${value}") || return 5
+        printf -v "${key}" '%s' "${value}"
+    done
+    MIGRATION_ACTIVE=1
+    logger -t cloud_migrate_layout "migration step=1 from=1 to=2 resume" 2>/dev/null
     return 0
 }
 
@@ -1005,6 +1133,12 @@ main() {
         printf -v "${ptr}" '%s' "${cleaned}"
     done
 
+    # All default-layout transitions share the version boundary, including
+    # seeding through --settle. A custom layout elsewhere is independent.
+    if superseded_default "${saves}" || same_folder "${saves}" "${NEW_SAVES}"; then
+        read_marker "${remote}" || return $?
+    fi
+
     # A layout the owner chose is current too. CHANGE CLOUD FOLDER writes the
     # settings and content folders as SIBLINGS of the saves folder -- the
     # parent's Backups and Content, or the folder's own when it sits at the
@@ -1013,13 +1147,40 @@ main() {
     # as current, so this check offered to move a deliberately chosen layout
     # back to the default one (#74). The nested first layout, backups INSIDE
     # the saves folder, is the only shape this tool exists to move.
+    if [ -e "${MIGRATION_RECORD}" ]; then
+        case "${mode}" in
+            --join|--follow) return 3 ;; # The explicit retry owns the remaining move.
+            --settle|--keep|--write-marker)
+                say "The cloud folder move hasn't finished. Try the move again to finish it."
+                return 5 ;;
+        esac
+    fi
     case "${mode}" in
         --state)  layout_state "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
         --keep)   layout_keep "${saves}"; return $? ;;
         --follow) layout_follow "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
         --join)   layout_join "${remote}" "${saves}" "${content}"; return $? ;;
         --settle) layout_settle "${remote}" "${saves}" "${backups}" "${content}"; return $? ;;
+        --write-marker)
+            # Seeding must not declare an unfinished local move complete.
+            [ ! -e "${MIGRATION_RECORD}" ] || return 5
+            same_folder "${saves}" "${NEW_SAVES}" || return 3
+            write_marker "${remote}"; return $? ;;
     esac
+
+    # Step 1 is the supported predecessor (unmarked/layout 1) to layout 2.
+    # A layout-2 fleet may still have an older device's files to move, so
+    # marker 2 does not skip that device's step. Later versions must add an
+    # explicit dispatcher entry; read_marker refuses them in this build.
+    case "${REMOTE_LAYOUT}" in
+        0|1|2) migration_step_1 "${remote}" "${saves}" "${backups}" "${content}" "${mode}" ;;
+        *) return 4 ;;
+    esac
+}
+
+migration_step_1() {
+    local remote="$1" saves="$2" backups="$3" content="$4" mode="$5"
+    migration_record_load "${remote}" || return $?
 
     local sabs sib_parent
     sabs=$(folder_abs "${saves}")
@@ -1064,7 +1225,7 @@ main() {
     # folder -- a setting, nothing copied -- and then moved from it like
     # any other. Backups and content are taken as that layout's siblings
     # (or the nested /GAMES/backup for the first layout).
-    if superseded_default "${saves}" && ! has_files "${remote}${saves}/"; then
+    if [ "${MIGRATION_ACTIVE}" = 0 ] && superseded_default "${saves}" && ! has_files "${remote}${saves}/"; then
         local src
         superseded_source "${remote}" "${saves}"; src="${SOURCE_FOUND}"
         if [ -n "${src}" ] && ! same_folder "${src}" "${saves}"; then
@@ -1073,11 +1234,8 @@ main() {
             local src_backups="${src_parent}/Backups"
             [ "${src}" = "/GAMES" ] && src_backups="/GAMES/backup"
             backup_pointer_for "${remote}" "${backups}" "${src_backups}"
-            if [ "${mode}" = "--apply" ]; then
-                set_pointer SAVES_REMOTE "${src}" || return 5
-                set_pointer SETTINGS_REMOTE "${NEXT_BACKUPS}" || return 5
-                content_unset && { set_pointer CONTENT_REMOTE "${src_parent}/Content" || return 5; content="${src_parent}/Content"; }
-            fi
+            # Select sources here; publish pointers only after verified
+            # copies, with the recovery record already retained below.
             saves="${src}"
             backups="${NEXT_BACKUPS}"
             content_unset && content="${src_parent}/Content"
@@ -1204,6 +1362,7 @@ main() {
     fi
 
     say ""
+    migration_record_save begin || return $?
     # What moves, counted before anything does, so the page reads ITEM 1 OF n
     # from the first announcement (D-UI-026); each tier announces itself in
     # the page's own words as its move begins. A tier with nothing stored
@@ -1235,6 +1394,7 @@ main() {
         fi
     fi
 
+    migration_record_save backups || return $?
     local moved_saves=0
     if ! same_folder "${saves}" "${NEW_SAVES}"; then
         if has_files "${remote}${saves_src}/"; then
@@ -1251,6 +1411,7 @@ main() {
             content="${NEW_CONTENT}"
         fi
     fi
+    migration_record_save saves || return $?
     if ! same_folder "${saves}" "${NEW_SAVES}" && has_entries "${remote}${old_replaced}/"; then
         announce "DISCARDED SAVES"
         if ! relocate "${remote}${old_replaced}" "${remote}${NEW_SAVES}-replaced" "discarded saves" ""; then
@@ -1259,6 +1420,7 @@ main() {
         fi
     fi
 
+    migration_record_save discarded || return $?
     # ROMs move with the saves they belong to, when the pointer is one we
     # derived. A CONTENT_REMOTE the owner set themselves is theirs, and stays.
     # Its result is the run's (audit #307 PL-071): a content move that was
@@ -1281,7 +1443,11 @@ main() {
         say "Saves are at ${remote}${NEW_SAVES} and backups at ${remote}${NEW_BACKUPS}, but your ROMs and BIOS files didn't move. Try again."
         return "${content_rc}"
     fi
-    write_marker "${remote}"
+    migration_record_save content || return $?
+    write_marker "${remote}" || return $?
+    migration_record_save complete || return $?
+    rm -f "${MIGRATION_RECORD}" || return 5
+    sync || return 5
     say "Done. Saves are at ${remote}${NEW_SAVES}, backups at ${remote}${NEW_BACKUPS}."
     [ "${moved_saves}" = "1" ] && say "Old folders were left in place if anything else was in them."
     return 0
@@ -1301,6 +1467,10 @@ if [ "${1:-}" = "--superseded" ]; then printf '%s\n' "${SUPERSEDED_DEFAULT_SAVES
 # every boot for nothing. The scripts write the defaults in their own case.
 if [ "${1:-}" = "--needs-step" ]; then
     CASE_INSENSITIVE=0
+    if [ -e "${MIGRATION_RECORD}" ]; then
+        grep -q '^\[' /storage/.config/rclone/rclone.conf 2>/dev/null || exit 1
+        exit 0
+    fi
     _saves=$(conf_value SAVES_REMOTE) || exit 2
     _keep=$(conf_value LAYOUT_KEEP) || exit 2
     superseded_default "${_saves}" || exit 1

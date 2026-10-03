@@ -4600,6 +4600,8 @@ done
 rel="${p#qa:}"; rel="${rel#/}"; rel="${rel%/}"; target="/cloud/${rel}"
 case "$1" in
   listremotes) echo "qa:" ;;
+  cat) [ -f "${target}" ] || exit 3; cat "${target}" ;;
+  rcat) mkdir -p "$(dirname "${target}")" && cat > "${target}" ;;
   mkdir)
     if [ "${mode}" = bucket ] && [ "${markers}" -eq 0 ]; then exit 0; fi
     mkdir -p "${target}" ;;
@@ -8907,6 +8909,7 @@ echo "    A5. the layout migration moves each tier whole, to its own place, and 
 MG=$(sa_new migrate); sa_script "${MG}" cloud_migrate_layout
 MGC="${MG}/storage/.config/cloud_sync.conf"
 mg_seed() {
+    rm -f "${MG}/storage/.config/cloud-layout-migration.json"
     rm -rf "${MG}/cloud"/* "${MG}/ctl/kill.count"
     : > "${MG}/ctl/fail"; : > "${MG}/ctl/kill"; : > "${MG}/ctl/post"; : > "${MG}/ctl/argv"; rm -f "${MG}/ctl/nohash"
     printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/GAMES"\nSETTINGS_REMOTE="/GAMES/backup"\nCONTENT_REMOTE="/GAMES/Content"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' > "${MGC}"
@@ -13259,7 +13262,8 @@ echo "  aa. cloud_migrate_layout --state, --keep and --follow (#353, D-CLOUD-160
 # /Rasteratops/Saves exists when another device has made it, the marker
 # answers when it is there. The conf is a real file under /storage, so
 # --keep and --follow are read back from what they wrote.
-LY="${TMP}/ly"; mkdir -p "${LY}/shim" "${LY}/rec" "${LY}/repo" "${LY}/storage/.config"
+LY="${TMP}/ly"; mkdir -p "${LY}/shim" "${LY}/rec" "${LY}/repo" "${LY}/storage/.config/rclone"
+printf '[qa]\ntype = alias\nremote = /cloud\n' > "${LY}/storage/.config/rclone/rclone.conf"
 src_of "projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout" "${LY}/repo/cloud_migrate_layout"
 printf 'export PATH=/shim:/usr/bin:/bin\n' > "${LY}/profile"
 printf '#!/bin/sh\necho "logger $*" >> /rec/log\n' > "${LY}/shim/logger"
@@ -13288,8 +13292,8 @@ case "$cmd" in
       qa:/Rasteratops|qa:/Rasteratops/) { [ -e /rec/cur-exists ] || [ -e /rec/cur-readme ]; } && echo "Saves/" ;;
       qa:|qa:/) echo "Other/"; [ -e /rec/fail-rocknix ] && echo "ROCKNIX/" ;;
     esac ;;
-  cat) [ -e /rec/marker ] && echo "layout=2" ;;
-  rcat) cat > /rec/rcat ;;
+  cat) [ -e /rec/marker ] || exit 3; echo "layout=2" ;;
+  rcat) cat > /rec/rcat; cp /rec/rcat /rec/marker ;;
   check)
     # --differ F / --missing-on-dst F: the merge reads these files; the shim
     # writes them -- a differing name when told, else empty
@@ -13301,6 +13305,9 @@ exit 0
 EOR
 chmod +x "${LY}/shim"/*
 ly_run() { # <conf text> <verb>: stdout in ${LY}/out, exit in LYRC
+  # Each call supplies an independent device configuration; interrupted
+  # retries that retain the record are covered by the real-rclone fixtures.
+  rm -f "${LY}/storage/.config/cloud-layout-migration.json"
   printf '%s\n' "$1" > "${LY}/storage/.config/cloud_sync.conf"
   LYRC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
       --ro-bind /etc /etc --ro-bind "${LY}/profile" /etc/profile --ro-bind "${LY}/shim" /shim --bind "${LY}/rec" /rec --ro-bind "${LY}/repo" /repo \

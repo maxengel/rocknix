@@ -172,6 +172,13 @@ flowchart TD
     SEED --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
 ```
 
+**Interrupted cloud move (#356).** The same folder scan and boot step expose a
+retained migration as `TRY AGAIN · NOT NOW`; TRY AGAIN reopens MOVING YOUR CLOUD
+FOLDER and resumes the recorded sources. It does not offer KEEP USING an earlier
+folder after some pointers already moved. The failure note preserves the partial
+outcome: files already moved remain in the new folder. English/French source and
+compile checks exist; candidate frames are still required.
+
 **Dialogs the cloud raises on its own.** A restore against a cloud whose saves
 folder is missing ends COMPLETED and offers to create it (D-CLOUD-085); when a
 folder with a near name sits beside the missing one the dialog names both and

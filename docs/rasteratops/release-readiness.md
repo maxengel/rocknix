@@ -14,11 +14,27 @@ when priorities change; issue numbers are references, not queue positions.
 
 **Verdict: not ready to call a build an RC.** No combined branded 0.0.1
 image exists yet. Several fixes have strong host evidence, but the cloud
-migration contract and proxy refresh need implementation, older known
+migration coverage and proxy refresh still need work, older known
 defects need resolution, and the resulting artifact needs qualification.
 Another run of the existing general VM suites alone cannot close these gaps.
 
-## Inputs and evidence checked
+## Execution update — 2026-10-03
+
+M7.P1 has new implemented source fixes: strict marker validation, step1 recovery
+records and visible retries (#356/#365), and locked/revalidated last-good settings
+publication (#320). ES pin `39f8883545537d5274708ea85c4683612078a957` is pushed.
+New controls fail against the prior sources. Current evidence:93 cloud cases,
+1,367 host harness checks, and10 SystemConf cases/119 assertions pass; ES compiler,
+French catalog, package, vocabulary and instruction checks pass. Stale marker test
+doubles were corrected under #390. Receipts: `../qa-logs/2026-10-03-m7-p1/`.
+
+The numbered findings below describe the **2026-10-02 review baseline**. Findings1
+and3 now have source fixes; their image/upgrade/fleet proof is still owed. Remaining
+P1 source work is the explicit actor/predecessor coverage review and guest-case
+promotion. P2 proxy/dependency inputs remain next. No new branded build or RC is
+claimed. The live milestone retains the current order.
+
+## Inputs and evidence checked at the review baseline
 
 | Input | Observed state |
 | --- | --- |

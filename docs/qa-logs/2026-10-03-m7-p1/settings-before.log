@@ -1,0 +1,28 @@
+[doctest] doctest version is "2.4.12"
+[doctest] run with "--help" for options
+===============================================================================
+es-app/tests/unit/SystemConfTests.cpp:465:
+TEST CASE:  a script's newer good state published between the read and the record is not overwritten
+
+es-app/tests/unit/SystemConfTests.cpp:484: ERROR: CHECK( get(path + ".backup") == newer ) is NOT correct!
+  values: CHECK( system.hostname=A
+audio.volume=70
+ == system.hostname=A
+audio.volume=40
+ )
+
+===============================================================================
+es-app/tests/unit/SystemConfTests.cpp:488:
+TEST CASE:  LockBusy recovery reads its temporary without publishing over the holder's record
+
+es-app/tests/unit/SystemConfTests.cpp:504: ERROR: CHECK( get(path + ".backup") == recorded ) is NOT correct!
+  values: CHECK( system.hostname=A
+audio.volume=70
+ == system.hostname=A
+audio.volume=40
+ )
+
+===============================================================================
+[doctest] test cases:  10 |   8 passed | 2 failed | 0 skipped
+[doctest] assertions: 119 | 117 passed | 2 failed |
+[doctest] Status: FAILURE!

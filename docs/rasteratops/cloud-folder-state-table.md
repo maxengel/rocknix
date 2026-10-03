@@ -140,3 +140,21 @@ The promoted guest runner resets each lettered case and exits nonzero on any
 failed assertion. C/F/G include fact assertions, and B explicitly checks that
 creation preserves a chosen cloud-root content location. A constructed failure
 has demonstrated exit1. No cell is marked image-qualified by these host results.
+
+## M7.P1 migration controls (2026-10-03)
+
+T23 now has named `T23-retry-*` cases for each tier's copy and source deletion,
+plus marker publication. The assertions retain payloads, expose pending work to
+`--needs-step` and `cloud_scan --folder`, complete retry, verify repeat stability,
+and follow from a separate configuration with no mover record. The original
+collision case remains; it does not grant permission to overwrite foreign content.
+
+**T26: unsupported layout marker.** `T26-marker-{malformed,future,trailing}-*`
+exercises apply, follow, settle and wizard seeding, requiring byte-for-byte cloud
+and pointer preservation. Exact supported versions are read once at the shared
+transition boundary. Direct-transfer actors retain their existing routing; this
+entry does not claim a complete actor × state image proof. The candidate's boot,
+transfer-page and retry-dialog frames and real provider/upgrade runs remain open.
+
+See `cloud-layout.md` for the local recovery record, numbered step and actual
+predecessor compatibility boundary. Host receipts: `../qa-logs/2026-10-03-m7-p1/`.

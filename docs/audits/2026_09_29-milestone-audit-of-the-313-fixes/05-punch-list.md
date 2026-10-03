@@ -109,3 +109,15 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-015 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
 | PL-016 | Low | Resolved | `eb4fbe9b2c` (the harness PASSED, 1254 checks, `harness-s3f2`; the run before it, `harness-s3f`, 1251 PASS and 2 FAIL of the pass's own shape, corrected; section S3F, 18 red under `--old` at `286759eb6d`) |
 | PL-017 | Low | Resolved | ES `db5fc6954`; `eb4fbe9b2c` |
+
+### Phase 7 follow-up — 2026-10-03, #320
+
+| Item | Severity | Outcome | Evidence |
+| --- | --- | --- | --- |
+| gpt G3-E-02 / #320 | Medium | Source fixed; guest qualification remains open | ES `39f8883545537d5274708ea85c4683612078a957` locks and revalidates the complete current choice before publishing the last-good record, and skips LockBusy recovery publication. Both deterministic controls fail on the previous source, then all10 SystemConf cases/119 assertions pass. Receipts: `docs/qa-logs/2026-10-03-m7-p1/settings-{before,after,syntax}.log`. The historical deferral above is retained; no RC waiver is renewed. |
+
+Already written: earlier ES builds may have left an older whole recovery record
+beside a newer live config. The fix preserves newer live/script state and refreshes
+a record only from a still-current, complete choice under the settings lock. It
+cannot reconstruct progress already absent from every surviving copy. A guest
+race and byte proof remain on #320 before closure.
