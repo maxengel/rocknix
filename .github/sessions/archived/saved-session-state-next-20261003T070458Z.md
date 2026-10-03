@@ -18,7 +18,7 @@ is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 current: ES delivery approval and final input freeze**;
+complete; P1 source complete; **P2 current: integration and final input freeze**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T070458Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T070458Z.md.
+> Saved: 20261003T065106Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T065106Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -58,12 +58,10 @@ The current30-rule inventory and ES/splash entrypoints are repaired.
   logs and hashes in `docs/qa-logs/2026-10-03-led/ui-reselection/`.
   Current LED menu/popup equals diagnostic source. No ES LED edit needed.
   Physical illumination is an open item to test in device-facts, not a
-  software closure criterion (D-QA-051). #332 closed from published source
-  and VM receipts. No device action performed.
+  software closure criterion (D-QA-051). No device action performed.
 - **#371 push hook**:destination-specific published-history exclusion;
   seven actual scratch-push controls PASS; formerly blocked bbb2c635fe merge
-  passes direct hook. **Normal distribution push now PASS**; no bypass. #371 closed from actual
-  push/remote readback receipts through featurec5e0b6bfec/next3d58a7f855.
+  passes direct hook. **Normal distribution push still owed**; no bypass.
   `docs/qa-logs/2026-10-03-push-hook/`.
 - **#367/#368 process**:nine issue-history controls, safe runner help/five
   controls, three-way tool inventories and omission guards PASS. Fresh agent
@@ -71,8 +69,7 @@ The current30-rule inventory and ES/splash entrypoints are repaired.
   stale readiness prose and a launcher receipt edge case; both retest PASS
   (`docs/qa-logs/2026-10-03-process/final-handoff-proof.md`). Build-container instructions now
   use Makefile's existing digest, not stale latest-tag advice. Evidence
-  `docs/qa-logs/2026-10-03-process/`; required local push checks pass. #367
-  is delivered/closed. #368 retains ES/splash entrypoint publication only.
+  `docs/qa-logs/2026-10-03-process/`; required checks pass before final doc edits.
 
 ## #310 memory — all strict diagnostic acceptance passes
 
@@ -117,24 +114,11 @@ Distribution feature commits integrated onto `next` by exact cherry-picks:
 | c3f0e88b7c | c3f0c75661 | process/hook/recorder |
 | 33faa33c27 | 939e73a1d4 | Mesa/SDL memory cleanup and evidence |
 
-Distribution source/evidence is published through featurec5e0b6bfecd30be55713fb8685b138eadde45e7e
-and next3d58a7f8558a08e0ab1d0cab2e78dc834c6c071a. The normal push passed and
-remote hashes matched; no hook bypass. Latest closure receipts/checkpoint/rule
-addendum follow in a documentation commit; inspect live HEAD/status rather
-than assuming these snapshot hashes are still tips. Integrate exact new
-single commits, never the feature's historical merges. Preserve unrelated work.
-
-CI wordlist passes. Record CI initially caught #376 automatically closed by
-historical commitf864baac02a5d9c819bbfe71931d3213e29b1ddd's closing keyword.
-It is reopened: candidate archive/RC2-upgrade evidence remains P3. The issue
-records GitHub's closure event and missing proof; issue-tracking now requires
-neutral `Refs #N` until all criteria pass. Hygiene passes after correction.
-Closing #332/#367/#371 reaches the existing audit cadence:13 completed since
-2026-10-02, limit12. Full ceremony check is red **only for audit due**; push
-`--gate` remains0. Keep the approved independent fixes review in P4 after
-artifact qualification; do not invent an audit receipt or reset its clock.
-The bot cannot rerun Actions via API (403); a normal doc push triggers a new
-check. This permission does not prevent normal pushes or issue updates.
+Current feature `feature/conflict-resolution` at33faa33c27; primary `next`
+at939e73a1d4. Latest LED/evidence/checkpoint/instruction docs still uncommitted
+at this snapshot. Always inspect live status. **No distribution push yet.**
+Use exact new single commits for integration, never this feature's historical
+merges. Preserve unrelated worktree changes.
 
 ES `/home/max/Development/emulationstation-next.worktrees/cloud-epic`
 feature/cloud-epic4f54ec035 and sibling qa-integration test/qa-integration
@@ -161,16 +145,14 @@ hold the build once ES delivery is approved.
 
 ## Immediate next actions
 
-1. Check the final documentation commit/status and live M7 body. Distribution
-   source/proof is delivered; #332/#367/#371 are closed. #376 is correctly open
-   for P3. No active build/test/watcher remains. No unattended continuation is
-   claimed while explicit publication approvals are pending.
+1. Finish current evidence/work-log/checkpoint checks, commit/integrate exact
+   docs changes. Close #332 from its VM/software evidence after delivery;
+   physical illumination stays the named open item to test. Update #367/#368
+   integration evidence. Obtain #371's real normal distribution push receipt.
 2. Respect pending ES/splash approval questions. When ES is approved, normal
    push both qualified branches, read back remote hashes, then bump recipe to
    full e6e1e4d0f91e177e182cc05b1cea74991e1cc45b, pkgcheck, commit/integrate/push.
    #310 can close from delivered source/diagnostic proof; P3 repeats image tests.
-   ES origin is rasteratops/emulationstation. Splash product pin stays unchanged.
-
 3. Advance new build/m7-generic-x64 to final next, recheck preflight, freeze
    inputs and start the cold engineering build with an actual host watcher.
    Update milestone from P2 to P3 with exact hashes/PID/log/status, no RC claim.

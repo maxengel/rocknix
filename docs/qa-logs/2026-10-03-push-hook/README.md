@@ -17,3 +17,12 @@ blocked bbb2c635fe merge and tracked destination tip: exit0.
 An actual distribution push is still required to close #371; these controls
 do not claim that it happened. No real credentials or external remote are
 used by the constructed controls.
+
+## Actual normal distribution push — PASS
+
+`git push origin feature/conflict-resolution next` exits0, with the normal
+hook enabled. The feature contains the formerly rejected bbb2c635fe merge.
+Both remote refs read back exactly: featurec5e0b6bfecd30be55713fb8685b138eadde45e7e,
+next3d58a7f8558a08e0ab1d0cab2e78dc834c6c071a. Actual log/result and remote-ref
+receipts are retained here. Seven synthetic positive/negative controls remain
+in force; no hook bypass or exemption of unrelated remote history was used.
