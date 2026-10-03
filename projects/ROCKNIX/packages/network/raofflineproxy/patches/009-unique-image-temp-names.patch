@@ -17,36 +17,18 @@ is left to the project.
 Written for ROCKNIX (fork issue maxengel/rocknix#186, PL-33). Offered
 upstream as-is (ROCKNIX D-RA-016).
 
+diff --git a/linux/raofflineproxy/image_cache.py b/linux/raofflineproxy/image_cache.py
+index baef764..64384c9 100644
 --- a/linux/raofflineproxy/image_cache.py
 +++ b/linux/raofflineproxy/image_cache.py
-@@ -2,7 +2,9 @@ from __future__ import annotations
- 
- import json
- import logging
-+import os
- import shutil
-+import threading
- import urllib.request
- from concurrent.futures import ThreadPoolExecutor
- from pathlib import Path
-@@ -165,11 +167,20 @@ def download_static_image(
-                 headers={"User-Agent": user_agent, "Accept-Encoding": "identity"},
-                 method="GET",
-             )
+@@ -206,10 +206,10 @@ def download_static_image(
+         target = resolve_cached_static_asset(clean_path) or sharded_static_path(clean_path)
+         if not target.exists():
+             target.parent.mkdir(parents=True, exist_ok=True)
 -            tmp = target.with_suffix(target.suffix + ".tmp")
-+            # A name of this process's and this thread's: two workers
-+            # fetching one asset -- the pool's four threads, or the service's
-+            # pool and a bulk cache's in another process -- used to share
-+            # <target>.tmp, so one's rename moved the other's half-written
-+            # bytes into place and one's cleanup unlinked the other's file.
-+            # os.replace, so the second to finish overwrites the first's
-+            # identical bytes rather than failing on an existing target.
-+            tmp = target.with_name(
-+                f"{target.name}.{os.getpid()}.{threading.get_ident()}.tmp"
-+            )
++            tmp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
              try:
-                 with urllib.request.urlopen(request, timeout=10) as response:
-                     tmp.write_bytes(response.read())
+                 tmp.write_bytes(_fetch_image(url, user_agent))
 -                tmp.rename(target)
 +                os.replace(tmp, target)
                  tmp = None

@@ -3,9 +3,10 @@
 
 PKG_NAME="raofflineproxy-rcheevos"
 # The commit RAOfflineProxy pins as its third_party/rcheevos submodule at the
-# proxy's own pinned commit (248ce5a since 2026-09-28, the same submodule commit as at c1bd3724 and 0711f0b9, fork #259; upstream moved it from
-# 2ad0b86 in 095867d): read from the repository's
-# tree with `gh api repos/misantronic/RAOfflineProxy/contents/third_party`.
+# proxy's own pinned commit5866cd9ba784c13771a99c52dd6b6f2acc546842,
+# verified 2026-10-03 from its third_party gitlinks (#361). The submodule
+# commit is unchanged from248ce5a; full pins are retained in
+# docs/qa-logs/2026-10-03-proxy-refresh/coupled-pins.tsv.
 # GitHub's tarball of the proxy carries the submodule as an empty directory,
 # so the sources that rc_hash is built from come in through this package and
 # are compiled by raofflineproxy's own recipe into libraproxy_rchash.so, the

@@ -21,6 +21,8 @@ ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS." Offered upstream as-is
 same file would serve the KNULLI integration, which already reads
 cached_game_ids.txt.
 
+diff --git a/linux/raofflineproxy/flusher.py b/linux/raofflineproxy/flusher.py
+index 2cb8b9d..d777bec 100644
 --- a/linux/raofflineproxy/flusher.py
 +++ b/linux/raofflineproxy/flusher.py
 @@ -2,13 +2,14 @@ from __future__ import annotations
@@ -31,7 +33,7 @@ cached_game_ids.txt.
  import time
  from dataclasses import dataclass
  
- from . import cache_keys
+ from . import cache_keys, usage_stats
  from .auth import resolve_credentials
  from .award_signing import public_key_base64, sign_award, verify_award
 -from .config import FALLBACK_USER_AGENT, MAX_PROXY_PORT, upstream_host
@@ -39,28 +41,25 @@ cached_game_ids.txt.
  from .network import build_api_url, http_post
  from .rom_cache import (
      CacheGameAuthError,
-@@ -39,6 +40,11 @@ from .utils import (
+@@ -39,6 +40,7 @@ from .utils import (
  MAX_RETRIES = 5
  GENESIS_HASH = "genesis"
  MAX_AWARD_OFFSET_SECONDS = 14 * 24 * 60 * 60
-+# "<epoch> <flushed>", written after a flush that sent at least one award, for
-+# an OS integration to read (and remove, once it has told the player) -- the
-+# same kind of file as es_export's cached_game_ids.txt. The log says the same
-+# thing, but a log is not a signal anyone else can consume.
 +FLUSH_STAMP_FILE = CONFIG_DIR / "last-flush"
  LOGGER = logging.getLogger("raofflineproxy")
  
  
-@@ -486,6 +492,8 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
-         skipped_stale,
+@@ -488,6 +490,9 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
          pending_remaining,
      )
+ 
 +    if flushed:
 +        write_flush_stamp(flushed)
- 
++
      return FlushOutcome(
          flushed=flushed,
-@@ -496,6 +504,18 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
+         total=len(pending),
+@@ -497,6 +502,18 @@ def flush_pending_awards(storage: Storage, config_data: dict) -> FlushOutcome:
      )
  
  

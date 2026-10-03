@@ -25,22 +25,24 @@ Written for ROCKNIX (fork issue maxengel/rocknix#186, PL-12). Offered
 upstream as-is (ROCKNIX D-RA-016), the default being the project's to
 decide.
 
+diff --git a/linux/raofflineproxy/config.py b/linux/raofflineproxy/config.py
+index 12d2dfb..5cba299 100644
 --- a/linux/raofflineproxy/config.py
 +++ b/linux/raofflineproxy/config.py
-@@ -332,6 +332,13 @@ def load_config() -> dict:
+@@ -332,6 +332,11 @@ def load_config() -> dict:
      return data
  
  
 +def log_upload_enabled(config_data: dict | None = None) -> bool:
-+    """Whether the service may upload a log bundle on its own. Off unless
-+    config.json says "upload_logs": true -- the JSON true, nothing else; the
-+    menu's manual upload, a choice made on screen, is not gated by this."""
++    """Automatic log upload requires an explicit JSON true, never truthiness."""
 +    return (config_data or {}).get("upload_logs") is True
 +
 +
  def image_caching_enabled(config_data: dict | None = None) -> bool:
      config_data = config_data or {}
      configured = config_data.get("cache_images")
+diff --git a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_service.py
+index a0199ad..9c0908d 100644
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
 @@ -22,6 +22,7 @@ from .config import (
@@ -51,7 +53,7 @@ decide.
      proxy_host,
      proxy_port,
      upstream_host,
-@@ -1163,7 +1164,7 @@ def due_refresh_game_ids(patch_entries: list[dict], recently_played: set[int]) -
+@@ -1271,7 +1272,7 @@ def due_refresh_game_ids(patch_entries: list[dict], recently_played: set[int]) -
      return due
  
  
@@ -60,22 +62,17 @@ decide.
      # The menu only ever attempts this once (on first open after the incident) and shows
      # the user the outcome regardless of success, so it doesn't nag them again — if that
      # one attempt happened while offline, the report would otherwise never reach us. The
-@@ -1171,6 +1172,14 @@ def retry_storage_corruption_report() -> None:
+@@ -1279,6 +1280,9 @@ def retry_storage_corruption_report() -> None:
      incident = storage_corruption.load_incident()
      if incident is None or incident.get("reported"):
          return
-+    # Only where the configuration opts in. The report is a log bundle sent
-+    # to a third-party endpoint, from a service, without anyone's yes, at a
-+    # moment nobody is watching -- after a data file was found corrupt, on a
-+    # handheld a power cut is an ordinary evening for. An OS that wants the
-+    # reports sets "upload_logs": true in config.json.
 +    if not log_upload_enabled(config_data):
 +        LOGGER.info("Storage corruption report not sent: upload_logs is off")
 +        return
      try:
          upload_id = log_uploader.report_storage_corruption(incident)
      except Exception as exc:
-@@ -1210,7 +1219,7 @@ def run_proxy_service(
+@@ -1321,7 +1325,7 @@ def run_proxy_service(
          save_online_state(initial_online)
          if initial_online:
              server.flush_pending_awards()
@@ -83,4 +80,4 @@ decide.
 +            retry_storage_corruption_report(config_data)
          connectivity_monitor.start()
          periodic_refresh.start()
- 
+         cache_queue_worker.start()

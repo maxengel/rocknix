@@ -3,8 +3,11 @@
 
 PKG_NAME="raofflineproxy-libchdr"
 # The commit RAOfflineProxy pins as its third_party/libchdr submodule at the
-# proxy's own pinned commit (248ce5a since 2026-09-28, the same submodule commit as at c1bd3724; unchanged since 4e9bab48, fork #165), read the same way as
-# raofflineproxy-rcheevos. The proxy's tarball carries the submodule as an
+# proxy's own pinned commit5866cd9ba784c13771a99c52dd6b6f2acc546842,
+# verified 2026-10-03 from its third_party gitlinks (#361). The submodule
+# commit is unchanged from248ce5a; full pins are retained in
+# docs/qa-logs/2026-10-03-proxy-refresh/coupled-pins.tsv.
+# The proxy's tarball carries the submodule as an
 # empty directory; these sources (libchdr and the miniz, lzma and zstd
 # decoders it vendors under deps/) are compiled by raofflineproxy's recipe
 # into libraproxy_rchash.so so a CHD disc image hashes the way RetroArch

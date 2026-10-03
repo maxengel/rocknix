@@ -14,6 +14,9 @@ A request carrying `X-RA-Store-Only: 1` is now served by handle_offline_request
 whatever is_online() says: the store's copy, or the store's "not cached", at
 once. Nothing else changes; a client that does not send the header is
 served as before. Awards never take this path (they are handled first).
+
+diff --git a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_service.py
+index 9c0908d..259f21e 100644
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
 @@ -412,6 +412,17 @@ class ProxyRuntimeServer(ThreadingTCPServer):

@@ -39,13 +39,13 @@ import sys
 import threading
 from pathlib import Path
 
-from raofflineproxy import cache_keys, image_cache, network, rom_browser, rom_cache
+from raofflineproxy import cache_budget, cache_keys, image_cache, network, rate_limit, rom_browser, rom_cache
 from raofflineproxy.auth import resolve_credentials
 from raofflineproxy.config import configure_logging, image_caching_enabled, load_config
 from raofflineproxy.network import apply_scan_batch_cooldown
 from raofflineproxy.rom_browser import add_rom_to_cache, normalize_cached_rom_path
 from raofflineproxy.rom_cache import cache_game
-from raofflineproxy.storage import Storage
+from raofflineproxy.storage import Storage, current_millis
 from raofflineproxy.utils import proxy_user_agent, self_user_agent
 
 # Every RetroAchievements action a game cost, in order. http_get is bound by
@@ -89,15 +89,24 @@ def cache_indexed(game_id: int, hash_value: str, path: Path, credentials: dict,
     """Cache one game from its id and hash. Returns the title cached."""
     hash_value = cache_keys.normalize_hash(hash_value)
     user_agent = proxy_user_agent(self_user_agent())
-    cache_game(
-        game_id,
-        hash_value,
-        credentials,
-        user_agent,
-        storage,
-        config_data,
-        cache_images=image_caching_enabled(config_data),
-    )
+    paused = max(rate_limit.paused_until() or 0, cache_budget.load(storage).paused_until)
+    if paused > current_millis():
+        raise rate_limit.RateLimitedError("RetroAchievements asked to slow down; try again later")
+    try:
+        with rate_limit.background():
+            cache_game(
+                game_id,
+                hash_value,
+                credentials,
+                user_agent,
+                storage,
+                config_data,
+                cache_images=image_caching_enabled(config_data),
+            )
+    finally:
+        paused = rate_limit.paused_until()
+        if paused is not None:
+            cache_budget.pause_until(storage, paused)
     storage.upsert_cache(
         cache_keys.game_id(hash_value),
         json.dumps({"GameID": game_id}, separators=(",", ":")),
@@ -178,12 +187,12 @@ def main() -> int:
                 print(f"FAIL {index}/{total} {label}: not found", flush=True)
                 continue
             try:
-                result = add_rom_to_cache(path, storage, config_data)
+                result = add_rom_to_cache(path, storage, config_data, budgeted=False)
             except Exception as error:
                 failed += 1
                 print(f"FAIL {index}/{total} {label}: {error}", flush=True)
                 continue
-            if result.success:
+            if result.success and not result.queued:
                 cached += 1
                 print(f"OK {index}/{total} {label}", flush=True)
             else:
