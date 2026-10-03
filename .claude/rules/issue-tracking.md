@@ -47,6 +47,14 @@ gh issue create --repo rasteratops/distribution --title "..." --body-file notes.
 - **Closing discipline**: deliver → close `completed` with a comment naming the
   commits/build; consolidate → close `not planned` with a comment naming where the
   scope went. Never leave a delivered issue open or close one silently.
+- **Partial delivery uses neutral commit references.** Write `Refs #N` while
+  any acceptance criterion remains unproved; avoid GitHub closing keywords
+  (`Fix`, `Fixes`, `Close`, `Closes`, `Resolve`, `Resolves`) immediately before
+  an issue reference. A caveat later in the message does not cancel automatic
+  closure when that commit reaches the default branch. After integration,
+  verify affected issue states and reopen premature closures with the missing
+  evidence named. #376 was auto-closed this way on2026-10-03 despite its
+  unrun branded-image criterion; existing ceremony hygiene detected it.
 - **A bug is closed as completed only with its `Already written:` line** in
   its code trace -- what the code before the fix had left on devices and in
   their clouds, and how the fix treats it (D-WORKFLOW-050,
