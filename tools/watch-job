@@ -16,9 +16,9 @@
 # (engineering-practices.md, "A promise is not a mechanism").
 #
 # So the artifact is a status file, rewritten every INTERVAL seconds, and the
-# file's own mtime is what makes the watcher checkable: if the status is
-# older than a couple of intervals, THE WATCHER IS DEAD, whatever it says
-# inside. That is the one thing a subscription cannot tell you.
+# file's own mtime is what makes an active watcher checkable: if a running
+# or stalled status is older than a couple of intervals, investigate the
+# watcher. Terminal results intentionally stop updating.
 #
 # It distinguishes activity, completion, death and observation errors:
 #
@@ -31,7 +31,7 @@
 #             forever.
 #   error     a required observation or result is invalid; never a green check.
 #
-# Reading it is one command, and a stale mtime is a failed check, not a pass:
+# Reading it is one command; stale active status is a failed check:
 #
 #   cat /workspace/tmp/rocknix-session/<job>.status
 #
@@ -220,7 +220,11 @@ while :; do
 
   {
     echo "state:       $state"
-    echo "written:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')   <- if this is stale, the watcher is dead"
+    case "$state" in
+      finished|died|error) heartbeat_note='terminal result; heartbeat stops here' ;;
+      *) heartbeat_note='if this is stale, investigate the watcher' ;;
+    esac
+    echo "written:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')   <- $heartbeat_note"
     echo "watcher_pid: $$"
     echo "job_pid:     ${PID:-unknown}  alive=$alive"
     echo "started:     $started"

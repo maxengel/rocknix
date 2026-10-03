@@ -18,9 +18,11 @@ inherited global options contain comments only and predate this build
 (`global-options-metadata.json`), with no active assignments or commands.
 Post-build consumed source/download inventory remains owed.
 
-Live receipts are under `/workspace/tmp/rasteratops-m7-cold-01/`:
+## Historical launch receipt (superseded by completion below)
+
+At launch, live receipts were under `/workspace/tmp/rasteratops-m7-cold-01/`:
 `build.log`, `build.pid`, `build.rc`, `build.status`, `build.status.err`.
-PID3863117; host watcher3863200 writes a30s heartbeat and detects completion,
+PID3863117; host watcher3863200 wrote a30s heartbeat and detected completion,
 stall or death. `initial-watch-status.txt` is a timestamped snapshot, not the
 live heartbeat. Inspect the live file's mtime plus the process in the **host**
 namespace; sandbox ps cannot prove a host process absent. No result exists

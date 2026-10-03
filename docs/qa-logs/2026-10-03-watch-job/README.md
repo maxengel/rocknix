@@ -75,3 +75,16 @@ The M7 cold build completed at16:33UTC and its deployed watcher recorded
 finished/rc0 at16:34:02UTC (`live-finished.status`). This is also the real
 completion control. Its image/update tar checksums and immutable custody
 pass; VM qualification remains separate. No monitor job is still running.
+
+## Fresh resume correction
+
+The independent read-only proof verified artifact custody, all6,606 inputs,
+source pins and absence of the completed job/container. It found that the
+terminal status still warned that an old heartbeat meant watcher death.
+The shared tool now labels terminal results explicitly, and the existing
+terminal controls assert that wording.28 watcher controls pass again.
+`live-finished-current.status` is a fresh read of the actual completed build
+using the final run-owned tool at16:59:43UTC, recorder48573; it exited normally.
+The old label remains only in dated snapshots. The cold01 launch block is
+now labelled historical; current tracker/checkpoint/readiness state names
+consumed-source inventory and image qualification as next.

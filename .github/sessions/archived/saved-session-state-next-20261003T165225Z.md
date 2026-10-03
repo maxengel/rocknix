@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T170052Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T165225Z.md.
+> Saved: 20261003T165225Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T163226Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -162,12 +162,10 @@ pins with stated reasons. Future release/device/personal-cloud gates remain.
    under `/workspace/tmp/rasteratops-m7-cold-01/`. Builder3863117 and
    watcher4085803 have exited. A terminal status stops its heartbeat normally;
    do not diagnose this as a dead watcher or relaunch the build.
-2. #393 watcher correctness and #394 automatic future-build routing are
-   delivered with passing controls. Future native/Docker entrypoints use
-   `tools/watch-build`; the current image keeps frozen503e. Terminal status
-   wording was corrected after the fresh resume proof; final result readback
-   at16:59:43UTC used short-lived recorder48573 and explicitly states that
-   the heartbeat stops normally. It is no longer running.
+2. #393 watcher correctness and #394 automatic future-build routing have
+   passing controls and are being integrated/published. Future native/Docker
+   entrypoints use `tools/watch-build`; the current image keeps frozen503e.
+   Check git/remote delivery rather than assuming this checkpoint's commit.
 3. Verify the retained artifact bundle below. Collect actual consumed-source/
    download inventory, then execute M7.P3 in the live body's order: clean/RC2
    upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
