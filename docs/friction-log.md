@@ -120,3 +120,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 18:48 UTC -- source identity checks passed with the approved policies in Git, but actual SYSTEM had neither branding licence nor trademark policy. Install canonical files during image assembly and verify staged/image hashes; source presence alone is not installation. Guard: docs/qa-logs/2026-10-03-image-policy/check-policy-staging.py and candidate readback; issue: #397.
 
 - 2026-10-03 19:17 UTC -- link-loss QA required exactly two stamp fields, rejecting the established extended failure outcome and accepting malformed two-field codes. Parse the validated timestamp/return prefix and preserve optional outcome text. Guard: docs/qa-logs/2026-10-03-link-stamp/test-stamp-assertion.py; issue: #398.
+
+- 2026-10-03 19:26 UTC -- vm-pair respected isolated state but vm-qa hardcoded the default key; sharing an existing QA key had hidden the inconsistency. Select the pair key from VM_PAIR_DIR, preserve the fallback, and run with a distinct generated identity. Guard: actual distinct-key link run and retained selection controls; issue: #399.

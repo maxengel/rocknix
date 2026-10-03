@@ -85,7 +85,8 @@ done
 # and the only one `up` is written around; --guest b exists because two
 # sessions share this host and the walks suite is the one that can run
 # anywhere -- it needs a monitor socket and a guest to reboot, nothing else.
-KEY=/tmp/rocknix-vm-pair/qa-key
+# Use the same run-owned key that vm-pair injects into the guests.
+KEY="${VM_PAIR_DIR:-/tmp/rocknix-vm-pair}/qa-key"
 # The ssh options every suite here runs with. Declared, not inherited: the
 # pair-identity suite used $SSHO without this line and passed for a night
 # because the shell that started the runner had it set; started under a
