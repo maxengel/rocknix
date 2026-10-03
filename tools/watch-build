@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
-"""Run one build with private durable logs and the shared watch-job monitor.
+"""Run one build or QA command with durable logs and the shared watch-job monitor.
 
 Entrypoints use --entry; nested scripts reuse the outer run, including across
 the Docker mount. No command arguments or environment values are recorded.
@@ -50,13 +50,20 @@ def main():
     parser.add_argument('--entry', action='store_true')
     parser.add_argument('--docker', action='store_true', help='observe the host worktree, not its container path')
     parser.add_argument('--interval', type=int, default=5)
+    parser.add_argument('--activity-dir', type=Path, help='observe this run\'s QA logs instead of build logs')
+    parser.add_argument('--recursive-activity', action='store_true')
+    parser.add_argument('--stall-min', type=int, default=15)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command
     if command and command[0] == '--':
         command = command[1:]
-    if not command or args.interval < 1:
-        parser.error('a command and positive interval are required')
+    if not command or args.interval < 1 or args.stall_min < 0:
+        parser.error('a command, positive interval and nonnegative stall limit are required')
+    if args.recursive_activity and args.activity_dir is None:
+        parser.error('--recursive-activity needs --activity-dir')
+    if args.activity_dir is not None and not args.activity_dir.is_dir():
+        parser.error('--activity-dir must exist')
     root = Path.cwd().resolve()
     environment = os.environ.copy()
     if args.entry:
@@ -91,11 +98,16 @@ def main():
     activity_root = root if args.docker else Path(environment.get('BUILD_DIR', str(root)))
     log = (run / 'build.log').open('wb', buffering=0)
     errors = (run / 'watcher.err').open('wb', buffering=0)
+    activity_args = ['--activity-root', str(activity_root)]
+    if args.activity_dir is not None:
+        activity_args = ['--activity-dir', str(args.activity_dir.resolve())]
+        if args.recursive_activity:
+            activity_args.append('--recursive-activity')
     monitor = subprocess.Popen([
         str(run / 'watch-job'), '--log', str(run / 'build.log'),
         '--rc', str(run / 'build.rc'), '--status', str(run / 'build.status'),
-        '--pid', str(os.getpid()), '--activity-root', str(activity_root),
-        '--interval', str(args.interval)], stdout=subprocess.DEVNULL,
+        '--pid', str(os.getpid()), *activity_args,
+        '--stall-min', str(args.stall_min), '--interval', str(args.interval)], stdout=subprocess.DEVNULL,
         stderr=errors, start_new_session=True)
     (run / 'watcher.pid').write_text(str(monitor.pid) + '\n')
     deadline = time.monotonic() + 10

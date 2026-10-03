@@ -1,0 +1,33 @@
+PASS: fresh package log prevents false stall; both progress counters retained
+PASS: nested QA logs are opt-in; default build observation stays shallow
+PASS: recursive QA activity prevents a false stall from a quiet summary
+PASS: nested non-log heartbeat does not mask quiet QA
+PASS: recursive activity refuses a missing scope
+PASS: quiet logs stall; unrelated heartbeat files do not mask it
+PASS: new package log resumes activity after stall
+PASS: live watcher refreshes heartbeat without package completion
+PASS: stopping watcher leaves detectably stale heartbeat
+PASS: result code 0 preserved
+PASS: finished observer exits for result 0
+PASS: result code 23 preserved
+PASS: finished observer exits for result 23
+PASS: job death without result is detected
+PASS: unreaped zombie is not a live job
+PASS: invalid result fails closed: ''
+PASS: invalid result fails closed: 'invalid'
+PASS: invalid result fails closed: '256'
+PASS: job that never writes a log eventually stalls
+PASS: lost activity directory is an observation error
+PASS: detach retains activity argument and acknowledges actual child
+PASS: detached watcher records subsequent failure
+PASS: refuse invalid setup --interval 0
+PASS: refuse invalid setup --stall-min -1
+PASS: refuse invalid setup --pid 0
+PASS: refuse invalid setup --pattern [
+PASS: refuse invalid setup --log
+PASS: refuse invalid setup --activity-dir /tmp/watch-job-393-ba6yh6fy/absent
+PASS: refuse invalid setup --status /tmp/watch-job-393-ba6yh6fy/detached/build.log
+PASS: refuse invalid setup --status /tmp/watch-job-393-ba6yh6fy/detached/package logs/self.log
+PASS: refuse invalid setup --status /tmp/watch-job-393-ba6yh6fy/absent/status
+PASS: help is side effect free and documents package activity
+32 PASS; 0 FAIL
