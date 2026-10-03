@@ -232,6 +232,25 @@
 # statement about that image and is left to fail rather than softened.
 #
 # Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
+# Dispatch before signal checks or fixture creation: help must never run tests.
+case "${1:-}" in
+  -h|--help)
+    [ "$#" -eq 1 ] || { echo "usage: last-good-scripts-test [--old | --cloud-layout [options]]" >&2; exit 2; }
+    cat <<'USAGE'
+Usage: tools/last-good-scripts-test [--old | --cloud-layout [options]]
+Run the host script regression suite with the image's busybox.
+  --old           Test BASE_REF (default 1d1503180d), for failing controls.
+  --cloud-layout  Run only the layout suite; remaining options go to it.
+  -h, --help      Show this help without creating fixtures or running tests.
+Run in the foreground; the full suite requires a usable SIGINT handler.
+USAGE
+    exit 0 ;;
+  --cloud-layout) shift; exec "$(dirname "$(readlink -f "$0")")/rasteratops-cloud-layout-test" "$@" ;;
+  --old) [ "$#" -eq 1 ] || { echo "--old accepts no additional arguments" >&2; exit 2; } ;;
+  '') [ "$#" -eq 0 ] || { echo "empty argument is not an option" >&2; exit 2; } ;;
+  *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
+esac
+
 # Refuse to run with SIGINT ignored at entry. A shell background job (`cmd &`
 # in a non-interactive shell -- a harness waiter, `setsid nohup ... &`) starts
 # with SIGINT set to SIG_IGN, every sandboxed script inherits it across exec,
@@ -248,8 +267,6 @@ set -u
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 BASE_REF="${BASE_REF:-1d1503180d}"
-# Focused production layout cases can run without the unrelated legacy groups.
-if [ "${1:-}" = --cloud-layout ]; then shift; exec "${ROOT}/tools/rasteratops-cloud-layout-test" "$@"; fi
 OLD=0
 [ "${1:-}" = "--old" ] && OLD=1
 
@@ -2591,7 +2608,7 @@ finally:
 # 009 / PL-33: two threads fetching one badge use two temp names.
 #
 # The seam moved twice on 2026-09-18/19 and this test caught both, by failing:
-# patch 014 fetches through image_cache.fetch_static_asset (a pooled
+# Current upstream fetches through image_cache._fetch_image (a pooled
 # http.client connection) rather than urllib.request.urlopen, so a double on
 # urlopen is never called; and patch 013 publishes only a payload that is a
 # whole PNG -- magic and a trailing IEND -- so b"PNG" is refused before any
@@ -2605,22 +2622,22 @@ def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", z
 PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
 # Both workers are held at the moment they write their temp file, so the
 # two names are seen side by side.
-saved_fetch, saved_wb = image_cache.fetch_static_asset, Path.write_bytes
+saved_fetch, saved_wb = image_cache._fetch_image, Path.write_bytes
 def rec_write_bytes(self, data):
     names.append(self.name); barrier.wait(); return saved_wb(self, data)
-image_cache.fetch_static_asset = lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(PNG))}, PNG)
+image_cache._fetch_image = lambda url, user_agent: PNG
 Path.write_bytes = rec_write_bytes
 try:
     ts = [threading.Thread(target=image_cache.download_static_image, args=("https://media.retroachievements.org/Badge/1.png", "/Badge/1.png", "ua")) for _ in range(2)]
     [t.start() for t in ts]; [t.join() for t in ts]
     seen = set(names)
-    verdict(len(names) == 2 and len(seen) == 2 and (target_dir / "1.png").read_bytes() == PNG and not list(target_dir.glob("*.tmp")), "PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left", f"temp names {names}, left {[p.name for p in target_dir.glob('*.tmp')] if target_dir.exists() else 'no dir'}")
+    verdict(len(names) == 2 and len(seen) == 2 and image_cache.resolve_cached_static_asset("/Badge/1.png").read_bytes() == PNG and not list(target_dir.rglob("*.tmp")), "PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left", f"temp names {names}, left {[p.name for p in target_dir.glob('*.tmp')] if target_dir.exists() else 'no dir'}")
 finally:
-    image_cache.fetch_static_asset, Path.write_bytes = saved_fetch, saved_wb
+    image_cache._fetch_image, Path.write_bytes = saved_fetch, saved_wb
 # 013 / #213, tightened under audit #258 (the seat's G-01): the frame alone -- signature and IEND --
 # admitted a body whose image data was garbage. Now each chunk's CRC and the IDAT stream have to hold.
 try:
-    saved_fetch = image_cache.fetch_static_asset
+    saved_fetch = image_cache._fetch_image
     bad_idat = bytearray(zlib.compress(b"\x00\xff\x00\x00")); bad_idat[5] ^= 0xFF
     bodies = {
         "good": PNG,
@@ -2630,14 +2647,14 @@ try:
     }
     got = {}
     for name, body in bodies.items():
-        image_cache.fetch_static_asset = (lambda body: (lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(body))}, body)))(body)
+        image_cache._fetch_image = (lambda body: (lambda url, user_agent: body))(body)
         image_cache.download_static_image(f"https://media.retroachievements.org/Badge/v-{name}.png", f"/Badge/v-{name}.png", "ua")
-        got[name] = (target_dir / f"v-{name}.png").exists()
+        got[name] = image_cache.resolve_cached_static_asset(f"/Badge/v-{name}.png") is not None
     verdict(got == {"good": True, "bad-idat": False, "bad-crc": False, "frame-only": False}, "013 / #213 validator (G-01): a whole PNG is published; a corrupt IDAT, a bad chunk CRC and a frame with no image data are not", f"published: {got}")
 except Exception as exc:
     verdict(False, "013 / #213 validator (G-01): a whole PNG is published; a corrupt IDAT, a bad chunk CRC and a frame with no image data are not", repr(exc))
 finally:
-    image_cache.fetch_static_asset = saved_fetch
+    image_cache._fetch_image = saved_fetch
 # 010 / #190: a request that asks for the store only is answered from it while the process believes it is online.
 class StoreOnlyServer:
     def __init__(self, st): self.storage = st; self.config_data = {}; self.took = None
@@ -7007,13 +7024,13 @@ PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2,
 TRAILING = PNG + b"\x00" * 16 + b"encoder note"
 bad = bytearray(zlib.compress(b"\x00\xff\x00\x00" * 40)); bad[6] ^= 0xFF
 BAD_IDAT = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", bytes(bad)) + _chunk(b"IEND", b"")
-saved_fetch = image_cache.fetch_static_asset
+saved_fetch = image_cache._fetch_image
 try:
-    image_cache.fetch_static_asset = lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(TRAILING))}, TRAILING)
+    image_cache._fetch_image = lambda url, user_agent: TRAILING
     image_cache.download_static_image("https://media.retroachievements.org/Badge/d13-trailing.png", "/Badge/d13-trailing.png", "ua")
-    verdict((image_cache.STATIC_DIR / "Badge" / "d13-trailing.png").exists(), "F-RA-13 patch 013: a whole PNG with bytes after its IEND is published")
+    verdict(image_cache.resolve_cached_static_asset("/Badge/d13-trailing.png") is not None, "F-RA-13 patch 013: a whole PNG with bytes after its IEND is published")
 finally:
-    image_cache.fetch_static_asset = saved_fetch
+    image_cache._fetch_image = saved_fetch
 spec = importlib.util.spec_from_loader("images_helper", importlib.machinery.SourceFileLoader("images_helper", sys.argv[1]))
 helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
 badge = image_cache.STATIC_DIR / "Badge"; badge.mkdir(parents=True, exist_ok=True)
@@ -7317,21 +7334,21 @@ PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2,
 log = io.StringIO(); handler = logging.StreamHandler(log)
 logger = logging.getLogger("raofflineproxy"); logger.addHandler(handler); logger.setLevel(logging.INFO)
 def answer(kind):
-    def fetch(url, headers, timeout=10.0, _redirects=3):
+    def fetch(url, user_agent):
         if kind.isdigit():
             raise urllib.error.HTTPError(url, int(kind), "status", {}, None)
         if kind == "timeout":
             raise TimeoutError("timed out")
-        return ({"Content-Length": str(len(PNG))}, PNG)
+        return PNG
     return fetch
 got = {}
-saved = image_cache.fetch_static_asset
+saved = image_cache._fetch_image
 try:
     for kind in ("404", "410", "503", "timeout", "ok"):
-        image_cache.fetch_static_asset = answer(kind)
+        image_cache._fetch_image = answer(kind)
         got[kind] = image_cache.download_static_image(f"https://media.retroachievements.org/Badge/d19-{kind}.png", f"/Badge/d19-{kind}.png", "ua")
 finally:
-    image_cache.fetch_static_asset = saved
+    image_cache._fetch_image = saved
 text = log.getvalue()
 ok = got == {"404": "absent", "410": "absent", "503": "transient", "timeout": "transient", "ok": "cached"}
 print(("PASS" if ok else "FAIL") + f" outcome: {got}")
@@ -7350,7 +7367,7 @@ if os.path.exists("/run/image-plan"):
     _auth.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
     def _chunk(t, d): return _struct.pack(">I", len(d)) + t + d + _struct.pack(">I", _zlib.crc32(t + d) & 0xFFFFFFFF)
     _PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", _struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", _zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
-    def _fetch(url, headers, timeout=10.0, _redirects=3):
+    def _fetch(url, user_agent):
         path = "/" + url.split("://", 1)[-1].split("/", 1)[-1]
         with open("/run/image-fetches", "a") as f:
             f.write(path + "\n")
@@ -7359,8 +7376,8 @@ if os.path.exists("/run/image-plan"):
             raise _ue.HTTPError(url, int(what), "status", {}, None)
         if what == "timeout":
             raise TimeoutError("timed out")
-        return ({"Content-Length": str(len(_PNG))}, _PNG)
-    _ic.fetch_static_asset = _fetch
+        return _PNG
+    _ic._fetch_image = _fetch
 EOS
 printf "${DCFG_ON}" > "${TCFG}"; TENV=()
 treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
@@ -7372,22 +7389,30 @@ badges = [{"ID": 9300 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievem
 s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Achievements": badges}}), source_rom_path="/nes/b.nes")
 s.close()
 EOS
-DSTATIC="${TPD}/image_cache/static/Badge"
+# Resolve the writer's current sharded paths; removing only the legacy path
+# would leave a cache hit and never exercise the timeout/retry below (#361).
+mapfile -t D19_IMAGES < <(PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import image_cache
+for badge in (9301, 9302, 9304):
+    print(image_cache.sharded_static_path(f"Badge/{badge}.png"))
+EOS
+)
+D19_ABSENT=${D19_IMAGES[0]}; D19_OK=${D19_IMAGES[1]}; D19_RETRY=${D19_IMAGES[2]}
 # 9301 404, 9303 410, 9302 and 9304 served.
 echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
 tctl scan
-[ "${RC}" -eq 0 ] && ! grep -q '>>> why' "${OUT}" && [ -s "${DSTATIC}/9302.png" ] && [ ! -e "${DSTATIC}/9301.png" ]; check $? "PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a badge the server does not have failed the scan"
+[ "${RC}" -eq 0 ] && ! grep -q '>>> why' "${OUT}" && [ -s "${D19_OK}" ] && [ ! -e "${D19_ABSENT}" ]; check $? "PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a badge the server does not have failed the scan"
 : > "${TR}/image-fetches"
 tctl scan
 [ "${RC}" -eq 0 ] && ! grep -qx '/Badge/9301.png' "${TR}/image-fetches" && ! grep -qx '/Badge/9303.png' "${TR}/image-fetches"; check $? "PL-060 follow-up: the next scan does not ask for the absent badges again (rc ${RC})" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches") -- an absent badge was asked for at every pass"
 # A timeout and a 503: a failure of the run, not recorded as absent, asked again.
-rm -f "${DSTATIC}/9302.png" "${DSTATIC}/9304.png"
+rm -f "${D19_OK}" "${D19_RETRY}"
 echo '{"/Badge/9301.png": "404", "/Badge/9302.png": "timeout", "/Badge/9303.png": "410", "/Badge/9304.png": "503"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
 tctl scan
 [ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060 follow-up: a badge that timed out and one the server answered 503 end the scan COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED)" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
 : > "${TR}/image-fetches"; echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"
 tctl scan
-[ "${RC}" -eq 0 ] && grep -qx '/Badge/9302.png' "${TR}/image-fetches" && grep -qx '/Badge/9304.png' "${TR}/image-fetches" && [ -s "${DSTATIC}/9302.png" ] && [ -s "${DSTATIC}/9304.png" ]; check $? "PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches")"
+[ "${RC}" -eq 0 ] && grep -qx '/Badge/9302.png' "${TR}/image-fetches" && grep -qx '/Badge/9304.png' "${TR}/image-fetches" && [ -s "${D19_OK}" ] && [ -s "${D19_RETRY}" ]; check $? "PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches")"
 rm -f "${TR}/image-plan" "${TR}/image-fetches"; dfake_images
 else
     skip "the PL-060 follow-up's cases: section t did not run"
@@ -9715,7 +9740,7 @@ else
 fi
 
 # D24. claude G-D-04: patch 016's classification against the real
-# fetch_static_asset and a real HTTP server on loopback -- 404, 410, a 301 to
+# _fetch_image and a real HTTP server on loopback -- 404, 410, a 301 to
 # a 404, a 503, a refused connection and a whole PNG -- not a stubbed
 # fetcher. And claude G-D-12: an image already in the cache is "cached" (the
 # function falls through its `if not target.exists()` to the one return).
@@ -9733,6 +9758,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         name = self.path.rsplit("/", 1)[-1]
         if name == "ok.png":
             self.send_response(200); self.send_header("Content-Length", str(len(PNG))); self.end_headers(); self.wfile.write(PNG); return
+        if name == "short.png":
+            self.send_response(200); self.send_header("Content-Length", str(len(PNG) + 8)); self.end_headers(); self.wfile.write(PNG); self.close_connection = True; return
         if name == "moved.png":
             self.send_response(301); self.send_header("Location", "/Badge/gone404.png"); self.send_header("Content-Length", "0"); self.end_headers(); return
         code = {"gone404.png": 404, "gone410.png": 410, "busy503.png": 503}.get(name, 404)
@@ -9742,10 +9769,10 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 base = f"http://127.0.0.1:{server.server_address[1]}"
 closed = socket.socket(); closed.bind(("127.0.0.1", 0)); dead = closed.getsockname()[1]; closed.close()
 got = {}
-for name in ("gone404", "gone410", "moved", "busy503", "ok"):
+for name in ("gone404", "gone410", "moved", "busy503", "ok", "short"):
     got[name] = image_cache.download_static_image(f"{base}/Badge/{name}.png", f"/Badge/d24-{name}.png", "ua")
 got["refused"] = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/refused.png", "/Badge/d24-refused.png", "ua")
-want = {"gone404": "absent", "gone410": "absent", "moved": "absent", "busy503": "transient", "ok": "cached", "refused": "transient"}
+want = {"gone404": "absent", "gone410": "absent", "moved": "absent", "busy503": "transient", "ok": "cached", "refused": "transient", "short": "transient"}
 print(("PASS" if got == want else "FAIL") + f" real: {got}")
 seeded = image_cache.STATIC_DIR / "Badge" / "d24-seeded.png"; seeded.parent.mkdir(parents=True, exist_ok=True); seeded.write_bytes(PNG)
 there = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/seeded.png", "/Badge/d24-seeded.png", "ua")
@@ -9905,10 +9932,10 @@ for d in (cfg, site): d.mkdir(parents=True, exist_ok=True)
     "import raofflineproxy.auth as _auth\n"
     "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
     "import raofflineproxy.image_cache as _ic\n"
-    "def _fetch(url, headers, timeout=10.0, _redirects=3):\n"
+    "def _fetch(url, user_agent):\n"
     "    with open(os.environ['D_CALLS'], 'a') as f: f.write(url.rsplit('/', 1)[-1] + '\\n')\n"
     "    raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)\n"
-    "_ic.fetch_static_asset = _fetch\n")
+    "_ic._fetch_image = _fetch\n")
 os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
 sys.path.insert(0, client)
 from raofflineproxy import cache_keys, image_cache

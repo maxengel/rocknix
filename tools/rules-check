@@ -24,6 +24,7 @@
 #            what --write-agents generates from the front matter (Codex loads
 #            no rule on its own, so the list is how it learns they exist).
 #   mention  every rule file is named in CLAUDE.md as well.
+#   tools    fork-only tool names agree in the hook and both rule inventories.
 #
 # The guard for the shape "an instruction file nobody can find is one nobody
 # applies" (instruction-files.md § The index); run by tools/ceremony-check
@@ -109,6 +110,31 @@ def first_paragraph(body):
     return ' '.join(out)
 
 
+
+def tool_inventory_errors(index_text, workflow_text, hook_text):
+    """Compare the three documented inventories, including grouped table cells."""
+    workflow = re.search(r'^- \*\*Fork-only tools\*\*.*$', workflow_text, re.M)
+    table = index_text.partition("## The fork's own tools")[2]
+    if not workflow or not table:
+        return ['missing fork tool inventory section']
+    expected = set(re.findall(r'`tools/([^`]+)`', workflow.group()))
+    hooked = set(re.findall(r"^  'tools/([^']+)'", hook_text, re.M))
+    indexed = set()
+    for line in table.splitlines():
+        if line.startswith('| `'):
+            indexed.update(re.findall(r'`([^`]+)`', line.split('|')[1]))
+    indexed.discard('pkgcheck')  # explicitly documented as upstream's
+    errors = []
+    if not expected or not hooked or not indexed:
+        errors.append('empty fork tool inventory')
+    for label, names in [('hook', hooked), ('index', indexed)]:
+        for name in sorted(expected - names):
+            errors.append(f'{label} missing tools/{name}')
+        for name in sorted(names - expected):
+            errors.append(f'{label} names tools/{name} absent from fork-workflow')
+    return errors
+
+
 def main():
     quiet = '--quiet' in sys.argv
     fails = []
@@ -152,6 +178,16 @@ def main():
         fail('index   %s appears twice in the index' % f)
     if have == listed and not dup:
         ok('index   %d files, %d rows, the same set' % (len(have), len(rows)))
+    # tools: a new tool must be discoverable and protected from upstream PRs.
+    with open(os.path.join(RULES, 'fork-workflow.md'), encoding='utf-8') as f:
+        workflow_text = f.read()
+    with open(os.path.join(ROOT, '.githooks', 'pre-push'), encoding='utf-8') as f:
+        hook_text = f.read()
+    inventory_errors = tool_inventory_errors(text, workflow_text, hook_text)
+    for error in inventory_errors:
+        fail('tools   ' + error)
+    if not inventory_errors:
+        ok('tools   hook, fork-workflow and instruction index agree')
     # count
     for name in ('CLAUDE.md', 'AGENTS.md'):
         p = os.path.join(ROOT, name)

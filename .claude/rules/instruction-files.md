@@ -59,12 +59,12 @@ glob written here can name `es-app/**`, and there is no narrow, high-signal
 glob to be had. They therefore carry `paths: - "**"`, the widest reach
 available, which loads them whenever any file in this repo enters context.
 
-The residual gap is real and open: a session working **only** in the ES
-checkout loads none of `.claude/rules/`, and the ES rules are exactly the ones
-written for that work. Closing it needs rules in the ES repo itself, which is a
-decision nobody has made (#147 § 9). Until then, an agent sent to the ES tree
-is told to read these four from `next` — see the paragraph below on stale
-copies, which is the same failure by a different route.
+D-WORKFLOW-010 keeps one canonical distribution rule corpus. Each active ES
+checkout carries `AGENTS.md` and `CLAUDE.md` entry pointers to the distribution
+checkout's `next` rules and `.github/sessions/saved-session-state-next.md`.
+They name the ES syntax check and integration branch; they do not duplicate
+policy. The splash repository carries the same resume route in `AGENTS.md`.
+Read those pointers at entry, then the canonical files they name (#368).
 
 **Seeing `.github/instructions/` means you are in a stale worktree.** That
 directory no longer exists on `next`. Several worktrees were cut before it was
@@ -95,7 +95,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `bugs-are-agent-first.md` | what a bug is: fixed to the best of our ability means fixed; every criterion verified on the VM by an agent; the two other classes (open item to test, keep an eye on); no known bug at the call (D-QA-051) | every session |
 | `ceremonies.md` | which ceremony is owed and when -- friction entries, retros, the weekly and monthly summaries, the index, audits, futros -- as a state machine `tools/ceremony-check` turns (D-WORKFLOW-028) | every session |
 | `release-candidates.md` | the standard operating procedure for every release candidate: nothing behind before the cut, a clean baseline, the candidate's build, every test, play-testing, the call, the two-agent upstream audit, then the submission and builds for every test device (D-WORKFLOW-047) | every session |
-| `adversarial-council.md` | adversarial analysis routes through the verified multi-model council; never the rubber-duck agent | `**` |
+| `adversarial-council.md` | code audits use local, cross-lab two-model or extended three-model review; formal councils keep five verified seats | `**` |
 | `decision-register.md` | when a decision becomes a row, and why a settled one is cited rather than re-argued | `**` |
 | `device-builds.md` | building, publishing and flashing handheld images, and what a warm build root hides | `**` |
 | `documentation-accuracy.md` | user-facing behaviour and the public rocknix.org docs change together | `**` |
@@ -134,8 +134,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has thirty-seven of them. One line each; the rule named is where the
-detail lives, so this stays an index rather than a second copy. `tools/` is
+estate keeps growing. One line each; the rule named is where the detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
 both lists and to this table, or it is invisible.**
@@ -180,6 +179,14 @@ both lists and to this table, or it is invisible.**
 | `release-catalog` | what each kept cut carried, what was proven on it and where it is, generated from the artifacts' RECORD.txt into `docs/releases/catalog.md` (D-WORKFLOW-044) | `issue-tracking.md` |
 | `rc-preflight` | may this tree be cut as a release candidate: packages current, the bases level with ROCKNIX, no bug without a disposition, the record clean -- or each finding accepted by a register row (#271, D-WORKFLOW-047) | `release-candidates.md` |
 | `pr-stack-check` | build the upstream series by content from `docs/pr-series/map.txt` in a throwaway worktree, and prove the last head equals `next` on every upstream-bound path (#322) | `fork-workflow.md` |
+| `es-launch-memory` | capture stable-PID launch/exit memory and successful exit-sync stamps on an owned QA guest | `generic-x64-vm-testing.md` |
+| `nova-led-test` | exercise all eight LED nodes, saved brightness and the battery writer using actual scripts and fixture sysfs | `generic-x64-vm-testing.md` |
+| `raofflineproxy-integration-test` | preserve old-writer state and prove full-library preparation, retries and rate-limit pacing | `generic-x64-vm-testing.md` |
+| `rasteratops-cloud-layout-test` | prove numbered layout transitions, partial-state recovery and missing-remote refusal | `rclone-cloud-sync.md` |
+| `rasteratops-vm-cloud-epic` | run promoted cloud and settings cases against actual guest scripts | `generic-x64-vm-testing.md` |
+| `rasteratops-identity-check` | check distribution identity contracts in source and an image | `release-candidates.md` |
+| `rasteratops-candidate-store` | retain and verify an exact candidate by manifest and digest | `release-candidates.md` |
+| `council/` | verified external reviewer invocation and retained receipts | `adversarial-council.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

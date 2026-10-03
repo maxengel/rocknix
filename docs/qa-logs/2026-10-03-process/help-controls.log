@@ -1,0 +1,36 @@
+PASS ['--help']: exit 0, no fixtures
+Usage: tools/last-good-scripts-test [--old | --cloud-layout [options]]
+Run the host script regression suite with the image's busybox.
+  --old           Test BASE_REF (default 1d1503180d), for failing controls.
+  --cloud-layout  Run only the layout suite; remaining options go to it.
+  -h, --help      Show this help without creating fixtures or running tests.
+Run in the foreground; the full suite requires a usable SIGINT handler.
+
+PASS ['--invalid']: exit 2, no fixtures
+unknown option: --invalid (see --help)
+
+PASS ['--old', 'extra']: exit 2, no fixtures
+--old accepts no additional arguments
+
+PASS ['']: exit 2, no fixtures
+empty argument is not an option
+
+PASS ['--cloud-layout', '--help']: exit 0, no fixtures
+usage: rasteratops-cloud-layout-test [-h] [--ref REF] [--output OUTPUT]
+                                     [--case CASE] [--rclone RCLONE]
+                                     [--inject-failure] [--list]
+
+Production cloud scripts against isolated, real rclone filesystems (#365).
+Host regressions, not image qualification. Each case gets new cloud, config,
+cache and logs. --ref supplies old production bytes to the same assertions.
+--output retains command transcripts, final pointers and synthetic cloud
+bytes.
+
+options:
+  -h, --help        show this help message and exit
+  --ref REF
+  --output OUTPUT
+  --case CASE       substring of case name
+  --rclone RCLONE
+  --inject-failure
+  --list            list matching executable cases without running them

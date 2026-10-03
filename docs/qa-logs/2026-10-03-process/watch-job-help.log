@@ -1,0 +1,11 @@
+usage: tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
+                       [--stall-min N] [--status FILE] [--interval N] [--detach]
+
+--pid N       The running job's process ID, used to detect a job that died.
+--pattern RE  A regex matching progress lines in the LOG, never a process match.
+--log FILE    The job's output file.
+--rc FILE     The result file the job writes when it finishes.
+--status FILE Heartbeat/result output (default: beside the result file).
+--interval N  Seconds between observations (default: 30).
+--stall-min N Minutes without log progress before reporting stalled (default: 15).
+--detach      Keep watching after the launching shell ends; use the job's PID namespace.

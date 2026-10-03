@@ -6,6 +6,7 @@
 #
 #   tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
 #                   [--stall-min N] [--status FILE] [--detach]
+#   --pid is the job's process ID; --pattern matches progress in its log.
 #
 # Why a file and not a subscription. A session that says "I am watching this"
 # is relying on something that can stop without saying so: a harness can reap
@@ -38,8 +39,25 @@
 set -u
 LOG=""; RC=""; PID=""; PATTERN='\[[0-9]+/[0-9]+\]'; STALL=15; STATUS=""; DETACH=0; INTERVAL=30
 
+usage() {
+  cat <<'EOF'
+usage: tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
+                       [--stall-min N] [--status FILE] [--interval N] [--detach]
+
+--pid N       The running job's process ID, used to detect a job that died.
+--pattern RE  A regex matching progress lines in the LOG, never a process match.
+--log FILE    The job's output file.
+--rc FILE     The result file the job writes when it finishes.
+--status FILE Heartbeat/result output (default: beside the result file).
+--interval N  Seconds between observations (default: 30).
+--stall-min N Minutes without log progress before reporting stalled (default: 15).
+--detach      Keep watching after the launching shell ends; use the job's PID namespace.
+EOF
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
+    -h|--help)    usage; exit 0 ;;
     --log)        LOG="$2"; shift 2 ;;
     --rc)         RC="$2"; shift 2 ;;
     --pid)        PID="$2"; shift 2 ;;

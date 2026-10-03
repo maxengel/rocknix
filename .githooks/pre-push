@@ -83,6 +83,8 @@ PERSONAL_PATTERNS=(
   'tools/es-untranslated'
   'tools/font-stems'
   'tools/signin-memory'
+  'tools/nova-led-test'
+  'tools/es-launch-memory'
   'tools/es-menu-map-check'
   'tools/ra-candidate-games'
   'tools/retroarch-wrapper-test'
@@ -112,6 +114,7 @@ PERSONAL_PATTERNS=(
   'tools/device-act'
   'tools/qa-accounts'
   'tools/ra-offline-test'
+  'tools/raofflineproxy-integration-test'
   'tools/vm-walks/'
   'tools/fork-worktree'
   'tools/fork-package-freshness'
@@ -189,6 +192,15 @@ for cand in upstream/next origin/next; do
   fi
 done
 
+# Do not re-judge commits already published on this destination's other
+# branches (#371). An unrelated remote is not evidence that the destination
+# has them: excluding every remote used to let unpublished history escape on
+# a new branch. A push by URL without a configured remote stays conservative.
+history_excludes=()
+if [ -n "${1:-}" ] && git remote get-url "$1" >/dev/null 2>&1; then
+  history_excludes=(--not "--remotes=$1")
+fi
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   # Skip branch deletions.
   [ "$local_sha" = "$zero" ] && continue
@@ -204,7 +216,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   # cannot diff is refused -- a scan that did not run has not passed.
   whole=0
   if [ "$remote_sha" = "$zero" ]; then
-    oldest="$(git rev-list "$local_sha" --not --remotes 2>/dev/null | tail -1)"
+    oldest="$(git rev-list "$local_sha" "${history_excludes[@]}" 2>/dev/null | tail -1)"
     if [ -n "$oldest" ] && git rev-parse --verify --quiet "${oldest}^" >/dev/null; then
       range="${oldest}^..${local_sha}"
     elif [ -n "$oldest" ]; then
@@ -223,12 +235,12 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   msgawk='/^commit [0-9a-f]+$/ { c = $2; n = 0; next } { n++; print c ":message:" n t $0 }'
   if [ "$whole" = 1 ]; then
     git diff --name-only --no-renames --diff-filter=AM "$empty_tree" "$local_sha" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --src-prefix=a/ --dst-prefix=b/ --root --no-renames --diff-merges=first-parent --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
-    git log --root --format='commit %h%n%B' "$local_sha" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --root --no-renames --diff-merges=first-parent --format='commit %h' "$local_sha" "${history_excludes[@]}" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log --root --format='commit %h%n%B' "$local_sha" "${history_excludes[@]}" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   else
     git diff --name-only --no-renames --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
-    git log -p --src-prefix=a/ --dst-prefix=b/ --no-renames --diff-merges=first-parent --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
-    git log --format='commit %h%n%B' "$range" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
+    git log -p --src-prefix=a/ --dst-prefix=b/ --no-renames --diff-merges=first-parent --format='commit %h' "$range" "${history_excludes[@]}" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+    git log --format='commit %h%n%B' "$range" "${history_excludes[@]}" 2>/dev/null | awk -v t="$guard_tab" "$msgawk" > "$msgs" || scan_ok=0
   fi
   guard_added_lines < "$added" > "$lines" || scan_ok=0
   if [ "$scan_ok" != 1 ]; then
