@@ -1,0 +1,47 @@
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Saves/savefiles --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Saves/savestates --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Saves/screenshots --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/ROCKNIX/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.vzYPgqDMAC qa:/ROCKNIX/Saves/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/ROCKNIX/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.hmXrgQCerC qa:/ROCKNIX/Backups/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/ROCKNIX/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.qxbee3xgQB qa:/ROCKNIX/Content/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/ROCKNIX/Content/ROMs/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.836E8LNTMs qa:/ROCKNIX/Content/ROMs/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/ROCKNIX/Content/BIOS/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.PEfD31ycFw qa:/ROCKNIX/Content/BIOS/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/ROCKNIX/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1

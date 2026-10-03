@@ -1,0 +1,51 @@
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/ROCKNIX/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Backups  ->  qa:/Rasteratops/Backups
+  qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves
+  qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced
+  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+
+>>> unit SETTINGS BACKUPS|1|4
+Copying backups...
+>>> doing copy
+Transferred:   	         15 B / 15 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying backups...
+>>> doing verify
+Now using /Rasteratops/Backups for your settings backups.
+Removing the old backups folder...
+>>> doing remove
+>>> unit SAVES|2|4
+Copying saves...
+>>> doing copy
+Transferred:   	         11 B / 11 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying saves...
+>>> doing verify
+Now using /Rasteratops/Saves for your saves.
+Removing the old saves folder...
+>>> doing remove
+>>> unit DISCARDED SAVES|3|4
+Copying discarded saves...
+>>> doing copy
+Transferred:   	         18 B / 18 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying discarded saves...
+>>> doing verify
+Removing the old discarded saves folder...
+>>> doing remove
+The verified copy is in the new folder, but the old files couldn't be removed. Try again to finish.
+Your discarded saves didn't finish moving; they are still at qa:/ROCKNIX/Saves-replaced. Try again.

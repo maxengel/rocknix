@@ -1,0 +1,59 @@
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/ROCKNIX/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --include *.{zip,tar.gz} qa:/GAMES/backup/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Saves/savefiles --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Saves/savestates --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Saves/screenshots --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/Rasteratops/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+rcat qa:/Rasteratops/.layout --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/Saves/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.axaLt01zem qa:/Rasteratops/Saves/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/Backups/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.RZQWPE087o qa:/Rasteratops/Backups/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.GBDgdmbxvp qa:/Rasteratops/Content/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/Content/ROMs/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.KztNp04ilh qa:/Rasteratops/Content/ROMs/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/Content/BIOS/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.cPiK1KZl3h qa:/Rasteratops/Content/BIOS/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Backups --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1

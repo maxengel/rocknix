@@ -1,0 +1,40 @@
+Your saves are in qa:/ROCKNIX/Saves, not in qa:/GAMES as this device was set; moving from there.
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/GAMES/backup
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/GAMES/backup  ->  qa:/Rasteratops/Backups
+  qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves
+
+>>> unit SETTINGS BACKUPS|1|2
+Copying backups...
+>>> doing copy
+Transferred:   	        175 B / 175 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying backups...
+>>> doing verify
+Now using /Rasteratops/Backups for your settings backups.
+Removing the old backups folder...
+>>> doing remove
+>>> unit SAVES|2|2
+Copying saves...
+>>> doing copy
+Transferred:   	          9 B / 9 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying saves...
+>>> doing verify
+Now using /Rasteratops/Saves for your saves.
+Removing the old saves folder...
+>>> doing remove
+
+Done. Saves are at qa:/Rasteratops/Saves, backups at qa:/Rasteratops/Backups.
+Old folders were left in place if anything else was in them.

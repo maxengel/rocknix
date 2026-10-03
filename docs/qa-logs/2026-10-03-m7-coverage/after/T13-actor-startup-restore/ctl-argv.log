@@ -1,0 +1,4 @@
+lsd qa:/ROCKNIX/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1 --contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1 --contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1
+help --contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1
+copy --progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt --update --log-level INFO --stats 1s --exclude=bios/** --exclude=backup/** --backup-dir=/storage/.cache/cloud_sync/replaced/2026_10_03-040108 --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 qa:/ROCKNIX/Saves/ /storage/roms/ --contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1

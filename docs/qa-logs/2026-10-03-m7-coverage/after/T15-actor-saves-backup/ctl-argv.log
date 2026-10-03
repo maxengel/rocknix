@@ -1,0 +1,3 @@
+mkdir qa:/Mine/Saves --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1
+copy --progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt --log-level INFO --stats 1s --exclude=bios/** --exclude=backup/** --backup-dir=qa:/Mine/Saves-replaced/2026_10_03-040120 --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 /storage/roms/ qa:/Mine/Saves/
+lsf --dirs-only qa:/Mine/Saves-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1

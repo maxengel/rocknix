@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "cloud_backup",
+    "--yes",
+    "--saves-only",
+    "--method=copy",
+    "--update",
+    "--automatic"
+  ],
+  "rc": 0,
+  "pointers": {
+    "SAVESPATH": "/storage/roms",
+    "SAVES_REMOTE": "/ROCKNIX/Saves",
+    "SETTINGS_BACKUPS": "/storage/roms/backup",
+    "SETTINGS_REMOTE": "/ROCKNIX/Backups",
+    "BACKUPMETHOD": "copy",
+    "RESTOREMETHOD": "copy",
+    "BACKUPFILE_BACKUP_OPTION": "no",
+    "BACKUPFILE_RESTORE_OPTION": "no",
+    "LOG_LEVEL": "INFO",
+    "LAYOUT_KEEP": "",
+    "RCLONEOPTS": "--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt",
+    "RCLONE_NET_OPTS": "--contimeout 1s --timeout 2s --low-level-retries 1 --retries 1",
+    "CONTENT_REMOTE": "/ROCKNIX/Content"
+  }
+}

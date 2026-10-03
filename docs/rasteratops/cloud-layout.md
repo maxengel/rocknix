@@ -78,6 +78,33 @@ marker text through apply/follow/settle/seeding. T23 covers failure at every cop
 source deletion and marker publication, boot/scan retry visibility, retained
 payloads, safe repeat and a follower without the mover's state. Before/after
 receipts live under `docs/qa-logs/2026-10-03-m7-p1/`. These are host regressions,
-not two-guest or clean-install/RC2-upgrade qualification. Actor × T01–T26 mapping,
-provider races, predecessor partial states and actual guest recovery remain open
-under #356/#365.
+not two-guest or clean-install/RC2-upgrade qualification. Actor × T01–T26 mapping and actual RC2/run101 partial-state host controls now
+exist in `cloud-folder-state-table.md` and `../qa-logs/2026-10-03-m7-coverage/`.
+Provider behavior, paired guests, upgrade application and actual guest recovery
+remain open under #356/#365/#391.
+
+## Recovery of state written before the local record (#391)
+
+Actual RC2 and run101 scripts now create the upgrade fixtures. Earlier moves
+could leave current primary pointers while the original content or discarded
+shelf remained behind. Explicit move/preview recognizes only the known earlier
+default content paths and owned discarded shelves, then uses the same recorded
+copy/verify/delete/publication path. It does not treat an arbitrary custom
+folder ending in `/Content` as one of the old defaults. Custom/root content
+choices remain independent; an unmarked conflicting shelf is refused, and a
+marked fleet merge retains both differing progress versions.
+
+Current saves/backups pointers remain authoritative: recovering an earlier
+shelf or content never reselects either old live tier. The optional
+`source.discarded` field in schema1 retains the shelf independently; older
+schema1 records derive it from their saved original saves source. A content-only
+preview lists only content (or none when empty). An already-current explicit
+apply can finish missing marker publication while retaining its no-move status
+and the exact configured pointer spellings.
+
+Known old content with current primary pointers is eligible for boot retry.
+The folder scan also reports a remaining old shelf as pending. Marker-only
+interruption has no local clue: explicit apply or wizard seeding can finish it;
+no new per-sync marker probe or fabricated historical journal is introduced.
+Host controls include a second interruption during recovery and exact old
+script hashes. These controls do not replace the candidate upgrade rehearsal.

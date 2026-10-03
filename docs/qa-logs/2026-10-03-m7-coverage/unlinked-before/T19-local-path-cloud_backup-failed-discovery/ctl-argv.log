@@ -1,0 +1,4 @@
+listremotes
+mkdir /storage/not-a-cloud --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1
+copy --progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt --log-level INFO --stats 1s --exclude=bios/** --exclude=backup/** --backup-dir=/storage/not-a-cloud-replaced/2026_10_03-035554 --contimeout 1s --timeout 2s --low-level-retries 1 --retries 1 /storage/roms/ /storage/not-a-cloud/
+lsf --dirs-only /storage/not-a-cloud-replaced/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1

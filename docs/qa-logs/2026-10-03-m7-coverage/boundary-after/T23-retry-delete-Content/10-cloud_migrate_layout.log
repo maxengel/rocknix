@@ -1,0 +1,28 @@
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/ROCKNIX/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+
+Now using /Rasteratops/Backups for your settings backups.
+Now using /Rasteratops/Saves for your saves.
+>>> unit ROMS, BIOS, AND GAME CONTENT|1|1
+Would copy, verify, then remove  qa:/ROCKNIX/Content  ->  qa:/Rasteratops/Content
+Copying content...
+>>> doing copy
+Transferred:   	          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                 1 / 1, 100%, Listed 6
+Elapsed time:         0.0s
+Verifying content...
+>>> doing verify
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Removing the old content folder...
+>>> doing remove
+Content is now at qa:/Rasteratops/Content.
+
+Done. Saves are at qa:/Rasteratops/Saves, backups at qa:/Rasteratops/Backups.

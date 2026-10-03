@@ -82,3 +82,9 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 00:43 UTC -- pre-commit rejected a synthetic token-shaped literal in the new retry fixture. Rebuilt that field at runtime with an angle-bracket placeholder and reran the9 retry controls. No real credential was involved. Guard: .githooks/pre-commit; issue: #356.
 
 - 2026-10-03 00:45 UTC -- automatic approval review rejected an integration command with a branch reference, interpreting it as potentially replaying history. Verified the clean next HEAD and both single-commit parents, then integrated only their explicit full hashes successfully. Guard: exact commit IDs plus parent/status verification; issue: #389.
+
+- 2026-10-03 03:42 UTC -- actual predecessor migration controls found four gaps hidden by new-record retries: inherited content treated as custom, the old discarded-save shelf skipped, and marker publication skipped by early returns. Guard: tools/rasteratops-cloud-layout-test T23-predecessor; issue: #391.
+
+- 2026-10-03 03:57 UTC -- T19 actor controls exposed an existing-but-empty rclone config passing the file-existence guard. Both transfer scripts then interpreted the cloud path locally, and backup reported COMPLETED. The paired edit stopped on different caller comments; the bounded retest retained the restore failures until its explicit fix. Guard: tools/rasteratops-cloud-layout-test T19-local-path and T19-actor; issue: #392.
+
+- 2026-10-03 04:25 UTC -- the initial predecessor recovery fix passed319 focused cases but failed11 existing broad controls: it inferred an old saves source from content/shelf remnants and changed the no-move result. Stronger controls reproduced unselected live-tier movement; the corrected record retains its discarded shelf separately and preserves current pointer/no-op semantics. Guard: T23 predecessor live-tier controls plus last-good-scripts-test A5/A55; issue: #391.

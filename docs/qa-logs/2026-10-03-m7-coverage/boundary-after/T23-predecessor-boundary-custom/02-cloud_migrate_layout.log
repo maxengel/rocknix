@@ -1,0 +1,25 @@
+This device stores:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced
+
+>>> unit DISCARDED SAVES|1|1
+Copying discarded saves...
+>>> doing copy
+Transferred:   	         17 B / 17 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 2
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying discarded saves...
+>>> doing verify
+Removing the old discarded saves folder...
+>>> doing remove
+Leaving CONTENT_REMOTE at /Mine/Content -- it is not a path this migration set.
+
+Done. Saves are at qa:/Rasteratops/Saves, backups at qa:/Rasteratops/Backups.

@@ -1,0 +1,51 @@
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/Rasteratops/Saves --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --dirs-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only -R --exclude /backup/** --exclude /Backups/** --exclude /README.txt qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/savefiles --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/savestates --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/screenshots --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/backup --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/Content --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+mkdir --s3-directory-markers qa:/GAMES/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+listremotes
+lsd qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+backend features qa: --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+cat qa:/Rasteratops/.layout --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/Rasteratops/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/GAMES/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.QWibpMXf4x qa:/GAMES/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/GAMES/backup/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.tMYayPY5ee qa:/GAMES/backup/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/GAMES/Content/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.u0wzn6W2SS qa:/GAMES/Content/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/GAMES/Content/ROMs/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.OdERYXOhhz qa:/GAMES/Content/ROMs/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf --files-only qa:/GAMES/Content/BIOS/ --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+copyto --ignore-existing /tmp/tmp.Qb02aif4Gz qa:/GAMES/Content/BIOS/README.txt --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/GAMES --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/GAMES/backup --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/GAMES/Content/ROMs --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
+lsf qa:/GAMES/Content/BIOS --contimeout 15s --timeout 30s --low-level-retries 3 --retries 1
