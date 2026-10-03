@@ -69,6 +69,7 @@ makeinstall_target() {
   cp cloud_oauth ${INSTALL}/usr/bin/
   cp cloud_content_restore ${INSTALL}/usr/bin/
   cp cloud_content_backup ${INSTALL}/usr/bin/
+  cp cloud_content_transfer ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   cp cloud_saves_root ${INSTALL}/usr/bin/
   cp cloud_capture ${INSTALL}/usr/bin/

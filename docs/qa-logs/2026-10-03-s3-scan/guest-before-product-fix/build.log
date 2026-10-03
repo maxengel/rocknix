@@ -1,0 +1,49 @@
+tools/cloud-round-trip: OK
+tools/vm-pair: OK
+tools/vm-serial: OK
+tools/cloud-test-backend: OK
+projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm: OK
+up: s3 bucket rocknix-qa on port 9012 (throttled to 200k by a proxy; MinIO itself on 127.0.0.1:9022)
+note: SAVES_REMOTE must start with the bucket, e.g. /rocknix-qa/Rasteratops/Saves
+up: a (pid 1333382, ssh :10022, serial /tmp/rocknix-qemu-serial.sock, mac 52:54:00:52:4E:58)
+up: b (pid 1333409, ssh :10023, serial /tmp/rocknix-qemu-serial-b.sock, mac 52:54:00:52:4E:59)
+ready: a on 503e24e10d over ssh :10022 (answered after 1s)
+ready: b on 503e24e10d over ssh :10023 (answered after 0s)
+
+=== device reachable and equipped
+    PASS  ssh works
+    PASS  rclone and cloud scripts present
+
+=== point the device at the QA bucket
+    PASS  first remote is 'qa-cloud', which is what the scripts will use
+    scratch tree /storage/cloud-qa (pass --real-roms to use /storage/roms)
+    SAVES_REMOTE /rocknix-qa/Rasteratops/Saves on the s3 endpoint
+
+=== the link-loss cells: a serial console, a throttled endpoint, one guest
+    PASS  the endpoint is throttled (--bwlimit on the server)
+    PASS  the serial console is this device's; its default route runs over eth0; the endpoint is 10.0.2.2:9012
+    link restored 40s after each cut; a run must end within 90s of it
+
+=== LINK7 -- the picker scan (cloud_content_restore --scan), link cut mid-scan
+          cut eth0 at guest uptime 11.69 (20:17:22); last line: 'no output yet'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 43.1s after the cut (bound 90s)
+    PASS  exit 1: a plain failure
+    PASS  last-content-match unchanged (absent)
+    PASS  last-content-restore unchanged (absent)
+          outputs kept: /tmp/qa-link-LINK7/ on the guest, /workspace/tmp/rasteratops-m7-link7-s3-01/artifacts/details/LINK7/ here
+    PASS  the cut run: no developer words on the 0 card-visible line(s) or the outcome line ("Your cloud couldn't be read. Try again.")
+    FAIL  the cut run: the outcome line is not Completed / Couldn't finish / Skipped: "Your cloud couldn't be read. Try again."
+    PASS  the cut run: a failed run says how to recover
+    PASS  a plain re-run with the link back exits 0
+    PASS  the re-run's scan names all 24 systems and bios
+    PASS  LINK7: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 0 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== clean up root@127.0.0.1 port 10022
+    scratch tree and bucket emptied; the device's own remote, paths and settings-backup setting restored
+
+1 CHECK(S) FAILED
+down: a (pid 1333382)
+down: b (pid 1333409)
+down

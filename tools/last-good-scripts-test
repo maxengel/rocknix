@@ -243,6 +243,8 @@ Run the host script regression suite with the image's busybox.
   --cloud-layout  Run only the layout suite; remaining options go to it.
   -h, --help      Show this help without creating fixtures or running tests.
 Run in the foreground; the full suite requires a usable SIGINT handler.
+QA_SYSTEM_ROOT names the candidate's image/system directory for BusyBox and
+rclone. An unusable explicit input is an error, never a fallback to another build.
 USAGE
     exit 0 ;;
   --cloud-layout) shift; exec "$(dirname "$(readlink -f "$0")")/rasteratops-cloud-layout-test" "$@" ;;
@@ -311,6 +313,14 @@ src_of() { # <repo-relative path> <destination>
         cp "${ROOT}/${1}" "${2}" || { echo "cannot read ${1}" >&2; exit 2; }
     fi
     case "${1}" in
+        */cloud_content_backup|*/cloud_content_restore)
+            local guard_rel="${RCLONE_REL}/cloud_content_transfer" guard_dst
+            guard_dst="$(dirname "$2")/cloud_content_transfer"
+            if [ "${OLD}" -eq 1 ]; then
+                git -C "${ROOT}" show "${BASE_REF}:${guard_rel}" > "${guard_dst}" 2>/dev/null || rm -f "${guard_dst}"
+            else
+                cp "${ROOT}/${guard_rel}" "${guard_dst}" || exit 2
+            fi ;;
         */cloud_scan|*/cloud_restore)
             local archive_rel="${RCLONE_REL}/rasteratops-settings-archive" archive_dst
             archive_dst="$(dirname "$2")/rasteratops-settings-archive"
@@ -332,11 +342,28 @@ chmod +x "${BT}"
 
 # busybox sed/mv/cp from the image when a build root is here, so the rename
 # semantics tested are the device's.
-BB_SRC=""
-for b in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}".worktrees/*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/busybox; do
-    [ -x "${b}" ] && "${b}" sed --help >/dev/null 2>&1 && { BB_SRC="${b}"; break; }
-done
-[ -n "${BB_SRC}" ] || BB_SRC="$(command -v busybox || true)"
+image_tool_source() {
+    local name="$1" b; shift
+    if [ -n "${QA_SYSTEM_ROOT:-}" ]; then
+        b="${QA_SYSTEM_ROOT}/usr/bin/${name}"
+        if [ ! -x "${b}" ] || ! "${b}" "$@" >/dev/null 2>&1; then
+            echo "cannot run candidate ${name} from QA_SYSTEM_ROOT: ${b}" >&2
+            return 2
+        fi
+        printf '%s\n' "${b}"
+        return 0
+    fi
+    for b in "${ROOT}"/../*/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}" \
+             "${ROOT}".worktrees/*/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}" \
+             "${ROOT}"/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}"; do
+        if [ -x "${b}" ] && "${b}" "$@" >/dev/null 2>&1; then
+            printf '%s\n' "${b}"
+            return 0
+        fi
+    done
+    command -v "${name}" || true
+}
+BB_SRC=$(image_tool_source busybox sed --help) || exit 2
 # The copy, not the build root's file. Every image step deletes image/system
 # and re-installs every package (scripts/image), so a build running beside the
 # harness pulls the busybox every sandbox here bind-mounts out from under it:
@@ -1114,7 +1141,7 @@ FEATURES=bucket sp /Bad-Bucket/x 1 && grep -q 'buckets' "${LL}/sp.out"; check $?
 FEATURES=fail sp /QA/New 1; check $? "when rclone cannot say which kind the remote is, the provider's refusal is taken rather than the walk's 'not there yet' (QA/New)" "QA/New was accepted with the remote's kind unknown -- a failed backend features read as path-based and the walk ran (#151 PL-14)"
 FEATURES=fail LSD_NOTFOUND=1 sp /QA/New 0; check $? "and the provider's own 'not found' is accepted whatever the kind (QA/New)" "a not-found folder was refused: $(head -1 "${LL}/sp.out")"
 [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${LL}/src/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
-awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${LL}/src/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
+awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    (bounded_content_rclone|rclone) copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${LL}/src/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
 grep -q 'absent_not_broken "${ROOT}ROMs/"' "${LL}/src/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${LL}/src/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
 # cloud_setup --check WHOLE, inside bwrap, against a shim rclone that answers
 # listremotes with one remote, lsd with 0, and records every argv it was given:
@@ -8584,11 +8611,7 @@ PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7AM}/fn.sh'; external_node_present"; p
 # on the scripts at 417dcd8610 (BASE_REF=417dcd8610 ... --old).
 echo "  A. audit #307/#308, stream A: the cloud scripts against the image's rclone"
 SA="${TMP}/sa"; mkdir -p "${SA}/shim" "${SA}/nbin"
-SA_RCLONE_SRC=""
-for r in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/rclone "${ROOT}".worktrees/*/build.ROCKNIX-*/image/system/usr/bin/rclone "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/rclone; do
-    [ -x "${r}" ] && "${r}" version >/dev/null 2>&1 && { SA_RCLONE_SRC="${r}"; break; }
-done
-[ -n "${SA_RCLONE_SRC}" ] || SA_RCLONE_SRC="$(command -v rclone || true)"
+SA_RCLONE_SRC=$(image_tool_source rclone version) || exit 2
 if [ -z "${SA_RCLONE_SRC}" ] || ! cp "${SA_RCLONE_SRC}" "${SA}/rclone.real"; then
     echo "    FAIL  no rclone to run the stream A cases against (none in a build root, none on the host)"; FAIL=$((FAIL + 1))
     : > "${SA}/rclone.real"
@@ -13626,6 +13649,35 @@ layout_args=()
 [ -n "${SA_RCLONE_SRC:-}" ] && layout_args+=(--rclone "${SA_RCLONE_SRC}")
 "${ROOT}/tools/rasteratops-cloud-layout-test" "${layout_args[@]}"
 check $? "cloud folder state-table regressions" "cloud folder state-table regressions failed"
+
+echo "  af. content inactivity across provider retries (#401)"
+# Run both complete scripts with the candidate tools. A silent copy lasts
+# twelve seconds unless the product ends it; only the configured idle time
+# is shortened, keeping the real six-second grace. The old unguarded calls
+# return success here. Existing A7/A11/A29 cases cover selection and stamps.
+for content_script in cloud_content_backup cloud_content_restore; do
+    CG=$(sa_new "inactivity-${content_script}")
+    sa_script "${CG}" "${content_script}"
+    printf 'CONTENT_REMOTE="/Content"\nRCLONE_NET_OPTS="--timeout 1s --low-level-retries 10 --retries 1"\n' > "${CG}/storage/.config/cloud_sync.conf"
+    mkdir -p "${CG}/storage/roms/nes" "${CG}/cloud/Content/ROMs/nes"
+    echo game > "${CG}/storage/roms/nes/probe.nes"
+    echo game > "${CG}/cloud/Content/ROMs/nes/probe.nes"
+    printf '^copy \t12\n' > "${CG}/ctl/hang"
+    sa_run "${CG}" "${content_script}" --with-media nes
+    cg_stamp="${CG}/storage/.cache/cloud_sync/last-${content_script#cloud_}"
+    cg_stamp="${cg_stamp%_*}-${cg_stamp##*_}"
+    [ "${RC}" -eq 124 ] && [ "${DT}" -ge 6 ] && [ "${DT}" -lt 12 ] && grep -qx '>>> why YOUR CLOUD STOPPED ANSWERING' "${CG}/out"
+    check $? "${content_script} ends inactivity and says why (rc ${RC}, ${DT}s)" "${content_script}: rc ${RC}, ${DT}s; $(sa_tail "${CG}")"
+    [ "$(awk '{print $2}' "${cg_stamp}" 2>/dev/null)" = 124 ] && [ "$(grep -c '^copy ' "${CG}/ctl/argv")" -eq 1 ] && [ -z "$(find "${CG}/varrun" -name 'cloud-content.*' -print)" ]
+    check $? "${content_script} stamps failure, starts no game-list copy and removes its guard" "${content_script}: stamp/second-copy/cleanup mismatch"
+    : > "${CG}/ctl/hang"
+    # A real local copy followed by steadily advancing stats exceeds the
+    # same seven-second inactivity window without being a stalled call.
+    printf '^copy \tfor n in 1 2 3 4 5; do printf "Transferred: %%s KiB / 5 KiB\\n" "$n"; sleep 2; done\n' > "${CG}/ctl/post"
+    sa_run "${CG}" "${content_script}" nes
+    [ "${RC}" -eq 0 ] && [ "${DT}" -ge 9 ] && [ "$(awk '{print $2}' "${cg_stamp}" 2>/dev/null)" = 0 ]
+    check $? "${content_script} keeps a progressing transfer alive beyond the window" "${content_script}: progressing run rc ${RC}, ${DT}s; $(sa_tail "${CG}")"
+done
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

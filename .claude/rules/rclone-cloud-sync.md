@@ -356,6 +356,17 @@ now ends on its own sentence -- `Completed.`, `Couldn't finish: <why>. Try
 again.`, `Skipped: <reason>.` -- because `Settings backup: COMPLETED` was
 not a line the LINK cells' vocabulary gate accepts.
 
+**Content transfers use the same inactivity contract (#401).**
+`cloud_content_backup` and `cloud_content_restore` share the sourced
+`cloud_content_transfer` guard for copy/sync, including game lists and match
+dry runs. Its cleanup traps stay local to the call, preserving the scan's
+own EXIT trap. Guard setup failure refuses the call. A failed content copy
+reports its result before any follow-on game-list copy. Plain listings keep
+their separate listing options; do not mix progress blocks into row output.
+`last-good-scripts-test` case af runs both complete scripts under stalled and
+progressing calls with the candidate utilities. Candidate qualification sets
+`QA_SYSTEM_ROOT` explicitly; it must not silently select an older warm image.
+
 **What the ceiling cannot see (D-CLOUD-128).** rclone's transferred count
 is bytes handed to the kernel, not bytes the server has. From the last byte
 handed over to the server's reply there is no progress signal, and that leg

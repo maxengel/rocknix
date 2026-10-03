@@ -48,14 +48,21 @@ strict LINK5 fixture correction #400; the corrected archive interruption/retry
 also passes S3 without skips. Full S3 link proof exposed #401: content backup
 and restore outwait an outage because they lack the saves/settings progress
 stall guard. #402 owns a scan that completed before its cut could land.
-The independent19-case640x480 guest-d matrix is active. RA award fixture100359
+The independently reset19-case640x480 guest matrix passed249/0 at20:31UTC.
+#402's corrected S3 pagination now proves interruption and retry; its newly
+reached failure sentence is included in #401. Focused guard controls pass18/18
+on host and candidate BusyBox, and six complete-script checks pass. The full
+candidate-binary host rerun passes1373 broad+322 layout checks under #403,
+0FAIL/0SKIP; its predecessor's stale assertion failure is retained. #404 corrects recorded frame counts;
+#405 corrects sign-in-tool help. Production virgl10 passes (VmSize0KiB,
+RSS+620KiB); software10 also passes (0/52KiB), and software50/sign-in memory are running. RA award100359
 is already earned; the owner reset/alternate-QA-account question is pending.
 Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
 `docs/qa-logs/2026-10-03-archive-harness/rerun/`.
 **New image gate #397:** SYSTEM lacks the approved branding licence and
 trademark policy. Image-assembly correction passes byte/mode/failure staging
 controls; a replacement immutable image and clean/upgrade readback are owed.
-**Next:** consume guest-d results, correct #401/#402 and complete remaining P3 tests, then assemble
+**Next:** finish active host/memory qualification, deliver #401/#403 corrections and complete remaining P3 tests, then assemble
 and qualify the replacement with all observed fixes. Shared recorder and
 active waiter delivered failure and success without a status request; no
 disconnected alert is configured (#395, D-WORKFLOW-143).

@@ -1,0 +1,69 @@
+19:58:54 === cloud-epic on guest d, BUILD_ID="503e24e10dde6a59aa6c631f789b88b89f8e92e1"
+232
+19:58:54 == setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it
+remote: qa-cloud:
+19:58:56   cloud: ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Content/BIOS/disksys.rom ROCKNIX/Content/ROMs/nes/Probe.nes ROCKNIX/Saves-replaced/nes/Probe.srm.1 ROCKNIX/Saves/nes/Probe.srm
+19:58:56   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+label=GENERIC-X64
+19:59:24   picks reset: content=0 saves=1
+19:59:44 == B0: a carried /GAMES that holds saves and no current folder -> the move dialog names /GAMES; NOT NOW
+19:59:44   guest conf: SAVES_REMOTE="/GAMES" SETTINGS_REMOTE="/GAMES/backup" CONTENT_REMOTE="" LAYOUT_KEEP=""
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+changed after 0.1s (`key ret`, line 3)
+settle: still after 1.7s
+changed after 0.0s (`key x`, line 6)
+settle: still after 1.3s
+changed after 0.1s (`key up`, line 9)
+changed after 0.1s (`key up`, line 11)
+changed after 0.1s (`key up`, line 13)
+settle: still after 1.3s
+changed after 0.0s (`key x`, line 16)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/01-B0-hub.png
+changed after 0.0s (`key down`, line 20)
+changed after 0.1s (`key x`, line 22)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/02-B0-scan-0.png
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/03-B0-scan-1.png
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/04-B0-after-scan.png
+20:00:11 PASS walk epic-B0.steps
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/01-B0-move-question.png
+changed after 0.1s (`key z`, line 2)
+settle: still after 1.3s
+dismiss-dialogs: 5 press(es) moved the screen, back on the carousel
+20:00:23 PASS walk epic-B0b.steps
+20:00:23 PASS B0: NOT NOW on the /GAMES move left the conf on /GAMES
+20:00:23 == B: a carried /GAMES and no current folder -> the offer to create; CREATE IT re-points and seeds
+20:00:24   guest conf: SAVES_REMOTE="/GAMES" SETTINGS_REMOTE="/GAMES/backup" CONTENT_REMOTE="" LAYOUT_KEEP=""
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+changed after 0.1s (`key ret`, line 3)
+settle: still after 1.7s
+changed after 0.0s (`key x`, line 6)
+settle: still after 1.3s
+changed after 0.1s (`key up`, line 9)
+changed after 0.0s (`key up`, line 11)
+changed after 0.1s (`key up`, line 13)
+settle: still after 1.3s
+changed after 0.0s (`key x`, line 16)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/01-B-hub.png
+changed after 0.1s (`key down`, line 20)
+changed after 0.1s (`key x`, line 22)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/02-B-scan-0.png
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/03-B-scan-1.png
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/04-B-after-scan.png
+20:00:51 PASS walk epic-B.steps
+changed after 0.0s (`key x`, line 1)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/01-B-create-running.png
+settle: still after 5.9s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/02-B-rescan.png
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/03-B-options-after-create.png
+dismiss-dialogs: 5 press(es) moved the screen, back on the carousel
+20:01:12 PASS walk epic-B2.steps
+20:01:12   cloud after CREATE IT: BIOS/README.txt ROMs/README.txt Rasteratops/.layout Rasteratops/Backups/README.txt Rasteratops/Saves/README.txt _rasteratops_hold/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Content/BIOS/disksys.rom _rasteratops_hold/Content/ROMs/nes/Probe.nes _rasteratops_hold/Saves-replaced/nes/Probe.srm.1 _rasteratops_hold/Saves/nes/Probe.srm
+20:01:12 PASS B: CREATE IT makes saves/backups and preserves the explicit cloud content root
+20:01:12 PASS B: the carried /GAMES setting is re-pointed at the current layout
+20:01:12   frames: 0 under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames (epic-*.png), plus /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/B/frames/E-boot/
+20:01:12 done: 7 PASS, 0 FAIL
