@@ -3,278 +3,207 @@
 ## Start here
 
 ROCKNIX is an immutable handheld Linux build system; Rasteratops is this fork.
-Read `AGENTS.md`, every-session rules from `.claude/rules/` on `next`, this
-checkpoint, `docs/rasteratops/release-readiness.md`, the current work log and
-#383/#385 before resuming. Compare feature rules with `next` first. Scoped
-rules load before touching their paths. Main checkout stays on `next`.
+Read AGENTS.md and every-session `.claude/rules/` from `next` first; compare
+feature rules before using them. Then read this checkpoint, live milestone7,
+`docs/rasteratops/release-readiness.md`, today's work log and #383/#385.
+Read scoped rules before touching their paths. Main checkout stays on `next`.
+Use the existing Blitterbot identity; never print or request credentials.
 
-The owner asked for a comprehensive first-release goals/issues/readiness
-review after repeated VM rounds. **The review is documented; the release is
-not RC-ready.** No combined branded 0.0.1 image exists. Keep 0.0.1 as working
-version; the owner's optional 1.0.0 suggestion did not authorize a rename.
-Do not restart the initial audit or treat its completion as product acceptance.
+The user asked **"can we proceed with our M7 plan?"** Continue execution,
+not another readiness review or status-only response. The comprehensive review
+and initial audit are complete. No combined branded image exists and no RC
+is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
-## Current priorities and naming — #388
+## Binding order and naming — #388/#389
 
-The binding running order is the GitHub milestone body:
-https://github.com/rasteratops/distribution/milestone/7,
-now named **M7: Rasteratops 0.0.1**. D-WORKFLOW-139 and the newly adopted
-`.claude/rules/milestone-phase-naming.md` make it authoritative. The rules now
-number30; the delivery/futro/retro naming references resolve locally.
+https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
+0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
+complete; P1 source complete; **P2 current: integration and final input freeze**;
+P3 cold engineering image/qualification; P4 approved independent fixes review;
+P5 separately gated release staging/publication. Image-only criteria remain
+P3; they require creating the engineering image and do not prohibit it.
 
-**Current priority: M7.P2** qualified inputs. P1's source gate now passes:
-explicit actor/predecessor coverage, conservative inherited recovery, no-remote
-refusal and guest recovery promotion. Image-only acceptance remains P3.
-Continue M7.P2 qualified inputs; M7.P3 cold build plus image qualification;
-M7.P4 approved independent fixes audit; M7.P5 separately gated release
-staging. M7.P0 records the tracking-convention prerequisite #388. Open issue
-titles now carry their phase; #383/#344/#354 are milestone-wide umbrellas.
-M comes from the milestone name, not GitHub's ordinal; issue numbers are
-references, not priority. Closed issue titles and #344's historical contract
-section numbers are preserved. See the milestone for their explicit mapping.
+`.claude/rules/milestone-phase-naming.md` names planned issues M7.Pn, with
+optional Epic/sub-id scope. Issue numbers are references, not priorities.
+#383/#344/#354 span phases. Never retitle closed issues or confuse #344's
+historical contract section numbers with execution phases. Update the live
+body/current-next work on a transition and read it back in the same session.
+The current30-rule inventory and ES/splash entrypoints are repaired.
 
-When work starts/finishes or priorities change, update current/next work,
-phase status and evidence in that body, align affected open titles, and
-read back the live result in the same session. Keep this checkpoint and
-secondary plans aligned. Image-only criteria remain open until an engineering
-build provides their proof; they do not prohibit creating that build.
+> Saved: 20261003T065106Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T065106Z.md.
 
-> Saved: 2026-10-03T04:35:40Z. Branch: feature/conflict-resolution.
-> Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T043540Z.md.
+## Completed source and diagnostic proof
 
-## Latest execution — 2026-10-03, M7.P1 source exit
+- **P1 migration/recovery**:208 actor/state assignments;1367 broad+322 focused
+  host checks PASS. Guest T17/T19/T23/T26 are promoted but need the candidate.
+  Source table `docs/rasteratops/cloud-folder-state-table.md`, #365/#356/#320,
+  #390/#391/#392. Do not repeat the initial research/audit.
+- **#361/#384 proxy**:5866cd9ba784c13771a99c52dd6b6f2acc546842;14 patches
+  fuzz0, upstream-supplied014/017 retired. Eight preservation/pacing controls,
+  180 upstream tests,1367+322 full host PASS,0 FAIL/0 SKIP. Old cached sign-in,
+  images and queued base/subset awards survive. Deliberate preparation125games
+  bypasses ordinary100-game budget explicitly. Evidence
+  `docs/qa-logs/2026-10-03-proxy-refresh/`, disposition
+  `docs/rasteratops/raofflineproxy-refresh.md`. Runtime/upgrade P3 still owed.
+- **#362/#386 dependencies**:glslang16.6.0 with matched known_good SPIR-V,
+  cbindgen0.29.4,tllist1.1.0 confirmed current, shaderc patch corrected.
+  Native coupled shader compilation and locked cbindgen build pass; full
+  freshness/pkgchecks pass. libsoup3.8.0/WebKitGTK2.54.1 prepared. Evidence
+  `docs/qa-logs/2026-10-03-dependencies/`; actual cold consumers remain P3.
+- **#332 LED**:battery writer now respects saved brightness during color
+  changes/blinks. Actual three-script fixture before6PASS/8FAIL, after14PASS.
+  Actual VM popup reselection now also passes: accepting already-selected RGB
+  writes128/white to all eight nodes; reset brightness0 then reselect MID
+  restores128 with unchanged settings/channels. Nine assertions, frames,
+  logs and hashes in `docs/qa-logs/2026-10-03-led/ui-reselection/`.
+  Current LED menu/popup equals diagnostic source. No ES LED edit needed.
+  Physical illumination is an open item to test in device-facts, not a
+  software closure criterion (D-QA-051). No device action performed.
+- **#371 push hook**:destination-specific published-history exclusion;
+  seven actual scratch-push controls PASS; formerly blocked bbb2c635fe merge
+  passes direct hook. **Normal distribution push still owed**; no bypass.
+  `docs/qa-logs/2026-10-03-push-hook/`.
+- **#367/#368 process**:nine issue-history controls, safe runner help/five
+  controls, three-way tool inventories and omission guards PASS. Fresh agent
+  retested all six handoff findings PASS. Final resume proof also corrected
+  stale readiness prose and a launcher receipt edge case; both retest PASS
+  (`docs/qa-logs/2026-10-03-process/final-handoff-proof.md`). Build-container instructions now
+  use Makefile's existing digest, not stale latest-tag advice. Evidence
+  `docs/qa-logs/2026-10-03-process/`; required checks pass before final doc edits.
 
-The user asked to proceed with M7. **Continue P2 implementation; do not stop at
-another resume/status response.** The live milestone and #383 now name P2 as
-current. #365/#356/#391/#392 carry final source evidence while candidate guest,
-upgrade and pair criteria stay open. No branded build exists.
+## #310 memory — all strict diagnostic acceptance passes
 
-- P1 final host run:1,367 harness PASS plus322 focused PASS,0 FAIL/0 SKIP.
-  `docs/qa-logs/2026-10-03-m7-coverage/` retains receipts, exact hashes, the208
-  actor/state assignments, initial failures and final broad transcript.
-- #391: actual RC2/run101 scripts produce inherited partial states. Recovery
-  preserves current primary pointers, old live saves/backups, independent
-  custom/root content and foreign collision protection. The discarded shelf
-  is an optional independent source field in schema1; earlier records still
-  load. Initial319 focused passes hid11 broad regressions; the corrected
-  boundary passes28 targeted cases and the full suite above.
-- #392: missing remote prefixes are refused before a cloud path can be
-  interpreted locally. Four writable-local-path controls fail before; all13
-  T19 controls pass after. Backup previously wrote locally; restore constructed
-  the path but refused later. Do not claim restore copied bytes in that proof.
-- Guest T17/T19/T23/T26 live in tools/rasteratops-vm-cloud-epic and its new
-  migration-protocol.sh helper: fixture resets, image calls, temporary fault
-  shim, retained statuses/hashes, cleanup. Parsing/negative assertion verified;
-  **new guest cases have not run**. One follower configuration is not two guests.
-- ES is unchanged:39f8883545537d5274708ea85c4683612078a957, already pushed to
-  origin/test/qa-integration. Prior10 cases/119 assertions and compiler/French
-  checks remain the evidence. No distribution push (#371 remains unresolved).
+Cause: software llvmpipe's unload lost Mesa's10MiB rtasm executable arena.
+The allocator DSO control retains512000KiB over50 reloads before,0 after;
+concurrent allocations and failure recovery pass. Further RSS endurance failed
+with trimming alone. LeakSanitizer found ES udev enumeration leaks plus SDL
+Wayland display mode-array and Mesa empty virgl-screen-cache leaks. Fixed
+all lifetimes, and added two glibc-only trims around renderer teardown/return.
+ES fallback udev paths are copied before freeing list storage.
 
-## P2 work in progress — current proxy
+All non-sanitized tests use five warmups, stable ES PID, actual emulator exit,
+unchanged limits VmSize<1024KiB and RSS<2048KiB:
 
-Fresh temporary integration: `/tmp/rasteratops-proxy-refresh-20261003/`.
-**The packaged recipe and helpers still use the old proxy.** Do not confuse
-this preparation with a shipped refresh.
+| Measured run | VmSize growth | RSS growth | Verdict |
+| --- | --- | --- | --- |
+| software10, sync off | 0KiB | 532KiB | PASS |
+| software50, exit sync on | 0KiB | 364KiB | PASS |
+| virgl10, sync off | 0KiB | 60KiB | PASS |
 
-- Current main verified5866cd9ba784c13771a99c52dd6b6f2acc546842; one commit
-  after bdcd229, changing only statistics-page hardware labels. Archive SHA256
-  1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e.
-- `integration/` is a fresh git tree with individually prepared semantic
-  patches; generated series in `patches/`.001/002/003/005/007/008/009/010/
-  011/012/013/015/016 are rebased;004 now adds an opt-in budgeted=False API
-  for the deliberate OS whole-library scanner.014 connection reuse and017
-  subset mapping are candidates for retirement after equivalence proof.
-  Do not use yesterday's conflicted rebased/ tree.
-- `cache-indexed.after` is the temporary integrating helper. Through the
-  actual old helper,125 unindexed games reported125 cached but only100
-  reached the store. `whole-library-before.log` reproduces it; the prepared
-  API/helper correction caches all125 (`whole-library-after.log`). It checks
-  queued status, retains upstream queue locks/pacing and persists429 pauses
-  for indexed work. Further indexed/unindexed/retry/429/preservation controls
-  are required before copying it into the recipe.
--180 upstream award/queue/consent/image/network/refresh tests pass on this
-  temporary integration (`upstream-integration-host.log`). A sandboxed attempt
-  failed socket/DNS access; the host run passed. Existing fork predicates
-  reference retired fetch_static_asset: adapt them to current image APIs while
-  preserving validation, redirect, timeout, absence and concurrency assertions.
-- #361 records the current head and reproduced readiness error. #384's stale
-  backport-only instruction is reconciled with D-WORKFLOW-138. Remaining
-  proxy/dependency/source gates are the live milestone's ordered P2 work.
+Fifty-run has55 distinct completed success stamps including warmup. Actual
+host watcher1871339 observed runner1865694 and retained rc0. All finished.
+Sanitizer before1,153,399bytes/14,360allocations; after808bytes/6 single shutdown
+allocations, no repeat-per-launch leaks. Do not claim zero sanitizer findings.
+Earlier failed controls remain intact; no threshold was relaxed.
 
-## Authorization and worktrees
+Evidence `docs/qa-logs/2026-10-03-launch-memory/README.md`: source/binary hashes,
+CSV/status/maps/stamps, sanitizer comparison, actual build/syntax checks,
+packaged patch exact-byte/fuzz0 controls and reproducible allocator driver.
+Mesa/SDL patches are committed and integrated; ES changes committed locally,
+**push/pin awaits explicit pending approval**. Final candidate tests remain P3.
 
-Continue regressions → fixes → combined branded cold build/VM qualification →
-independent fixes audit without asking again. Publication, personal-cloud and
-physical-device actions retain their separate gates. No build, VM or test job
-is intentionally running after the completed P1 run.
+## Local source state and explicit publication holds
 
-Primary `/workspace/repos/rocknix` stays on clean `next`. Work here is
-feature/conflict-resolution. Integrate only exact new single-commit hashes by
-cherry-pick; never merge this feature branch's old historical merges. The prior
-clean heads were feature160aaff8f56458dfa7cf579cb7f75bdbd2b12a41 and
-next4903e2ef96; this checkpoint accompanies the new P1 source commit. Read git
-log for its hash. Build worktree generic-x64 remains b2378d9c33; preserve its
-unrelated generated document before advancing. No cold RASTERATOPS root yet.
+Distribution feature commits integrated onto `next` by exact cherry-picks:
 
-Blitterbot identity is complete. Existing credentials work; never request/print
-them. Use explicit fork repo with gh. Host jobs and watch-job must share the
-host PID namespace. The main build requires writable paths outside this
-sandbox and uses the already selected container digest recorded below.
+| Feature | next | Work |
+| --- | --- | --- |
+| e2761d15f9 | 409250ebce | proxy |
+| e8595345e3 | b4fc2a28cf | dependencies |
+| 200a34c2b0 | a3d617ff54 | battery brightness |
+| c3f0e88b7c | c3f0c75661 | process/hook/recorder |
+| 33faa33c27 | 939e73a1d4 | Mesa/SDL memory cleanup and evidence |
 
-## Historical readiness review (#385, 2026-10-02)
+Current feature `feature/conflict-resolution` at33faa33c27; primary `next`
+at939e73a1d4. Latest LED/evidence/checkpoint/instruction docs still uncommitted
+at this snapshot. Always inspect live status. **No distribution push yet.**
+Use exact new single commits for integration, never this feature's historical
+merges. Preserve unrelated worktree changes.
 
-The source findings below describe that review baseline. #356/#320 are now
-fixed in source as recorded above; their VM criteria remain open.
+ES `/home/max/Development/emulationstation-next.worktrees/cloud-epic`
+feature/cloud-epic4f54ec035 and sibling qa-integration test/qa-integration
+**e6e1e4d0f91e177e182cc05b1cea74991e1cc45b** are clean local commits. Production
+source omits diagnostic timing output. Syntax and diagnostic builds pass;
+normal QA push dry-run passes (`/tmp/rasteratops-m7-memory/es-push-dry-run.*`).
+Origin is **rasteratops/emulationstation**, despite the local directory name.
+Current recipe remains39f8883545537d5274708ea85c4683612078a957 until push.
+Dormant ES main checkout stays feature/imageviewer-rescan, instruction-only
+67f92692c, clean. Instruction commits on active feature/QA are ecf976fd0/8276eb0c5.
 
-- `docs/rasteratops/release-readiness.md` maps original goals, every open
-  milestone issue at review, relevant older issues, actual evidence and the
-  ordered route. Source/code inspection plus issue histories, decisions,
-  audit receipts and the runs95–101 retro expose the omitted structural work.
-- At that review, #356 versioned migration was not implemented: production `fleet_made()`
-  accepts any `layout=` prefix, marker failure reports success, tiers can
-  commit pointers before a later failure. T23 collision refusal is not a
-  successful interrupted retry/fleet proof. Corrected a stale function name
-  in `docs/rasteratops/cloud-layout.md`; production code unchanged this review.
-- At that review, #320 settings-recovery race remained in pinned ES: recordLastGood after
-  loadUnderLock returns, including LockBusy. Added bug label and first-release
-  milestone so the bug-only preflight no longer overlooks it. The 2026-10-03 source fix above supersedes this finding.
-- Removed five RC2 bug exceptions from `docs/releases/rc-accept.txt`:
-  #310/#327/#332/#352/#353. Historical decisions are retained. #310 memory
-  growth needs current mapping/10/50-cycle proof; #327/#332 have later source
-  work and stale criteria, so revalidate before calling them unfixed.
-- Reconciled milestone7 and #383/#344/#365/#356/#354/#337/#378 plus the
-  carry-forward issue bodies. Added #361/#362/#265 and carry-forwards to the
-  release milestone. #384 now names the proxy refresh, not a frozen-old pin.
-- #386 owns remaining freshness reconciliation (glslang, spirv-headers,
-  cbindgen, unresolved tllist). #387 separates explicitly later own-telemetry
-  design from #357's current image criterion. #378's only remaining general
-  version-depth policy is outside milestone7; #383 retains this release's
-  already selected and authorized primary + Fable fixes review.
-- Full preflight before the gate correction: exit2 (freshness UNKNOWN), bug
-  FAIL with9 unaccepted and5 old exceptions. Targeted production bug check
-  after correction: exit1,15 open issues requiring fixes/evidence, no waivers.
-  Not15 untouched defects. Receipts: docs/qa-logs/2026-10-02-readiness/.
-  Full run used --no-fetch --allow-unchecked device-facts; limitations stated.
+Automatic approval review rejected ES publication while RSS proof was pending.
+That rejected combined command executed nothing. Source is now fully qualified
+and committed; a concrete async user request to push the two ES branches is
+pending (repo-name typo in prompt was corrected in commentary). **No response
+means no approval.** Complete unaffected local work; do not bypass rejection.
 
-## Previously completed implementation and current evidence
+Splash `/tmp/rasteratops-rc-delivery-20261002/splash`, master530b334, is a clean
+local six-line AGENTS route only. Automatic approval review separately rejected
+its master push. A concrete async approval request is pending, not answered.
+Product pin7450aa8180ae66684814dd460f31eb502b2abf61 remains unchanged and does
+not need to move for these instruction lines. Do not make this optional push
+hold the build once ES delivery is approved.
 
-- Cloud/archive/card/order/default-fixture fixes implemented. Final host suite
-  1367 harness PASS/0 FAIL/0 SKIP, plus72 focused cloud cases and23 award
-  parity tests: docs/qa-logs/2026-10-02-candidate-preflight/full-host-suite.log.
-  It predates the latest source refresh. Five audit product findings
-  #376/#377/#379/#380/#381 stay open for candidate evidence.
-- #375 initial independent audit and #382 dispositions complete. Verified
-  Fable5.1/xhigh blind/refutation receipts are retained. The next external
-  audit is of the fixes after image qualification, through Facilitator only.
-- OS identity source implemented: RASTERATOPS/0.0.1, wordmark, splash/theme,
-  manual updater/no upstream stats, licensing and from-ROCKNIX suffix.
-  DISTRO/OSNAME/partition/persisted contracts retain compatibility. Host/source
-  identity checks are not a full image sweep or old-logo frame matcher.
-- libsoup3.8.0 recipe and verified hash/pkgcheck complete; WebKitGTK2.54.1
-  archive/patches prepared. Cold build and runtime sign-in/memory owed.
-- RAOfflineProxy recipe still248ce5acae with16 patches. Owner selected current
-  upstream bdcd229b45e289fdd0d920935887406d7d7b5919 under D-WORKFLOW-138,
-  preserving all functionality and contributing general fixes upstream.
-  Eight patches apply; eight need semantic review/rebase. Queue/budget changes
-  make unindexed success+queued=True NOT offline-ready; indexed path differs.
-  Default preserves whole-library preparation. No new disposition is needed.
-- Pristine upstream104 tests pass. One isolated image-publication fix passes
-  105, draft/patch at docs/upstream/raofflineproxy/image-publication/ (#168).
-  No upstream PR submitted. This does not qualify patched fork integration.
-  Temp source: /tmp/rasteratops-upstream-refresh-20261002/. Its rebased/
-  experiment contains conflicts: NEVER copy it as the production patch set.
-- Source plan: docs/rasteratops/candidate-source-plan.md. Parent-coupled
-  rcheevos1433173220a7eaede6a9ed7a18e94117be1821e0 and libchdr
-  8e7b8bd32bc676b7e5c6b42fe7d2daca986c4a0d match selected upstream parent.
-- Candidate-store helper tested synthetically; no real candidate bundle.
-  Old fork-publish-release selects dated ROCKNIX artifacts and undrafts;
-  do not use it for the new manifest-bound publication contract.
+## Immediate next actions
 
-## Next steps, in order
+1. Finish current evidence/work-log/checkpoint checks, commit/integrate exact
+   docs changes. Close #332 from its VM/software evidence after delivery;
+   physical illumination stays the named open item to test. Update #367/#368
+   integration evidence. Obtain #371's real normal distribution push receipt.
+2. Respect pending ES/splash approval questions. When ES is approved, normal
+   push both qualified branches, read back remote hashes, then bump recipe to
+   full e6e1e4d0f91e177e182cc05b1cea74991e1cc45b, pkgcheck, commit/integrate/push.
+   #310 can close from delivered source/diagnostic proof; P3 repeats image tests.
+3. Advance new build/m7-generic-x64 to final next, recheck preflight, freeze
+   inputs and start the cold engineering build with an actual host watcher.
+   Update milestone from P2 to P3 with exact hashes/PID/log/status, no RC claim.
+4. Qualify exact artifact and approved P4 review. Do not restart #375/#382.
+   Primary+Fable5.1/xhigh through Facilitator is already authorized. Resolve
+   findings, rebuild/requalify changed bytes, then assess RC designation.
 
-Current entrypoints (read the scoped rules before touching them):
+## Cold-build preparation and QA entrypoints
 
-- #365 coverage: `docs/rasteratops/cloud-folder-state-table.md`, production
-  `cloud_migrate_layout`/`cloud_setup`, `tools/rasteratops-cloud-layout-test`
-  and `tools/rasteratops-vm-cloud-epic`. Host T23/T26 assertions exist and pass;
-  the guest runner still needs their promotion. Keep actor applicability and
-  genuine old-binary limitations explicit; no new per-transfer version probe
-  or fleet-wide upgrade prerequisite was introduced.
-- #320 has its deterministic source tests in ES
-  `es-app/tests/unit/SystemConfTests.cpp`; do not add the same tests again.
-  Host has g++ but no CMake. Verified command from the ES checkout:
-  `g++ -std=c++17 -pthread -Ies-app/tests/unit/fakes -Ies-core/src -Iexternal es-app/tests/unit/SystemConfTests.cpp es-core/src/SystemConf.cpp es-core/src/utils/AtomicFileUtil.cpp -o /tmp/rasteratops-320-tests`.
-  The remaining criterion is a guest race/record-byte proof on the new image.
-- Before-fix distribution control remains `--ref fcd0f20c9a`; the runner must
-  select image rclone1.75.1, not host1.60. Use a fresh --output directory.
-  Results from this session are retained; rerun only for a changed input or
-  an unresolved concern, not because a context reset occurred.
+New isolated `/workspace/repos/rocknix.worktrees/m7-generic-x64`, branch
+build/m7-generic-x64, currentlyc3f0c75661. No cold build root and no build running.
+Prepared reproducible launcher/freeze scripts:
+`docs/qa-logs/2026-10-03-m7-build-preparation/` and `/tmp/rasteratops-m7-build/`.
+They validate clean branch/commit, qualified ES pin served by remote, all input
+hashes, actual pinned container, new `build.RASTERATOPS-GENERIC_X64.x86_64`,
+nonroot build, both main.git/source-cache mounts and nonoverwritten receipts.
+Syntax checks pass; no actual freeze or build has occurred. A watcher must be
+started in the host namespace after the build PID exists; none is running now.
 
-1. Complete the explicit #365 actor/predecessor map and guest-case promotion
-   for #356/#320. Source fixes and host regressions above are done. Retain
-   independent settings/content choices and identify actual predecessor
-   partial-state coverage. VM-only criteria stay in P3, with issues open.
-2. Complete proxy refresh/preservation #361/#384; reconcile #386 inputs and
-   #362; relevant package/host checks. Resolve #310 launch memory and
-   #332 software criteria, #371/#367 host workflow gates. The remaining
-   #327 frame/docs proof belongs to P3, after the engineering build.
-   Diagnostic VM builds are engineering builds, not RCs. Do not rerun an
-   unchanged full suite merely to accumulate green runs.
-3. Freeze qualified distro/ES/splash/container/source inputs, cold-build
-   under build.RASTERATOPS-GENERIC_X64.x86_64 (never rename warm root).
-   Container: ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39.
-   Adapt /workspace/tmp/rocknix-session/build-x64-run101.sh; replace EVERY
-   hardcoded root including failure logs. No cold launcher exists yet.
-   Build as max, mount main.git and /workspace/cache/rocknix-sources. Record
-   concurrency/source archive inventory/log. Use pidfile/resultfile and
-   tools/watch-job in the same host namespace; name the actual watcher.
-4. Retain actual candidate by manifest/digest; verify before/after QA. Full
-   VM acceptance:15 default suites plus link/RA opt-ins, clean install/RC2
-   upgrade, WebDAV/S3/pair, reset promoted cases H,A,C,D,B,E,I,J,K,L,F,G,
-   T08,T11,T12, retry/future-marker cases, writer-shaped archives, pending
-   subset flush, five-sample #364<=30ms, time-to-play, memory/10/50launch,
-   card/wordmark/manual-update frames640x480 and Nova1280x960 in EN/FR.
-   Qualify actual sign-in stack; complete image brand/secret/localisation/
-   licence/source proofs. Close software issues from their artifacts/traces.
-5. Run approved cross-lab fixes audit using code-auditor skill and verified
-   Facilitator (primary + Fable5.1/xhigh, two perspectives, not five council
-   members). Resolve findings, rebuild/requalify changed product inputs.
-6. Prepare manifest-bound draft/source bundle/adoption/recovery/docs; device
-   migration/smokes and publication retain their later named-action gates.
-   Supported device matrix is in docs/rasteratops/support-matrix.md.
+Frozen upstream9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
+Container ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
+is available locally and verified by digest. Global24jobs; WebKit-j4 remains
+per-package. Build as max, not root. Source cache `/workspace/cache/rocknix-sources`.
+Preflight06:46UTC: READY,41GiB available,8GiB swap unused,1.9TiB disk free.
+Recheck before launch. Collect actual consumed sources/download inventory.
 
-## Jobs, artifacts and remaining cautions
+Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
+retains unrelated generated emulator-support doc and ignored warm diagnostic
+Mesa/SDL/ES changes. Preserve them; do not rename/copy warm root into branded
+root or mistake diagnostic bytes for frozen product inputs.
 
-Earlier fresh-agent proof: `docs/qa-logs/2026-10-02-readiness/handoff-proof.md`.
-The current fresh-agent proof is retained at
-`docs/qa-logs/2026-10-03-m7-p1/handoff-proof.md` under #389/#368.
-It recovered the correct next work and verified the key source/receipt claims.
-Its two findings are corrected: #327 stays in P3; the guest runner help names
-the real executable and all currently accepted cases. #385 is the completed review;
-#383 remains active delivery. The kickoff futro already exists at
-`docs/futros/2026-10-02-rc-remediation.md`; read it as historical kickoff state.
+All owned diagnostic guests and endpoints are now stopped (host process check):
+QEMU1531007/1881003, WebDAV1611685, tunnel1611728. Overlays retained at
+`/workspace/tmp/rasteratops-m7-memory/memory.qcow2` and
+`/workspace/tmp/rasteratops-m7-ui/ui.qcow2`; backing guest-d is unchanged.
+Raw receipts `/tmp/rasteratops-m7-memory/`, LED `/tmp/rasteratops-m7-led-ui/`.
+No test loop, build or watcher remains active. No physical device/personal
+cloud action occurred. If reusing guests, read command profiles/receipts and
+use their owned fixture mounts; credentials must never enter tracked evidence.
 
-No build, VM or source test is intentionally running at this checkpoint.
-Readiness diagnostics are finished. No distribution push or publication is
-claimed. Current review temp: /tmp/rasteratops-readiness-20261002/ (raw issue
-snapshots and exact tracker edit scripts). Earlier source/harness temp:
-/tmp/rasteratops-rc-delivery-20261002/. Never edit a running shell runner.
+Candidate evidence required in live M7 P3:15 default VM suites plus link/RA
+opt-ins, clean install/RC2 upgrade, WebDAV/S3/pair migration, independently
+reset promoted cases, archives/pending awards, sign-in/memory/timing, English
+and French640x480/Nova1280x960 UI, identity, secrets, licences/source manifest.
+Use `tools/rasteratops-candidate-store` for exact artifact custody and verify
+manifest before/after QA. RC2 is under
+`/workspace/artifacts/rocknix-images/x64-all-20260929-69e6039f8f/`; run101 under
+`/workspace/artifacts/rocknix-images/x64-all-20261002-b2378d9c33/`.
 
-- RC2 image: /workspace/artifacts/rocknix-images/x64-all-20260929-69e6039f8f/ROCKNIX-GENERIC_X64.x86_64-20260929.img.gz.
-- Run101: /workspace/artifacts/rocknix-images/x64-all-20261002-b2378d9c33/.
-  Its green diagnostics do not qualify the new inputs. Source fixes, including the 2026-10-03 migration and settings changes, have
-  never run together in a branded candidate.
-- Guest d SSH10026/VNC5912, monitor /tmp/rocknix-qemu-monitor-d.sock.
-  Read /workspace/tmp/rocknix-session/rebuild-d-plain.sh; replace date-glob
-  artifact selection. Synthetic WebDAV9010/S39012; one cloud writer at a time.
-- The cloud-epic distribution worktree's held changelog is unrelated user
-  work; preserve then reconcile its inaccurate no-folder-check claim.
-- Public docs PR/release notes/source inventory are still required. Site is
-  a placeholder; infrastructure topology/off-host drill, own telemetry and
-  runner replacement/progressive inherited review are explicitly later.
-- Current runner inventory API403 is not proof about remote hosts. Hosted
-  untrusted workflows and disabled old publication exist; #344 owns remaining
-  trigger/isolation or disabled-runner fallback evidence.
-- No required owner answer blocks this source work. Version thresholds are
-  general policy follow-up #378. Pending optional scan pacing preference
-  defaults to preserving existing whole-library preparation, not loss.
+P5 public docs/source bundle/adoption/recovery and device smoke gates remain.
+Old fork-publish-release selects dated ROCKNIX assets and undrafts; do not use
+it for manifest-bound Rasteratops publication. Publication, handheld actions
+and personal-cloud writes retain named authorization. Upstream proxy #168
+contribution is prepared but not submitted; acceptance does not hold the build.

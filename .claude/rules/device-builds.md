@@ -99,9 +99,10 @@ artifacts. Those are not cleaned by a package version bump, so an incremental
 build can fail in ways a clean build never does. Two things to do before
 rebuilding:
 
-1. **Re-pull the build container.** `DOCKER_IMAGE` is pinned to `:latest`, so a
-   cached image can be months old while the tree now expects newer host tools.
-   `make docker-image-pull` first — otherwise you find out hours in.
+1. **Verify the pinned build container.** `Makefile` names the Rasteratops
+   mirror by digest. `make docker-image-pull` retrieves that exact image; record
+   the digest actually consumed in the build inputs. A newer host-tool
+   requirement needs an explicit pin update, not an unrecorded latest tag.
 2. **Expect self-hosting tools to break.** `config/functions` exports
    `LIBTOOLIZE`, `AUTOCONF`, `ACLOCAL` and friends **only if the toolchain
    already contains them**. On a clean tree libtool builds with no libtoolize

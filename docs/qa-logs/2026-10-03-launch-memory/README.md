@@ -87,7 +87,7 @@ the existing mutex. Both build and fuzz0 exact-byte reapplication controls
 pass. SDL2's official release list still names2.32.10 as latest; no SDL3 API
 migration is introduced. The final six reported allocations occur once each
 at shutdown, not once per game; retain that distinction rather than claiming
-LeakSanitizer reports zero. Final normal10/50-cycle qualification is in progress.
+LeakSanitizer reports zero. Final normal10/50-cycle qualification passes below.
 
 Reproduce the allocator reload control with `run-rtasm-controls.py --help`.
 It compiles the retained before/after translation unit against an existing

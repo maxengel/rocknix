@@ -44,7 +44,7 @@ targets exist for: `RK3588`, `RK3576`, `RK3566`, `RK3326`, `RK3399`, `S922X`, `S
 Docker is the recommended way to build:
 
 ```bash
-make docker-image-pull                   # pull ghcr.io/rocknix/rocknix-build:latest
+make docker-image-pull                   # pull Rasteratops mirror at Makefile's pinned digest
 make docker-RK3588                       # full image build for a device
 make docker-shell                        # interactive shell in the build container
 PACKAGE=retroarch make docker-package    # build one package in the container

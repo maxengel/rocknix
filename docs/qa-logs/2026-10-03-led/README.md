@@ -11,8 +11,22 @@ low-charge blinking; all14 pass. Explicit custom RGB tuples retain their
 existing precedence. Off clears brightness and all channels. The helper and
 battery script accept fixture paths while keeping their hardware defaults.
 
-The source uses four RGB devices per stick (eight), not the six quoted in the
-original report. No physical device was accessed. Actual guest selection of
-an already-selected row remains open; OptionListComponent's popup already
-invokes its callback for that selection. Physical illumination is a separately
-authorized device fact. This source proof does not claim either of those.
+The source uses four RGB devices per stick (eight), not six.
+
+## Actual guest menu reselection — PASS
+
+Can this be done on the VM? Yes. The owned isolated run101 virgl guest used
+unchanged current scripts with fixture sysfs/profile boundaries. The LED menu
+block and entire option-popup implementation match current ES byte for byte
+(`ui-reselection/ui-source-match.json`). Screenshots show RGB and MID already
+selected; accepting each again logs the real `ledcontrol rgb` / `ledcontrol
+brightness mid` call. RGB writes128 brightness and255/255/255 channels to all
+eight devices. Resetting brightness to0 supplies a failing-state control;
+reselecting MID restores all eight to128 without changing saved settings or
+color channels. All nine receipt assertions pass (`ui-reselection/result.json`).
+
+Wrappers, setup, walk steps, command log, before/after fixture values and
+source hashes are retained. No physical device was accessed. Actual perceived
+illumination and boot behavior on the Nova remain a separately authorized
+open item to test, recorded in `docs/releases/device-facts.md`. This is source
+and diagnostic VM proof; the combined candidate still needs M7.P3 checks.

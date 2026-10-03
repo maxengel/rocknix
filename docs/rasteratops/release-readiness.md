@@ -9,30 +9,43 @@ The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
 is the binding **current** execution order (D-WORKFLOW-139, #388). This document
 retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
 P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P1. Update the milestone and affected open issue titles
+Current priority is M7.P2 integration/input freeze. Update the milestone and affected open issue titles
 when priorities change; issue numbers are references, not queue positions.
 
-**Verdict: not ready to call a build an RC.** No combined branded 0.0.1
-image exists yet. Several fixes have strong host evidence, but the cloud
-migration coverage and proxy refresh still need work, older known
-defects need resolution, and the resulting artifact needs qualification.
-Another run of the existing general VM suites alone cannot close these gaps.
+**Verdict: not ready to call a build an RC.** Source/diagnostic preparation
+has advanced through P1 and P2; exact inputs still need final integration and
+the cold branded image must be built, qualified and independently reviewed.
+No combined Rasteratops artifact exists yet. Prior general VM runs do not
+qualify the new bytes.
 
-## Execution update — 2026-10-03
+## Current execution update — 2026-10-03
 
-M7.P1 has new implemented source fixes: strict marker validation, step1 recovery
-records and visible retries (#356/#365), and locked/revalidated last-good settings
-publication (#320). ES pin `39f8883545537d5274708ea85c4683612078a957` is pushed.
-New controls fail against the prior sources. Current evidence:93 cloud cases,
-1,367 host harness checks, and10 SystemConf cases/119 assertions pass; ES compiler,
-French catalog, package, vocabulary and instruction checks pass. Stale marker test
-doubles were corrected under #390. Receipts: `../qa-logs/2026-10-03-m7-p1/`.
+P1 source coverage is complete:208 actor/state assignments, inherited-state
+recovery and missing-remote controls,1,367 host+322 focused checks PASS.
+T17/T19/T23/T26 guest cases are promoted for candidate P3 execution. ES's
+migration/settings-lock pin39f8883545537d5274708ea85c4683612078a957 is pushed.
 
-The numbered findings below describe the **2026-10-02 review baseline**. Findings1
-and3 now have source fixes; their image/upgrade/fleet proof is still owed. Remaining
-P1 source work is the explicit actor/predecessor coverage review and guest-case
-promotion. P2 proxy/dependency inputs remain next. No new branded build or RC is
-claimed. The live milestone retains the current order.
+P2 proxy preservation and current coupled dependencies pass their source
+checks. #310 now passes all unchanged diagnostic memory limits: software10,
+software50 with exit sync and virgl10 have zero address-space growth and
+RSS growth532/364/60KiB. All exit syncs complete. #332 actual LED script tests
+and guest menu reselection pass. Process/hook controls and the six armature
+retests pass. Receipts are under `docs/qa-logs/2026-10-03-{proxy-refresh,
+dependencies,launch-memory,led,process,push-hook}/`.
+
+**Next:** finish normal distribution push proof and evidence integration,
+respect the pending explicit ES publication approval, pin its qualified
+QA commit e6e1e4d0f91e177e182cc05b1cea74991e1cc45b, freeze inputs and start
+the cold engineering build in build/m7-generic-x64. Build scripts are prepared;
+no build is running. Splash's instruction-only push is separately pending;
+its product pin is unchanged. Then run P3 artifact checks and the already
+approved P4 fixes review. The milestone and canonical saved session carry
+live hashes/job state. No RC2 waiver or image acceptance is inferred here.
+
+**Historical review below:** all tables, numbered gaps and diagnostics below
+record the2026-10-02 baseline. Their then-open source tasks are superseded by
+the current execution update above and live milestone; retain them to explain
+why earlier VM rounds were insufficient, not as another current work queue.
 
 ## Inputs and evidence checked at the review baseline
 
@@ -55,7 +68,7 @@ Receipts: [preflight](../qa-logs/2026-10-02-readiness/rc-preflight.log),
 [audit](../audits/2026_10_02-milestone-375-rasteratops-0-0-1/04-analysis.md),
 [VM retro](../retros/2026-10-02-cloud-runs-95-101.md).
 
-## Goals, implementation and remaining proof
+## Goals, implementation and remaining proof at the review baseline
 
 | First-release goal | Implementation and evidence | Required closure |
 | --- | --- | --- |
@@ -69,7 +82,7 @@ Receipts: [preflight](../qa-logs/2026-10-02-readiness/rc-preflight.log),
 | Reproducible, recoverable release (#344, #265) | Frozen ancestry/container pin and candidate-store helper exist; synthetic store controls pass. | Source inventory, cold log, actual manifest/digests and retained bundle; manifest-bound draft/source publication; mandatory migration and qualified device assets. Old publisher still selects date-named ROCKNIX artifacts: do not invoke it for this release. |
 | Release custody (#344) | Blitterbot identity complete (#374); inherited untrusted-event workflows use hosted runners; old CI image publication disabled. | Record actual container consumption/source custody and trigger/isolation or disabled-runner fallback evidence. Bot runner inventory returned 403; absence of a local runner is not remote-host proof. Deferred infrastructure topology is separate. |
 
-## Structural gaps behind the repeated VM rounds
+## Structural gaps behind the repeated VM rounds — review baseline
 
 1. **Marker presence is not a version contract (#356).** Production
    `cloud_migrate_layout` calls `fleet_made()`, accepting any first line
@@ -108,12 +121,12 @@ stale fixtures; correcting pair expectations produced 42/0 on that same
 older image. Timing was 59 ms against a 30 ms criterion. These results are
 useful diagnostics; they cannot qualify unbuilt bytes or untested transitions.
 
-## Issue inventory and boundaries
+## Issue inventory and boundaries at the review baseline
 
 Includes all open milestone-7 issues at review and relevant omitted issues.
 An unchecked issue is not automatically missing code.
 
-| Issues | Current disposition |
+| Issues | Disposition at review |
 | --- | --- |
 | #337, #344 | Identity source substantially implemented; build/custody/adoption/publication criteria open. P0 remains historical evidence. |
 | #349, #350, #351, #352 | Interface work exists; candidate restore/chooser/sign-in/interstitial evidence and docs reconciliation owed. |
