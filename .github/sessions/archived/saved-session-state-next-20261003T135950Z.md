@@ -18,7 +18,7 @@ is claimed. Working version remains0.0.1; optional1.0.0 was not selected.
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: input freeze/cold build**;
+complete; P1 source complete; **P2 current: ES delivery approval and final input freeze**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T135950Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T135950Z.md.
+> Saved: 20261003T070458Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T070458Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -72,8 +72,7 @@ The current30-rule inventory and ES/splash entrypoints are repaired.
   (`docs/qa-logs/2026-10-03-process/final-handoff-proof.md`). Build-container instructions now
   use Makefile's existing digest, not stale latest-tag advice. Evidence
   `docs/qa-logs/2026-10-03-process/`; required local push checks pass. #367
-  is delivered/closed. All ES/splash entrypoint commits are now published;
-  #368 can close after this delivery record is integrated.
+  is delivered/closed. #368 retains ES/splash entrypoint publication only.
 
 ## #310 memory — all strict diagnostic acceptance passes
 
@@ -103,11 +102,10 @@ Earlier failed controls remain intact; no threshold was relaxed.
 Evidence `docs/qa-logs/2026-10-03-launch-memory/README.md`: source/binary hashes,
 CSV/status/maps/stamps, sanitizer comparison, actual build/syntax checks,
 packaged patch exact-byte/fuzz0 controls and reproducible allocator driver.
-Mesa/SDL patches are committed/integrated. Qualified ES commits are now pushed
-and the recipe selects full e6e1e4d0f91e177e182cc05b1cea74991e1cc45b. Package
-lint passes. #310 closure follows pin integration; candidate tests remain P3.
+Mesa/SDL patches are committed and integrated; ES changes committed locally,
+**push/pin awaits explicit pending approval**. Final candidate tests remain P3.
 
-## Source delivery state
+## Local source state and explicit publication holds
 
 Distribution feature commits integrated onto `next` by exact cherry-picks:
 
@@ -139,37 +137,46 @@ The bot cannot rerun Actions via API (403); a normal doc push triggers a new
 check. This permission does not prevent normal pushes or issue updates.
 
 ES `/home/max/Development/emulationstation-next.worktrees/cloud-epic`
-feature/cloud-epic4f54ec035505b7a47501d298ae2ea3b0f6c7da4b and sibling
-qa-integration test/qa-integratione6e1e4d0f91e177e182cc05b1cea74991e1cc45b
-are published and clean. Normal pushes and exact remote readbacks pass.
-Production source omits diagnostic timing output. The recipe now selects
-that full QA hash; pkgcheck passes. Origin is rasteratops/emulationstation.
-Dormant ES main checkout remains feature/imageviewer-rescan with local
-instruction-only67f92692c; do not move that unrelated branch.
+feature/cloud-epic4f54ec035 and sibling qa-integration test/qa-integration
+**e6e1e4d0f91e177e182cc05b1cea74991e1cc45b** are clean local commits. Production
+source omits diagnostic timing output. Syntax and diagnostic builds pass;
+normal QA push dry-run passes (`/tmp/rasteratops-m7-memory/es-push-dry-run.*`).
+Origin is **rasteratops/emulationstation**, despite the local directory name.
+Current recipe remains39f8883545537d5274708ea85c4683612078a957 until push.
+Dormant ES main checkout stays feature/imageviewer-rescan, instruction-only
+67f92692c, clean. Instruction commits on active feature/QA are ecf976fd0/8276eb0c5.
 
-The owner approved the ES pushes, then explicitly approved splash master530b334.
-Both are now published. The prior automatic approval rejections are historical,
-resolved through named approval; **no ES/splash permission request remains**.
-Splash `/tmp/rasteratops-rc-delivery-20261002/splash` is clean at published
-530b334d084c76a06d43e010035518c73df8f622. This six-line AGENTS route does not
-change product pin7450aa8180ae66684814dd460f31eb502b2abf61. Push/remote/freshness
-receipts: `docs/qa-logs/2026-10-03-m7-es-delivery/`. Full freshness rechecked
-immediately before input freeze: exit0; all current/inherited/local or coupled
-pins with stated reasons. Future release/device/personal-cloud gates remain.
+Automatic approval review rejected ES publication while RSS proof was pending.
+That rejected combined command executed nothing. Source is now fully qualified
+and committed; a concrete async user request to push the two ES branches is
+pending (repo-name typo in prompt was corrected in commentary). **No response
+means no approval.** Complete unaffected local work; do not bypass rejection.
+
+Splash `/tmp/rasteratops-rc-delivery-20261002/splash`, master530b334, is a clean
+local six-line AGENTS route only. Automatic approval review separately rejected
+its master push. A concrete async approval request is pending, not answered.
+Product pin7450aa8180ae66684814dd460f31eb502b2abf61 remains unchanged and does
+not need to move for these instruction lines. Do not make this optional push
+hold the build once ES delivery is approved.
 
 ## Immediate next actions
 
-1. Finish integrating/pushing this full ES pin and delivery record using exact
-   new commits, not historical feature merges. Close #310 and #368 from their
-   already-verified source/VM/entrypoint evidence. Keep candidate criteria P3.
-2. Fast-forward build/m7-generic-x64 to the integrated source commit. Recheck
-   host preflight, run the retained freeze script, start the cold build and
-   its actual host watcher. Record exact source/manifest/PID/log/status in
-   live M7 and #383. No build was running at this checkpoint; inspect current
-   receipts before launching another. The owner has authorized this work.
-3. Qualify the exact artifact and run approved P4 review. Do not restart
-   #375/#382. Primary+Fable5.1/xhigh through Facilitator is already authorized.
-   Resolve findings, rebuild/requalify changed bytes, then assess RC readiness.
+1. Check the final documentation commit/status and live M7 body. Distribution
+   source/proof is delivered; #332/#367/#371 are closed. #376 is correctly open
+   for P3. No active build/test/watcher remains. No unattended continuation is
+   claimed while explicit publication approvals are pending.
+2. Respect pending ES/splash approval questions. When ES is approved, normal
+   push both qualified branches, read back remote hashes, then bump recipe to
+   full e6e1e4d0f91e177e182cc05b1cea74991e1cc45b, pkgcheck, commit/integrate/push.
+   #310 can close from delivered source/diagnostic proof; P3 repeats image tests.
+   ES origin is rasteratops/emulationstation. Splash product pin stays unchanged.
+
+3. Advance new build/m7-generic-x64 to final next, recheck preflight, freeze
+   inputs and start the cold engineering build with an actual host watcher.
+   Update milestone from P2 to P3 with exact hashes/PID/log/status, no RC claim.
+4. Qualify exact artifact and approved P4 review. Do not restart #375/#382.
+   Primary+Fable5.1/xhigh through Facilitator is already authorized. Resolve
+   findings, rebuild/requalify changed bytes, then assess RC designation.
 
 ## Cold-build preparation and QA entrypoints
 
@@ -187,7 +194,7 @@ Frozen upstream9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6 (D-WORKFLOW-111).
 Container ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
 is available locally and verified by digest. Global24jobs; WebKit-j4 remains
 per-package. Build as max, not root. Source cache `/workspace/cache/rocknix-sources`.
-Preflight13:56UTC: READY,about40GiB available,8GiB swap unused,1.9TiB disk free.
+Preflight06:46UTC: READY,41GiB available,8GiB swap unused,1.9TiB disk free.
 Recheck before launch. Collect actual consumed sources/download inventory.
 
 Old `/workspace/repos/rocknix.worktrees/generic-x64`, build/generic-x64b2378d9c33,
