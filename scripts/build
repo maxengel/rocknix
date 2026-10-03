@@ -4,6 +4,12 @@
 # Copyright (C) 2009-2016 Stephan Raue (stephan@openelec.tv)
 # Copyright (C) 2018-present Team LibreELEC (https://libreelec.tv)
 
+# Fork build monitoring: nested calls reuse the outer run (#394).
+if [[ "${RASTERATOPS_WATCH_EXEC:-}" != "$0" ]]; then
+  exec ./tools/watch-build --entry -- "$0" "$@"
+fi
+unset RASTERATOPS_WATCH_EXEC
+
 . config/options "${1}"
 
 record_timestamp BUILD_BEGIN

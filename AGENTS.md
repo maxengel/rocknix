@@ -69,6 +69,13 @@ export PROJECT=ROCKNIX DEVICE=RK3588 ARCH=aarch64
 ./scripts/install <pkg> && ./scripts/image mkimage   # needs OS_VERSION/BUILD_DATE exported
 ```
 
+Native image/package entrypoints and Docker build targets automatically use
+`tools/watch-build` and the shared `tools/watch-job` monitor. Each run prints
+its private `.build-runs/<id>/` log, PID, result and status location; nested
+commands reuse it. For an ad-hoc command use `tools/watch-build -- COMMAND`.
+Status recording does not send automatic chat notifications. See
+`device-builds.md` for lifecycle and frozen-checkout handling.
+
 Images land in `target/` (`config/path` sets `TARGET_IMG=$ROOT/target`). Deploy to a
 networked device by `scp`-ing the image tar to `root@<host>:~/.update` and rebooting
 (preserves settings) — and both the copy and the reboot are the owner's yes, see below.

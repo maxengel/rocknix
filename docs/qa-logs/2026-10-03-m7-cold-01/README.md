@@ -43,3 +43,13 @@ filenames in the large inventory. Their values were verified as actual file
 SHA256s, not credentials. Full inventory remains unchanged in the read-only
 artifact store; Git carries the digest/summary. No scanner exemption or
 encoding was used, and the live build manifest was not modified.
+
+## Completion — 2026-10-03 16:33 UTC
+
+All642 tasks and image assembly completed; `build.rc` is0. #393 replaced
+only the false-stall watcher with a run-owned copy; it recorded finished/rc0
+and exited. Watcher lifecycle proof: `../2026-10-03-watch-job/`.
+Both emitted image/update SHA256 checks pass, and immutable custody verifies:
+`/workspace/artifacts/rasteratops-candidates/sha256/83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21`.
+`candidate-custody.log` names the bundle. Actual consumed-source inventory
+and the full P3 VM matrix remain; this is not an RC designation.

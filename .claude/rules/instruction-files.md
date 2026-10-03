@@ -147,6 +147,7 @@ both lists and to this table, or it is invisible.**
 | `frame-diff` | did this build change any walk frame it did not mean to -- the boxes against the last accepted cut, the masks, the claims | `generic-x64-vm-testing.md` |
 | `work-log-index` | the day, week and month table of contents over the work logs, regenerated after every entry | `learning-capture.md` |
 | `watch-job` | is a long job still alive, stalled, finished, or killed — and is the watcher itself alive | `engineering-practices.md` |
+| `watch-build` | automatically arm the shared watcher for native/Docker builds and retain each run's logs, PID and result | `device-builds.md` |
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `vm-upgrade-rehearsal` | boot the previous image in a guest, seed a player's state, update in place, check every piece survived | `upgrade-and-install.md` |

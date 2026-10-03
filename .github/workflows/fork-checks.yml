@@ -37,6 +37,10 @@ jobs:
         run: ./tools/register-check
       - name: the instruction files are what their index says
         run: ./tools/rules-check
+      - name: builds always enter the shared watcher and retain lifecycle evidence
+        run: |
+          python3 docs/qa-logs/2026-10-03-watch-job/test-watch-job.py tools/watch-job
+          python3 docs/qa-logs/2026-10-03-watch-job/test-watch-build.py
       - name: every open acceptance checkbox is agent-verifiable (D-QA-044)
         env:
           GH_TOKEN: ${{ github.token }}

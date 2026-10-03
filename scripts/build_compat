@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
+# Fork build monitoring: nested calls reuse the outer run (#394).
+if [[ "${RASTERATOPS_WATCH_EXEC:-}" != "$0" ]]; then
+  exec ./tools/watch-build --entry -- "$0" "$@"
+fi
+unset RASTERATOPS_WATCH_EXEC
+
 unset _CACHE_PACKAGE_LOCAL _CACHE_PACKAGE_GLOBAL _DEBUG_DEPENDS_LIST _DEBUG_PACKAGE_LIST
 
 . config/options ""

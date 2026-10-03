@@ -1,0 +1,42 @@
+--- pre-commit
+  ok    a clean file: allowed
+  ok    a credential-shaped line: refused
+  ok    the value is redacted: says "[REDACTED]"
+  ok    the refusal: never prints the word
+  ok    the same line under an audit packet (no path is exempt): refused
+  ok    a listed word: refused
+  ok    the refusal names the file and line: says "c.txt:1"
+  ok    the refusal: never prints the word
+  ok    a listed word in another case, on line 2: refused
+  ok    line 2 is named: says "d.txt:2"
+  ok    a credential-shaped line with diff.noprefix set (the scan forces its prefixes): refused
+  ok    a content line beginning ++ does not end the file's scan: refused
+  ok    line 2 is named: says "h.txt:2"
+  ok    a file name git prints in quotes is still scanned: refused
+  ok    a file NAMED like a key, clean inside (the label is not scanned): allowed
+  ok    a credential list that does not compile: refused
+  ok    it says so: says "does not compile"
+  ok    no wordlist at all: refused
+  ok    the wordlist from the environment instead (CI): allowed
+  ok    an index that cannot be read: refused
+--- commit-msg
+  ok    a listed word in the message: refused
+  ok    the refusal: never prints the word
+  ok    a clean message (git drops the # comment): allowed
+  ok    a credential-shaped line in the message: refused
+  ok    a message file that cannot be read (claude G3-E-02 / gpt G3-E-05): refused
+  ok    a message with no wordlist to judge it by: refused
+--- pre-push
+  ok    a listed word in a middle commit, gone at the tip: refused
+  ok    the refusal: never prints the word
+  ok    a listed word in a commit message: refused
+  ok    the message is named: says ":message:1"
+  ok    a credential in a middle commit, gone at the tip: refused
+  ok    the value is redacted: says "[REDACTED]"
+  ok    an older line in a file the range only touches beside (the tip scan): refused
+  ok    a credential in a file git prints in quotes, pushed from a clone with diff.noprefix: refused
+  ok    a clean commit, touching the file named like a key: allowed
+  ok    a credential list that does not compile: refused
+  ok    no wordlist at all: refused
+  ok    a tip this clone does not have: refused
+PASS

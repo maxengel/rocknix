@@ -364,6 +364,32 @@ matches nothing reads as "not rebuilt".
 
 ## Before a build: the machine is memory-bound, not disk-bound
 
+**Build monitoring is automatic (D-WORKFLOW-142, #394).** Normal make device,
+image and package targets, direct `scripts/build_distro`, `scripts/image`,
+`scripts/build_compat`, `scripts/build` and `scripts/install` enter
+`tools/watch-build`. Docker builds enter on the host, before the container;
+the relative run marker crosses the mount, and nested scripts reuse the run.
+Interactive `docker-shell` and non-build helpers keep their normal behavior;
+building from that shell arms a monitor inside that container.
+
+Each top-level run prints its private `.build-runs/<id>/` directory and keeps
+the combined log, runner/command/watcher PIDs, atomic `build.rc`, heartbeat
+and run-owned `watch-job` copy. The runner holds one build lock per worktree,
+refuses to start when the watcher cannot arm, and discovers the current
+worktree's `build.*/.threads/logs` as cold roots appear. Existing commands
+need no extra flag. An ad-hoc build command uses `tools/watch-build -- COMMAND`.
+Never pre-set or copy `RASTERATOPS_BUILD_RUN`/`RASTERATOPS_WATCH_EXEC`: these
+are internal nesting markers, not an opt-out. A stale marker is refused.
+
+The CI lifecycle/routing controls exercise actual entrypoint prefixes and
+Makefile recipes, including a removed-hook failing control. A run started
+from an older frozen checkout keeps that checkout's tooling; attach a current
+run-owned watcher explicitly, as M7 cold01 does, without advancing its source.
+For all runs, status recording and notification remain separate. This harness
+does not deliver automatic chat alerts; no such notification is armed. A
+runner killed outright may leave its command alive: inspect `command.pid`
+before starting a replacement build.
+
 `tools/build-preflight` reports it and `--stop-vms` clears what it can. Run it
 before a cold build.
 

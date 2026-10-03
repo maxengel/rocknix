@@ -229,6 +229,24 @@ watcher by the pid its status file records, never by pattern.
 
 ### Say how the watch fails
 
+For buffered parallel builds, pass `--activity-dir <frozen-build-root>/.threads/logs`
+to `tools/watch-job` (D-WORKFLOW-141, #393). The main log advances when a
+package completes, while a long compilation writes only its package log.
+The status keeps overall progress separate from the freshest package's
+progress, names the observed file, and ignores non-log heartbeat files.
+Use only that job's log directory; another job's writes cannot prove this
+one is moving. `stalled` means no watched log writes, a **suspected** stall;
+a quiet linker can still be busy. Inspect its process before acting.
+
+Run a retained copy of the watcher for long jobs, keep its status PID file,
+and replace it by that exact PID after testing the new copy. Never edit an
+executing shell script. `docs/qa-logs/2026-10-03-watch-job/test-watch-job.py`
+checks buffered output, real inactivity, heartbeat, completion, death,
+invalid observations and detached startup. This improves the record; it
+does not provide the separate notification channel described above. When
+the current harness has no background result-delivery facility, explicitly
+say notification is unarmed; do not promise an automatic message.
+
 A monitor is a guard, so *guards must fail closed* applies to it. State the
 condition under which it stays silent while the thing it watches is dead:
 

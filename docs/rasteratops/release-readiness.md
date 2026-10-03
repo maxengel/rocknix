@@ -9,15 +9,15 @@ The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
 is the binding **current** execution order (D-WORKFLOW-139, #388). This document
 retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
 P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P3: the cold engineering build is running from frozen
-inputs. Update the milestone and affected open issue titles when priorities change; issue numbers are references, not queue positions.
+Current priority is M7.P3: the cold engineering image built successfully from
+frozen inputs and awaits qualification. Update the milestone and affected open issue titles when priorities change; issue numbers are references, not queue positions.
 
 **Verdict: not ready to call a build an RC.** Source/diagnostic preparation
 has completed P1/P2 source gates; exact inputs are integrated and frozen, and
-the cold branded build is running. Artifact qualification and independent
+the cold branded build finished with rc0 at16:33UTC on2026-10-03. Artifact qualification and independent
 review remain.
-No combined Rasteratops artifact exists yet. Prior general VM runs do not
-qualify the new bytes.
+The image/update tar are retained by digest; prior general VM runs do not
+qualify these new bytes.
 
 ## Current execution update — 2026-10-03
 
@@ -35,10 +35,12 @@ and guest menu reselection pass. Process/hook controls and the six armature
 retests pass. Receipts are under `docs/qa-logs/2026-10-03-{proxy-refresh,
 dependencies,launch-memory,led,process,push-hook}/`.
 
-**Current:** the cold engineering build is running in build/m7-generic-x64
-from frozen distribution503e24e10d, with actual host PID/watcher and retained
-input manifest. **Next:** resolve any build failures, retain the exact artifact
-and run P3 qualification. ES feature4f54ec035 / QAe6e1e4d0f and splash's
+**Current:** the cold engineering build completed642/642 tasks and image
+assembly from frozen distribution503e24e10d. The corrected watcher recorded
+rc0. Image/update checksums and immutable candidate-store custody pass.
+**Next:** finish delivering #393/#394 monitoring controls, collect consumed
+source inventory and run P3 qualification. The canonical checkpoint names
+the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
 normal-push/remote-hash receipts. The recipe selects full QA commit
 e6e1e4d0f91e177e182cc05b1cea74991e1cc45b; splash's product pin stays unchanged.

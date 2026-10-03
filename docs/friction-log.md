@@ -108,3 +108,7 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 07:04 UTC -- a historical commit's closing keyword auto-closed #376 when the normal push reached next, despite its explicit unrun image criterion. CI hygiene caught it; reopened with event evidence and added neutral partial-delivery reference guidance. Guard: tools/ceremony-check hygiene; issue: #376.
 
 - 2026-10-03 14:19 UTC -- full source inventory exposed two ordinary patch filenames to the credential-shape heuristic; pre-commit correctly refused its matching shape. Paths and SHA256s verified as source metadata. Full immutable manifest retained with build artifacts; Git records digest/summary, no guard bypass. Guard: pre-commit and manifest hash verification; issue: #383.
+
+- 2026-10-03 16:29 UTC -- the M7 watcher inferred a stall from a quiet aggregate log while WebKit wrote its package log. Add explicit per-job activity logs and lifecycle controls; preserve the live shell until its replacement is verified. Guard: `tools/watch-job --activity-dir`; issue: #393.
+
+- 2026-10-03 16:52 UTC -- a private-log umask in the new runner also reached build children during implementation review. Preserve the caller umask in the child and prove product file/directory modes; guard: `docs/qa-logs/2026-10-03-watch-job/test-watch-build.py`; issue: #394.

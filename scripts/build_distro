@@ -6,6 +6,12 @@
 ### Simple script to build ROCKNX
 ###
 
+# Fork build monitoring: nested calls reuse the outer run (#394).
+if [[ "${RASTERATOPS_WATCH_EXEC:-}" != "$0" ]]; then
+  exec ./tools/watch-build --entry -- "$0" "$@"
+fi
+unset RASTERATOPS_WATCH_EXEC
+
 set -e
 
 scripts/checkdeps

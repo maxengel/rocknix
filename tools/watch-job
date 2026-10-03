@@ -20,15 +20,16 @@
 # older than a couple of intervals, THE WATCHER IS DEAD, whatever it says
 # inside. That is the one thing a subscription cannot tell you.
 #
-# It reports four states, and the last two are the ones that matter:
+# It distinguishes activity, completion, death and observation errors:
 #
-#   running   the log advanced within --stall-min
-#   stalled   the process is alive but the log has not moved -- which is not
+#   running   a watched log advanced within --stall-min
+#   stalled   the process is alive but watched logs have not moved -- which is not
 #             always wrong (a long link step) but is always worth knowing
 #   finished  the rc file exists; its contents are the outcome
 #   died      no process and no rc file: killed outright, wrote no exit code.
 #             This is the case a plain "wait for the rc file" waits through
 #             forever.
+#   error     a required observation or result is invalid; never a green check.
 #
 # Reading it is one command, and a stale mtime is a failed check, not a pass:
 #
@@ -38,24 +39,41 @@
 
 set -u
 LOG=""; RC=""; PID=""; PATTERN='\[[0-9]+/[0-9]+\]'; STALL=15; STATUS=""; DETACH=0; INTERVAL=30
+ACTIVITY_DIR=""; ACTIVITY_ROOT=""
 
 usage() {
   cat <<'EOF'
 usage: tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
                        [--stall-min N] [--status FILE] [--interval N] [--detach]
+                       [--activity-dir DIR]
+                       [--activity-root WORKTREE]
 
 --pid N       The running job's process ID, used to detect a job that died.
 --pattern RE  A regex matching progress lines in the LOG, never a process match.
 --log FILE    The job's output file.
+--activity-dir DIR  Also observe this job's direct *.log files for activity.
+                   For parallel builds use the frozen build root's .threads/logs.
+--activity-root DIR Discover build.*/.threads/logs as roots appear during this run.
+                   For the exclusive top-level build runner; not shared jobs.
 --rc FILE     The result file the job writes when it finishes.
 --status FILE Heartbeat/result output (default: beside the result file).
 --interval N  Seconds between observations (default: 30).
---stall-min N Minutes without log progress before reporting stalled (default: 15).
+--stall-min N Minutes without any watched log writes before suspected stall (default: 15).
 --detach      Keep watching after the launching shell ends; use the job's PID namespace.
+
+Status is a local record, not a notification. A quiet linker can still be busy;
+stalled means inspect the job, never terminate or restart it automatically.
+The watcher PID is retained in FILE.pid beside the status; stop only that PID.
 EOF
 }
 
+die() { echo "watch-job: $*" >&2; exit 2; }
+
 while [ $# -gt 0 ]; do
+  case "$1" in
+    --log|--rc|--pid|--pattern|--stall-min|--status|--interval|--activity-dir|--activity-root)
+      [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value" ;;
+  esac
   case "$1" in
     -h|--help)    usage; exit 0 ;;
     --log)        LOG="$2"; shift 2 ;;
@@ -65,12 +83,39 @@ while [ $# -gt 0 ]; do
     --stall-min)  STALL="$2"; shift 2 ;;
     --status)     STATUS="$2"; shift 2 ;;
     --interval)   INTERVAL="$2"; shift 2 ;;
+    --activity-dir) ACTIVITY_DIR="$2"; shift 2 ;;
+    --activity-root) ACTIVITY_ROOT="$2"; shift 2 ;;
     --detach)     DETACH=1; shift ;;
     *) echo "watch-job: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$LOG" ] && [ -n "$RC" ] || { echo "watch-job: --log and --rc are required" >&2; exit 2; }
 [ -n "$STATUS" ] || STATUS="${RC%.rc}.status"
+[[ "$STALL" =~ ^[0-9]{1,6}$ ]] || die "--stall-min needs a nonnegative integer"
+[[ "$INTERVAL" =~ ^[0-9]{1,6}$ ]] || die "--interval needs a positive integer"
+STALL=$((10#$STALL)); INTERVAL=$((10#$INTERVAL))
+[ "$INTERVAL" -gt 0 ] || die "--interval needs a positive integer"
+[[ -z "$PID" || "$PID" =~ ^[1-9][0-9]*$ ]] || die "--pid needs a positive integer"
+grep -E "$PATTERN" /dev/null >/dev/null 2>&1
+[ $? -le 1 ] || die "invalid --pattern regex"
+[ -z "$ACTIVITY_DIR" ] || [ -d "$ACTIVITY_DIR" ] || die "activity directory does not exist"
+[[ -z "$ACTIVITY_DIR" || -z "$ACTIVITY_ROOT" ]] || die "choose activity-dir or activity-root"
+# Outputs must never overwrite inputs or create their own activity signal.
+status_path=$(readlink -m -- "$STATUS") || die "cannot resolve status path"
+for input in "$LOG" "$RC"; do
+  input_path=$(readlink -m -- "$input") || die "cannot resolve input path"
+  for output in "$status_path" "$status_path.tmp" "$status_path.pid" "$status_path.err"; do
+    [ "$input_path" != "$output" ] || die "status outputs overlap a watched input"
+  done
+done
+if [ -n "$ACTIVITY_DIR" ]; then
+  activity_path=$(readlink -m -- "$ACTIVITY_DIR") || die "cannot resolve activity path"
+  [[ "$status_path" != "$activity_path/"*.log ]] || die "status must be outside activity logs"
+fi
+if [ -n "$ACTIVITY_ROOT" ]; then
+  activity_path=$(readlink -m -- "$ACTIVITY_ROOT") || die "cannot resolve activity root"
+  [[ "$status_path" != "$activity_path/"build.*/.threads/logs/*.log ]] || die "status must be outside activity logs"
+fi
 
 if [ "$DETACH" = 1 ]; then
   # Detached, so a harness reaping its own background tasks does not take
@@ -79,27 +124,95 @@ if [ "$DETACH" = 1 ]; then
   # Its own stderr goes beside the status file, not to /dev/null: on
   # 2026-09-19 a watcher died ten minutes into a run and the only evidence
   # was a stale heartbeat, with nothing to say why.
-  setsid nohup "$0" --log "$LOG" --rc "$RC" ${PID:+--pid "$PID"} \
-      --pattern "$PATTERN" --stall-min "$STALL" --status "$STATUS" \
-      --interval "$INTERVAL" >/dev/null 2>"$STATUS.err" &
-  sleep 2
-  echo "watch-job: detached, status at $STATUS"
-  exit 0
+  args=(--log "$LOG" --rc "$RC" --pattern "$PATTERN" --stall-min "$STALL"
+        --status "$STATUS" --interval "$INTERVAL")
+  [ -z "$PID" ] || args+=(--pid "$PID")
+  [ -z "$ACTIVITY_DIR" ] || args+=(--activity-dir "$ACTIVITY_DIR")
+  [ -z "$ACTIVITY_ROOT" ] || args+=(--activity-root "$ACTIVITY_ROOT")
+  setsid nohup "$0" "${args[@]}" >/dev/null 2>"$STATUS.err" &
+  watcher=$!
+  for ((attempt=0; attempt<50; attempt++)); do
+    if grep -qE "^watcher_pid: $watcher$" "$STATUS" 2>/dev/null; then
+      grep -q '^state:       error$' "$STATUS" && die "detached observation failed; see $STATUS"
+      echo "watch-job: detached pid $watcher, status at $STATUS"
+      exit 0
+    fi
+    kill -0 "$watcher" 2>/dev/null || die "detached watcher exited before its first status; see $STATUS.err"
+    sleep 0.1
+  done
+  kill "$watcher" 2>/dev/null || :
+  die "detached watcher did not write its first status; see $STATUS.err"
 fi
 
 started=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+started_s=$(date +%s)
+printf '%s\n' "$$" > "$STATUS.pid" || die "cannot write watcher pidfile"
+
+# kill -0 alone considers an unreaped zombie alive and cannot notice PID reuse.
+job_identity() {
+  local raw fields
+  [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null || return 1
+  raw=$(cat "/proc/$PID/stat" 2>/dev/null) || return 1
+  read -ra fields <<< "${raw##*) }"
+  [[ ${fields[0]:-Z} != Z && ${fields[0]:-X} != X ]] || return 1
+  printf '%s\n' "${fields[19]:-}"
+}
+identity=$(job_identity) || identity=""
 while :; do
   now_s=$(date +%s)
-  log_age=$([ -f "$LOG" ] && echo $(( now_s - $(stat -c %Y "$LOG") )) || echo -1)
+  observation_error=""; outcome=""
+  log_age=-1; newest=-1; activity=""
+  if [ -f "$LOG" ]; then
+    if newest=$(stat -c %Y -- "$LOG"); then
+      activity="$LOG"; log_age=$((now_s - newest))
+    else
+      newest=-1; observation_error="cannot stat main log"
+    fi
+  fi
+  activity_dirs=()
+  if [ -n "$ACTIVITY_DIR" ]; then activity_dirs+=("$ACTIVITY_DIR"); fi
+  if [ -n "$ACTIVITY_ROOT" ]; then
+    for directory in "$ACTIVITY_ROOT"/build.*/.threads/logs; do
+      [ ! -d "$directory" ] || activity_dirs+=("$directory")
+    done
+  fi
+  for directory in "${activity_dirs[@]}"; do
+    # Capture find's exit status rather than hiding it in process substitution.
+    scan=$(mktemp "${STATUS}.scan.XXXXXX") || die "cannot create activity scan"
+    if find "$directory" -maxdepth 1 -type f -name '*.log' -printf '%T@ %p\0' > "$scan"; then
+      while IFS= read -r -d '' entry; do
+        stamp=${entry%% *}; stamp=${stamp%%.*}
+        if [ "$stamp" -gt "$newest" ]; then
+          newest=$stamp; activity=${entry#* }
+        fi
+      done < "$scan"
+    else
+      observation_error="cannot scan activity logs"
+    fi
+    rm -f -- "$scan"
+  done
+  # A job that never creates output must not stay running forever.
+  if [ "$newest" -ge 0 ]; then activity_age=$((now_s - newest)); else activity_age=$((now_s - started_s)); fi
   progress=$(grep -oE "$PATTERN" "$LOG" 2>/dev/null | tail -1)
-  alive=no
-  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then alive=yes; fi
+  alive=unknown
+  if [ -n "$PID" ]; then
+    alive=no
+    current_identity=$(job_identity) || current_identity=""
+    if [ -n "$identity" ] && [ "$identity" = "$current_identity" ]; then alive=yes; fi
+  fi
 
   if [ -f "$RC" ]; then
-    state=finished
+    outcome=$(cat "$RC")
+    if [[ "$outcome" =~ ^[0-9]{1,3}$ ]] && [ "$((10#$outcome))" -le 255 ]; then
+      state=finished
+    else
+      state=error; observation_error="result file does not contain an exit code (0..255)"
+    fi
   elif [ "$alive" = no ] && [ -n "$PID" ]; then
     state=died
-  elif [ "$log_age" -ge 0 ] && [ "$log_age" -gt $(( STALL * 60 )) ]; then
+  elif [ -n "$observation_error" ]; then
+    state=error
+  elif [ "$activity_age" -gt $(( STALL * 60 )) ]; then
     state=stalled
   else
     state=running
@@ -113,13 +226,20 @@ while :; do
     echo "started:     $started"
     echo "progress:    ${progress:-none matched}"
     echo "log:         $LOG  (last written ${log_age}s ago)"
-    [ -f "$RC" ] && echo "outcome:     rc=$(cat "$RC")"
-    [ "$state" = died ] && echo "outcome:     NO EXIT CODE WRITTEN -- the job was killed, not finished"
-    [ "$state" = stalled ] && echo "note:        alive but the log has not advanced in over ${STALL} min"
+    echo "activity:    ${activity:-no log yet}  (last written ${activity_age}s ago)"
+    [ -z "$ACTIVITY_DIR" ] || echo "activity_dir: $ACTIVITY_DIR"
+    [ -z "$ACTIVITY_ROOT" ] || echo "activity_root: $ACTIVITY_ROOT"
+    [ "$state" = finished ] && echo "outcome:     rc=$outcome"
+    [ "$state" = error ] && echo "outcome:     OBSERVATION ERROR -- $observation_error"
+    [ "$state" = died ] && echo "outcome:     NO EXIT CODE WRITTEN -- job absent, exited or PID reused"
+    [ "$state" = stalled ] && echo "note:        suspected stall: no watched log writes in over ${STALL} min; inspect process before acting"
+    if [ -n "$activity" ] && [ "$activity" != "$LOG" ]; then
+      echo "activity_progress: $(grep -oE "$PATTERN" "$activity" 2>/dev/null | tail -1)"
+    fi
     echo "tail:"
-    tail -2 "$LOG" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | cut -c1-130 | sed 's/^/  /'
-  } > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+    tail -2 "${activity:-$LOG}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | cut -c1-130 | sed 's/^/  /'
+  } > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS" || die "cannot publish status"
 
-  case "$state" in finished|died) exit 0 ;; esac
+  case "$state" in finished|died) exit 0 ;; error) exit 2 ;; esac
   sleep "$INTERVAL"
 done
