@@ -62,6 +62,8 @@ with tempfile.TemporaryDirectory(prefix='watch-job-393-') as temporary:
             except FileNotFoundError:
                 pass
             if data.startswith('state:       ' + state + '\n'):
+                if not args.baseline and state in ('finished', 'died', 'error'):
+                    assert 'terminal result; heartbeat stops here' in data and 'if this is stale' not in data, data
                 return data
             time.sleep(.025)
         raise AssertionError(f'expected {state}: {data}')

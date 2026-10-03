@@ -38,8 +38,8 @@ dependencies,launch-memory,led,process,push-hook}/`.
 **Current:** the cold engineering build completed642/642 tasks and image
 assembly from frozen distribution503e24e10d. The corrected watcher recorded
 rc0. Image/update checksums and immutable candidate-store custody pass.
-**Next:** finish delivering #393/#394 monitoring controls, collect consumed
-source inventory and run P3 qualification. The canonical checkpoint names
+**Next:** collect consumed-source inventory and run P3 qualification.
+#393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
 the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
 normal-push/remote-hash receipts. The recipe selects full QA commit
