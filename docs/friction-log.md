@@ -122,3 +122,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 19:17 UTC -- link-loss QA required exactly two stamp fields, rejecting the established extended failure outcome and accepting malformed two-field codes. Parse the validated timestamp/return prefix and preserve optional outcome text. Guard: docs/qa-logs/2026-10-03-link-stamp/test-stamp-assertion.py; issue: #398.
 
 - 2026-10-03 19:26 UTC -- vm-pair respected isolated state but vm-qa hardcoded the default key; sharing an existing QA key had hidden the inconsistency. Select the pair key from VM_PAIR_DIR, preserve the fallback, and run with a distinct generated identity. Guard: actual distinct-key link run and retained selection controls; issue: #399.
+
+- 2026-10-03 19:40 UTC -- LINK5 deliberately exceeded the product stall window and relied on a narrow fixture skip; a retry reset from100% to0% exposed the unresolved healthy-retry proof. Keep the failure, use an interruptible fixture that drains within the existing bound, and require both retry/content checks. Guard: strict retry verdict controls and WebDAV/S3 VM evidence; issue: #400.

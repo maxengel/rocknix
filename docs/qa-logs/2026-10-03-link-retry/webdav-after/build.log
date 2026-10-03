@@ -1,0 +1,50 @@
+tools/vm-qa: OK
+tools/cloud-round-trip: OK
+tools/cloud-test-backend: OK
+tools/vm-pair: OK
+up: webdav serving /workspace/tmp/rasteratops-m7-link5-webdav-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+up: a (pid 1131458, ssh :10022, serial /tmp/rocknix-qemu-serial.sock, mac 52:54:00:52:4E:58)
+up: b (pid 1131486, ssh :10023, serial /tmp/rocknix-qemu-serial-b.sock, mac 52:54:00:52:4E:59)
+ready: a on 503e24e10d over ssh :10022 (answered after 0s)
+ready: b on 503e24e10d over ssh :10023 (answered after 0s)
+
+=== device reachable and equipped
+    PASS  ssh works
+    PASS  rclone and cloud scripts present
+
+=== point the device at the QA bucket
+    PASS  first remote is 'qa-cloud', which is what the scripts will use
+    scratch tree /storage/cloud-qa (pass --real-roms to use /storage/roms)
+    SAVES_REMOTE /Rasteratops/Saves on the webdav endpoint
+
+=== the link-loss cells: a serial console, a throttled endpoint, one guest
+    PASS  the endpoint is throttled (--bwlimit on the server)
+    PASS  the serial console is this device's; its default route runs over eth0; the endpoint is 10.0.2.2:9010
+    link restored 40s after each cut; a run must end within 90s of it
+
+=== LINK5 -- settings archive upload (backuptool backup; cloud_backup --system-only), link cut mid-upload
+          archive 2026_10_03-154521-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz, 6.0 MiB
+          cut eth0 at guest uptime 15.03 (19:45:25); last line: '* 2026_10_03-154521-GENE…OCKNIX_SETTINGS.tar.gz:100% / 6.012 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 29.5s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 29.5s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (1 of 1 there)
+    PASS  last-settings-backup records the failure (1791056754 69)
+    PASS  settings-backup.uploaded unchanged
+          outputs kept: /tmp/qa-link-LINK5/ on the guest, /workspace/tmp/rasteratops-m7-link5-webdav-01/artifacts/details/LINK5/ here
+    PASS  the cut run: no developer words on the 64 card-visible line(s) or the outcome line ("Couldn't finish: lost the network during the settings backup. Try agai")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network during the settings backup. Try agai")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 1 files match on the receiving side
+    PASS  LINK5: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 1 last-* stamps, 0 capture line(s), 0 manifest; 1 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 2 settings file(s)
+
+=== clean up root@127.0.0.1 port 10022
+    scratch tree and bucket emptied; the device's own remote, paths and settings-backup setting restored
+
+PASSED
+down: a (pid 1131458)
+down: b (pid 1131486)
+down

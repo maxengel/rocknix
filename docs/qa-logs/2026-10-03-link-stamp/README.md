@@ -17,3 +17,9 @@ VM report and terminal recorder. The tool was changed only after the job exited.
 LINK5 has the existing D-CLOUD-128 WebDAV/QEMU buffered retry skip; archive
 content comparison passes. This is not an unqualified seven-case pass. A fresh
 corrected WebDAV run and strict S3 LINK5 evidence remain owed at this receipt.
+
+Corrected actual VM proof: link-03 completed all seven cases at19:34UTC.
+LINK2/3/4 now accept real extended rc69 stamps, bounded interruption and
+whole-byte retries. Six cases pass; LINK5 retry124 is separately #400,
+retained under ../2026-10-03-link-retry/. Do not call the entire report PASS.
+Source is published feature052e974e68 / nextd426f7058c.
