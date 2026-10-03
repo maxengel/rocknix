@@ -70,3 +70,19 @@ assertion controls are in `../2026-10-03-archive-harness/`. Visual walks are
 still active; the full round-trip rerun waits for owned guests/backend to
 be released. The frozen product is unchanged. Fresh read-only resume proof
 verified live PIDs, source and candidate hashes, and the milestone order.
+
+## Default run completed; corrected cloud rerun
+
+Finished18:51UTC:14PASS/one host assertion failure; all16 walks and frame
+comparison pass. `default/` retains the report, failed assertion and terminal
+recorder result. `custody-after-default.log` verifies the same immutable bytes.
+The full corrected WebDAV round-trip passed81s at18:54UTC; evidence is
+`../2026-10-03-archive-harness/rerun/`. Thus all15 default suites have passing
+evidence across the original and corrected run, not a rewritten original
+report. Both terminal results were announced proactively in chat.
+
+Read-only identity checks found a separate missing-policy installation gate
+(#397). See `../2026-10-03-image-policy/`; a replacement image remains owed.
+The RC2 upgrade rehearsal started18:56:05 under the shared watcher and active
+waiter71273, owned state `/workspace/tmp/rasteratops-m7-upgrade-01/`. Its
+activity log is `/workspace/artifacts/rocknix-images/qa-503e24e10d-upgrade-from-69e6039f8f-20261003-1856/rehearsal.log`.

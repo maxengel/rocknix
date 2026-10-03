@@ -15,5 +15,7 @@ are covered. The reader fixture still uses the current display suffix to
 exercise both supported reader identities.
 
 Run `python3 docs/qa-logs/2026-10-03-archive-harness/test-archive-name.py
-tools/cloud-round-trip` (one command). Full same-image VM rerun remains
-pending until the active visual suite releases its guests and endpoint.
+tools/cloud-round-trip` (one command). Full same-image VM rerun passed in81s at18:54UTC. `rerun/` retains
+its report, complete assertions, harness hashes and terminal status. Archive
+integrity, writer compatibility and installed/pre-label readers all pass.
+The first failed run is preserved in `../2026-10-03-m7-qa-01/default/`.

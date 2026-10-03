@@ -38,14 +38,20 @@ dependencies,launch-memory,led,process,push-hook}/`.
 **Current:** the cold engineering build completed642/642 tasks and image
 assembly from frozen distribution503e24e10d. The corrected watcher recorded
 rc0. Image/update checksums and immutable candidate-store custody pass.
-**Current qualification:** the first clean-install/default WebDAV VM suite is
-running from the immutable candidate. Consumed-source inventory is retained
-with no checksum/identity errors; see `docs/qa-logs/2026-10-03-m7-qa-01/`.
-**Next:** consume its result and rerun the corrected archive assertion
-(#396: writer intentionally keeps ROCKNIX for old-reader compatibility),
-then RC2 upgrade and the rest of P3. Twelve suites pass; visual walks remain
-active at18:42UTC. The failure and correction are retained separately. Shared recorder and active waiter are armed under #395; off-session
-destination selection and delivery proof remain (D-WORKFLOW-143).
+**Current qualification:** all15 default suites now have passing evidence
+on the unchanged candidate:14 passed in the first run; #396 corrected the
+host archive-name assertion and the complete round-trip rerun passed81s.
+All16 visual walks and frame comparison pass. Source/candidate custody was
+verified before and after the default run. RC2 upgrade rehearsal is active
+since18:56UTC. Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
+`docs/qa-logs/2026-10-03-archive-harness/rerun/`.
+**New image gate #397:** SYSTEM lacks the approved branding licence and
+trademark policy. Image-assembly correction passes byte/mode/failure staging
+controls; a replacement immutable image and clean/upgrade readback are owed.
+**Next:** consume RC2 upgrade, complete remaining P3 tests, then assemble
+and qualify the replacement with all observed fixes. Shared recorder and
+active waiter delivered failure and success without a status request; no
+disconnected alert is configured (#395, D-WORKFLOW-143).
 #393/#394 monitoring controls are delivered and enforced by fork CI. The canonical checkpoint names
 the exact retained bundle. ES feature4f54ec035 / QAe6e1e4d0f and splash's
 instruction-only530b334 are published after explicit owner approval, with
