@@ -1,0 +1,32 @@
+This device stores:
+  saves    qa:/ROCKNIX/Saves
+  backups  qa:/ROCKNIX/Backups
+
+The current layout is:
+  saves    qa:/Rasteratops/Saves
+  backups  qa:/Rasteratops/Backups
+
+Another device has already moved to qa:/Rasteratops: this one's folders merge into it, the newer copy of each file kept and the other set aside.
+Would move, server-side, leaving anything else where it is:
+  qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves
+
+Now using /Rasteratops/Backups for your settings backups.
+>>> unit SAVES|1|1
+Merging saves into qa:/Rasteratops/Saves: the newer copy of each file is kept, the other set aside under /Rasteratops/Saves-replaced/2026_10_03-000451-move.
+Copying saves...
+>>> doing copy
+Transferred:   	          9 B / 9 B, 100%, 0 B/s, ETA -
+Checks:                 0 / 0, -, Listed 3
+Transferred:            1 / 1, 100%
+Elapsed time:         0.0s
+Verifying saves...
+>>> doing verify
+Now using /Rasteratops/Saves for your saves.
+Removing the old saves folder...
+>>> doing remove
+Nothing is stored at qa:/ROCKNIX/Content, so only the setting changes.
+Now using /Rasteratops/Content for your ROMs, BIOS, and game content.
+Content is now at qa:/Rasteratops/Content.
+
+Done. Saves are at qa:/Rasteratops/Saves, backups at qa:/Rasteratops/Backups.
+Old folders were left in place if anything else was in them.

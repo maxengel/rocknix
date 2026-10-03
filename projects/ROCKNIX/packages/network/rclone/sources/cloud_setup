@@ -792,11 +792,14 @@ case "$1" in
         # Not beside a folder this project once shipped as its default: a
         # device that joined one marks nothing, and a layout=2 marker at
         # /ROCKNIX would say a thing about that cloud that is not so.
-        if [ -x "${layout_tool}" ] && "${layout_tool}" --superseded 2>/dev/null | grep -qFx -- "${SAVES%/}"; then
-            :
-        elif ! printf 'layout=2\n' | rclone rcat "${REMOTE}${SAVES%/*}/.layout" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null; then
-            log_message "Seeding: the layout marker could not be written at ${SAVES%/*}/.layout"
-        fi
+        # The same version-aware writer owns publication for migration and
+        # seeding. Custom and earlier layouts publish no current marker.
+        "${layout_tool}" --write-marker; marker_rc=$?
+        case "${marker_rc}" in
+            0|3) ;;
+            *) log_message "Seeding: layout marker publication failed (${marker_rc})"
+               exit "${marker_rc}" ;;
+        esac
 
         seed_note() {
             local dir="$1" listing tmp; shift

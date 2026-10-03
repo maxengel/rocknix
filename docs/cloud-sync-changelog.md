@@ -21,6 +21,28 @@ document is asking for help with.
 ---
 
 
+## Keep newer settings during recovery (2026-10-03)
+
+- **A newer settings write keeps its recovery copy.** ES rechecks the selected
+  settings under the shared lock before recording them; a recovery that could
+  not acquire the lock records nothing (#320). Both deterministic race controls
+  failed before the fix and pass after it; the10-case suite has119 passing
+  assertions. Candidate VM recovery qualification remains required.
+
+## Retry interrupted cloud moves (2026-10-03)
+
+Source implementation under #356/#365; host production-script controls and ES
+compile evidence are retained. Candidate VM upgrade, provider and frame checks
+remain required.
+
+- **An interrupted move keeps its original paths for retry.** The local step1
+  record survives pointer changes; copying, deletion and final marker failures
+  retain a recoverable state, and the folder step offers `TRY AGAIN · NOT NOW`.
+- **Unknown layout markers stop the folder transition.** Malformed or newer
+  versions cannot authorize a merge, pointer change or setup marker overwrite.
+- **Partial completion is reported accurately.** A failed marker upload no
+  longer says the move completed; the page acknowledges files already moved.
+
 ## Rasteratops identity and manual updates (2026-10-02)
 
 Source implementation under #337/#383. The cold image, upgrade rehearsal,

@@ -72,3 +72,11 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-02 22:42 UTC -- a handoff command copied from the ES CMake target could not run because host CMake is absent; even in a CMake environment it needs explicit RapidJSON headers. The resume now gives the equivalent g++ command, compiled and exercised against the existing8-case suite. Guard: docs/qa-logs/2026-10-02-readiness/handoff-proof.md and retained compile/baseline receipts; issue: #368.
 
 - 2026-10-02 23:08 UTC -- the current release route lived in a local readiness document while the milestone had no ordered queue, and three skills pointed to a missing naming rule. Restored the rule, made milestone updates a same-session requirement, and verified the live body plus34 open titles while preserving closed titles. Guard: .claude/rules/milestone-phase-naming.md and adoption readback receipts; issue: #388.
+
+- 2026-10-03 00:20 UTC -- delivery skills linked to absent foreign workflow rules, and resume ended with a mandatory menu despite an existing continuation request. Repointed local law, preserved the safe integration strategy and existing authorization, and made the live milestone the queue. Guard: .claude/skills/session-resume/SKILL.md and local skill-reference inspection; issue: #389.
+
+- 2026-10-03 00:20 UTC -- migration retries lost their source paths once earlier tier pointers advanced; failed marker publication also returned success. New production-script controls retain before/after bytes and test copy/delete interruptions plus a separate follower. Guard: tools/rasteratops-cloud-layout-test T23/T26; issue: #356.
+
+- 2026-10-03 00:37 UTC -- strict marker reads exposed test doubles that returned successful empty bytes for a missing file. The full suite failed44 checks (including one real missing storage-failure reason); fixing marker cat/rcat behavior, resets and that reason restored1,367 PASS plus93 focused cases. Guard: tools/last-good-scripts-test C2/LY and tools/rasteratops-cloud-layout-test; issue: #390.
+
+- 2026-10-03 00:43 UTC -- pre-commit rejected a synthetic token-shaped literal in the new retry fixture. Rebuilt that field at runtime with an angle-bracket placeholder and reran the9 retry controls. No real credential was involved. Guard: .githooks/pre-commit; issue: #356.

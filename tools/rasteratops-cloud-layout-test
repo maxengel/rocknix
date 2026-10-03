@@ -189,14 +189,16 @@ def archive_selection(f, kind, branded=False):
 def state_case(f, saves, state, files=(), dirs=(), keep=''):
     backups = '/GAMES/backup' if saves == '/GAMES' else saves.rsplit('/',1)[0]+'/Backups'
     f.conf(saves, backups, keep=keep)
-    for name in files: f.file(name)
+    for name in files: f.file(name, 'layout=2\n' if name.endswith('/.layout') else 'sentinel\n')
     for name in dirs: f.directory(name)
     before = f.pointers()
     r = f.run('cloud_migrate_layout', '--state')
     facts = dict(line.split('=',1) for line in r.stdout.splitlines() if '=' in line)
     require(r.returncode == 0 and facts.get('STATE') == state, f'expected {state}: rc={r.returncode}, {r.stdout}')
     require(f.pointers() == before, 'read-only state changed pointers')
-    for name in files: require((f.path/'cloud'/name.lstrip('/')).read_text() == 'sentinel\n', 'state changed cloud bytes')
+    for name in files:
+        expected = 'layout=2\n' if name.endswith('/.layout') else 'sentinel\n'
+        require((f.path/'cloud'/name.lstrip('/')).read_text() == expected, 'state changed cloud bytes')
 
 
 def settle_failure(f, rc):
@@ -322,6 +324,76 @@ def collision(f):
     # Record partially advanced pointers for the recovery proof, rather than assuming atomic migration.
 
 
+def cloud_hashes(f):
+    root = f.path/'cloud'
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(root.rglob('*')) if p.is_file()}
+
+
+def marker_refusal(f, marker, mode):
+    f.conf(OLD+'/Saves', OLD+'/Backups', OLD+'/Content')
+    f.file(NEW+'/.layout', marker)
+    f.file(NEW+'/Saves/gb/Fleet.srm', 'fleet progress\n')
+    if mode == '--apply':
+        f.file(OLD+'/Saves/gb/A.srm')
+    before = cloud_hashes(f), f.pointers()
+    script, arg = ('cloud_setup', '--seed-folders') if mode == 'seed' else ('cloud_migrate_layout', mode)
+    r = f.run(script, arg)
+    require((cloud_hashes(f), f.pointers()) == before,
+            f'unsupported marker {marker!r} changed bytes/pointers through {mode}: rc={r.returncode}')
+    require('Done.' not in r.stdout, 'unsupported marker reported completion')
+
+
+def migration_retry(f, stage, operation='copy'):
+    f.conf(OLD+'/Saves', OLD+'/Backups', OLD+'/Content')
+    payloads = {'Backups/QA/settings.tar.gz': 'settings bytes\n',
+                'Saves/gb/A.srm': 'save bytes\n',
+                'Saves-replaced/gb/A.srm': 'previous progress\n',
+                'Content/ROMs/gb/A.gb': 'game bytes\n'}
+    for name, data in payloads.items():
+        f.file(OLD+'/'+name, data)
+    pattern = r'^rcat qa:/Rasteratops/\.layout ' if stage == 'marker' else (
+        r'^'+operation+r' qa:/ROCKNIX/'+re.escape(stage)+r'/? ')
+    f.fault(pattern)
+    first = f.run('cloud_migrate_layout', '--apply')
+    require((f.path/'ctl/fault-fired').exists(), f'{stage} fault never reached production call')
+    require(first.returncode != 0, f'{stage} failure reported success: {first.stdout[-400:]}')
+    require(not (f.path/'cloud/Rasteratops/.layout').exists(), 'incomplete migration published marker')
+    for name, data in payloads.items():
+        copies = [f.path/'cloud'/root/name for root in ['ROCKNIX', 'Rasteratops']]
+        require(any(p.exists() and p.read_text()==data for p in copies), f'{stage} lost {name} before retry')
+    pending = f.run('cloud_migrate_layout', '--needs-step')
+    state = f.run('cloud_scan', '--folder')
+    require(pending.returncode==0 and state.returncode==0 and
+            'STATE=migration-pending' in (f.path/'storage/.cache/cloud_sync/scan/state').read_text(),
+            f'{stage} interrupted move is not offered for retry')
+    (f.path/'ctl/faults').unlink()
+    # An OAuth refresh can rewrite this field without changing the cloud.
+    with (f.path/'storage/.config/rclone/rclone.conf').open('a') as config:
+        refreshed = {'access' + '_token': '<synthetic-refreshed>'}
+        config.write('token = ' + json.dumps(refreshed) + '\n')
+    second = f.run('cloud_migrate_layout', '--apply')
+    require(second.returncode in (0,3), f'{stage} retry failed: {second.stdout[-500:]}')
+    require((f.path/'cloud/Rasteratops/.layout').is_file() and
+            (f.path/'cloud/Rasteratops/.layout').read_text()=='layout=2\n', f'{stage} retry did not commit marker')
+    for name, data in payloads.items():
+        p = f.path/'cloud/Rasteratops'/name
+        require(p.is_file() and p.read_text()==data, f'{stage} retry abandoned {name}')
+        require(not (f.path/'cloud/ROCKNIX'/name).exists(), f'{stage} retry left duplicate {name}')
+    before = cloud_hashes(f), f.pointers()
+    again = f.run('cloud_migrate_layout', '--apply')
+    require(again.returncode in (0,3) and (cloud_hashes(f), f.pointers())==before,
+            f'{stage} repeated completed migration changed data')
+    # A separate device has only its old pointers, none of the mover's local state.
+    shutil.rmtree(f.path/'storage/.cache/cloud_sync')
+    (f.path/'storage/.cache/cloud_sync').mkdir()
+    f.conf(OLD+'/Saves', OLD+'/Backups', OLD+'/Content')
+    follower = f.run('cloud_migrate_layout', '--follow')
+    require(follower.returncode==0 and f.pointers()['SAVES_REMOTE']==NEW+'/Saves',
+            f'{stage} second device could not follow committed layout')
+    require(cloud_hashes(f)==before[0], 'following the completed migration changed cloud data')
+
+
 def restricted(f):
     f.file(NEW+'/Saves/gb/A.srm')
     f.fault(r'^lsf .*qa: --')
@@ -406,6 +478,15 @@ def main():
         cases.append((f'T20-{mode[2:]}-custom',lambda f,m=mode:backup_tier(f,m,custom=True)))
     cases += [('T20-apply-other-source-default',apply_other_source),
               ('T20-apply-other-source-custom',lambda f:apply_other_source(f,True))]
+    for label, marker in [('malformed','layout=banana\n'), ('future','layout=999\n'),
+                          ('trailing','layout=2\nextra=unrecognized\n')]:
+        for mode in ['--apply','--follow','--settle','seed']:
+            cases.append((f'T26-marker-{label}-{mode.lstrip("-")}',
+                          lambda f,m=marker,a=mode:marker_refusal(f,m,a)))
+    for stage in ['Backups','Saves','Saves-replaced','Content','marker']:
+        cases.append((f'T23-retry-{stage}',lambda f,s=stage:migration_retry(f,s)))
+    for stage in ['Backups','Saves','Saves-replaced','Content']:
+        cases.append((f'T23-retry-delete-{stage}',lambda f,s=stage:migration_retry(f,s,'delete')))
     for mode in ['--join','--follow','--settle','--apply']:
         for choice,value in [('missing',None),('root',''),('derived',OLD+'/Content'),('custom','/Mine/ROMs')]:
             cases.append((f'T21-{mode[2:]}-{choice}',lambda f,m=mode,c=value:content_choice(f,m,c)))
