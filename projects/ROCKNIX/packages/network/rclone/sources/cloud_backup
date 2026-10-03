@@ -812,7 +812,10 @@ bucket_dir_listed() {
     name="${path##*/}"
     [ -n "${name}" ] || return 0
     parent="${path%/*}"
-    listing=$(rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); BUCKET_READ_RC=$?
+    # This is a directory query. The trailing slash avoids WebDAV's extra
+    # file-type probe before listing, while retaining the same three-way
+    # presence result (#364); no absence result is cached between runs.
+    listing=$(rclone lsf --dirs-only "${REMOTENAME}${parent%/}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); BUCKET_READ_RC=$?
     [ "${BUCKET_READ_RC}" -eq 0 ] || return 2
     printf '%s\n' "${listing}" | grep -qxF -- "${name}/"
 }

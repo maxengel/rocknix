@@ -1,0 +1,61 @@
+[
+  {
+    "identity": "OS_NAME=\"ROCKNIX\"",
+    "recognized": true,
+    "detected_canonical": true,
+    "credentials_correct": true,
+    "explicit_override_correct": true,
+    "expected": true,
+    "passed": true
+  },
+  {
+    "identity": "OS_NAME=\"RASTERATOPS\"",
+    "recognized": false,
+    "detected_canonical": false,
+    "credentials_correct": false,
+    "explicit_override_correct": true,
+    "expected": true,
+    "passed": false
+  },
+  {
+    "identity": "OS_NAME=\"OTHER\"",
+    "recognized": false,
+    "detected_canonical": false,
+    "credentials_correct": false,
+    "explicit_override_correct": true,
+    "expected": false,
+    "passed": true
+  },
+  {
+    "identity": "OS_NAME=\"ROCKNIX_REMIX\"",
+    "recognized": false,
+    "detected_canonical": false,
+    "credentials_correct": false,
+    "explicit_override_correct": true,
+    "expected": false,
+    "passed": true
+  },
+  {
+    "identity": "# OS_NAME=\"ROCKNIX\"",
+    "recognized": true,
+    "detected_canonical": true,
+    "credentials_correct": true,
+    "explicit_override_correct": true,
+    "expected": false,
+    "passed": false
+  },
+  {
+    "identity": "PREVIOUS_OS_NAME=\"ROCKNIX\"",
+    "recognized": true,
+    "detected_canonical": true,
+    "credentials_correct": true,
+    "explicit_override_correct": true,
+    "expected": false,
+    "passed": false
+  },
+  {
+    "identity": "missing file",
+    "passed": true
+  }
+]
+PASS negative control: old code fails Rasteratops recognition

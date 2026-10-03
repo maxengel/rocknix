@@ -12,7 +12,9 @@ their archive through follow and settle; selected pointers/filenames, cloud
 hashes and restored sentinels pass. The endpoint is synthetic WebDAV. Guest,
 endpoint and watcher stopped with child/outer/tool rc0 at22:07:36UTC.
 
-This is partial issue evidence: setup and UI selection, current/legacy/healed/
-foreign/flat selection matrix, local retention/revert, explicit content-root
-and S3 failed-listing proofs remain. Full numbered guest logs stay at the
-absolute hashed paths; no private configuration is copied into this receipt.
+Follow-up receipts now qualify setup and archive selection (`extended/`),
+all four real explicit-root transitions and working settings-row selection
+(`root-transitions/`), plus local pre-restore/revert/retention
+(`local-recovery/`). The S3 failed-parent-listing proof is in the sibling
+`2026-10-03-s3-parent-listing/`. Numbered raw guest logs remain at their
+absolute hashed paths; no private configuration is copied into receipts.

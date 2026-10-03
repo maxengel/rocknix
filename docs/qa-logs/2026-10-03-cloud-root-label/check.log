@@ -1,0 +1,35 @@
+[
+  {
+    "version": "before",
+    "value": "",
+    "rc": 0,
+    "output": "Now using  for your ROMs, BIOS, and game content.\n",
+    "expected_sentence": false,
+    "stored_value_preserved": true
+  },
+  {
+    "version": "before",
+    "value": "/Mine/ROMs",
+    "rc": 0,
+    "output": "Now using /Mine/ROMs for your ROMs, BIOS, and game content.\n",
+    "expected_sentence": true,
+    "stored_value_preserved": true
+  },
+  {
+    "version": "after",
+    "value": "",
+    "rc": 0,
+    "output": "Now using the root of your cloud for your ROMs, BIOS, and game content.\n",
+    "expected_sentence": true,
+    "stored_value_preserved": true
+  },
+  {
+    "version": "after",
+    "value": "/Mine/ROMs",
+    "rc": 0,
+    "output": "Now using /Mine/ROMs for your ROMs, BIOS, and game content.\n",
+    "expected_sentence": true,
+    "stored_value_preserved": true
+  }
+]
+PASS old root label fails; fixed root/named-folder sentences and exact stored values pass

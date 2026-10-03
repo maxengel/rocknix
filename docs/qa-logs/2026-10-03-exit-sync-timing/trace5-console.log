@@ -1,0 +1,34 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/m7-generic-x64/.build-runs/20261003T225237Z-3965bd6e
+up: webdav serving /workspace/tmp/rasteratops-m7-archives-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+[W][22:52:38.315760] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][22:52:38.315786] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+TRACE legacy {"bytes": 10823, "lines": 182, "http_mentions": 28, "requests": ["PROPFIND /ROCKNIX HTTP/1.1", "PROPFIND /ROCKNIX/ HTTP/1.1", "PROPFIND /ROCKNIX/Saves-replaced/2026_10_03-185258 HTTP/1.1", "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1", "MKCOL /ROCKNIX/Saves/nes/ HTTP/1.1", "PUT /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1", "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1"]}
+PASS legacy actual HTTP requests retained without headers
+TRACE current {"bytes": 8074, "lines": 135, "http_mentions": 20, "requests": ["PROPFIND /Rasteratops/Saves-replaced/2026_10_03-185259 HTTP/1.1", "PROPFIND /Rasteratops/Saves/nes/Bench.srm HTTP/1.1", "MKCOL /Rasteratops/Saves/nes/ HTTP/1.1", "PUT /Rasteratops/Saves/nes/Bench.srm HTTP/1.1", "PROPFIND /Rasteratops/Saves/nes/Bench.srm HTTP/1.1"]}
+PASS current actual HTTP requests retained without headers
+{
+  "legacy": [
+    "PROPFIND /ROCKNIX HTTP/1.1",
+    "PROPFIND /ROCKNIX/ HTTP/1.1",
+    "PROPFIND /ROCKNIX/Saves-replaced/2026_10_03-185258 HTTP/1.1",
+    "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1",
+    "MKCOL /ROCKNIX/Saves/nes/ HTTP/1.1",
+    "PUT /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1",
+    "PROPFIND /ROCKNIX/Saves/nes/Bench.srm HTTP/1.1"
+  ],
+  "current": [
+    "PROPFIND /Rasteratops/Saves-replaced/2026_10_03-185259 HTTP/1.1",
+    "PROPFIND /Rasteratops/Saves/nes/Bench.srm HTTP/1.1",
+    "MKCOL /Rasteratops/Saves/nes/ HTTP/1.1",
+    "PUT /Rasteratops/Saves/nes/Bench.srm HTTP/1.1",
+    "PROPFIND /Rasteratops/Saves/nes/Bench.srm HTTP/1.1"
+  ]
+}
+Parent listing ms: 35, 31, 30, 32, 32
+GOMAXPROCS=1 ms: 39, 34, 36, 33, 31
+GOMAXPROCS=2 ms: 35, 35, 33, 33, 34
+Directory slash ms: 23, 22, 22, 22, 23
+PASS separate exit-sync HTTP trace
+down

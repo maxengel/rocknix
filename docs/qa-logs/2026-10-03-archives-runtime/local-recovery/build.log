@@ -1,0 +1,30 @@
+up: webdav serving /workspace/tmp/rasteratops-m7-archives-01/cloud/data at http://127.0.0.1:9010 (guest: http://10.0.2.2:9010)
+[W][22:35:25.141123] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][22:35:25.141156] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~21s
+PASS exact replacement BUILD_ID
+PASS ROCKNIX failed extraction reports truthful reverted outcome
+PASS ROCKNIX injected failure reached actual extraction and changed sentinel before revert
+PASS ROCKNIX automatic revert restores exact previous bytes
+PASS ROCKNIX recovery preserves target archive
+PASS ROCKNIX active snapshot survives newer-dated mixed history
+PASS ROCKNIX retained snapshot contains recoverable original sentinel
+PASS ROCKNIX trim keeps newest three histories plus protected active snapshot
+PASS ROCKNIX clean retry restores selected compatible archive
+PASS ROCKNIX ordinary backup enforces three histories by filename across both suffixes
+PASS ROCKNIX new writer retains backward-compatible name
+PASS ROCKNIX final production archive lists back exact sentinel
+PASS RASTERATOPS failed extraction reports truthful reverted outcome
+PASS RASTERATOPS injected failure reached actual extraction and changed sentinel before revert
+PASS RASTERATOPS automatic revert restores exact previous bytes
+PASS RASTERATOPS recovery preserves target archive
+PASS RASTERATOPS active snapshot survives newer-dated mixed history
+PASS RASTERATOPS retained snapshot contains recoverable original sentinel
+PASS RASTERATOPS trim keeps newest three histories plus protected active snapshot
+PASS RASTERATOPS clean retry restores selected compatible archive
+PASS RASTERATOPS ordinary backup enforces three histories by filename across both suffixes
+PASS RASTERATOPS new writer retains backward-compatible name
+PASS RASTERATOPS final production archive lists back exact sentinel
+PASS installed local writer, partial extraction, automatic revert, clean retry and mixed-name retention
+PASS local recovery qualification
+down

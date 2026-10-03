@@ -4,12 +4,13 @@
 PKG_NAME="raofflineproxy"
 # Current upstream main at2026-10-03; D-WORKFLOW-138/#361 selects the
 # refresh while retaining whole-library preparation and offline state.
-# The14 rebased patches preserve the fork's service, recovery and image
+# The15 patches preserve the fork's service, recovery and image
 # behavior. Upstream now owns connection reuse and subset award mapping;
 # duplicate patches014/017 are retired. The explicit OS scanner opts out
 # of the100-game budget window but retains locks, request pacing and429
 # pauses, and never counts queued work as ready. See docs/rasteratops/
 # raofflineproxy-refresh.md for dispositions and exact host/VM boundaries.
+# Patch018 recognizes Rasteratops without moving ROCKNIX account/cache paths (#408).
 # Coupled rcheevos/libchdr pins remain those in this parent (D-RA-029/037).
 PKG_VERSION="5866cd9ba784c13771a99c52dd6b6f2acc546842"
 PKG_SHA256="1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e"
