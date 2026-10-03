@@ -1,0 +1,55 @@
+19:52:11 === cloud-epic on guest d, BUILD_ID="503e24e10dde6a59aa6c631f789b88b89f8e92e1"
+232
+19:52:12 == setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it
+remote: qa-cloud:
+19:52:13   cloud: ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Content/BIOS/disksys.rom ROCKNIX/Content/ROMs/nes/Probe.nes ROCKNIX/Saves-replaced/nes/Probe.srm.1 ROCKNIX/Saves/nes/Probe.srm
+19:52:14   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+label=GENERIC-X64
+19:52:41   picks reset: content=0 saves=1
+19:53:01 == A: RESTORE FROM THE CLOUD opens on the scan page; an earlier /ROCKNIX with saves gets the move dialog; MOVE runs the move page
+dismiss-dialogs: 2 press(es) moved the screen, back on the carousel
+changed after 0.1s (`key ret`, line 3)
+settle: still after 1.7s
+changed after 0.1s (`key x`, line 6)
+settle: still after 1.3s
+changed after 0.1s (`key up`, line 9)
+changed after 0.1s (`key up`, line 11)
+changed after 0.1s (`key up`, line 13)
+settle: still after 1.3s
+changed after 0.0s (`key x`, line 16)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/01-A-hub.png
+changed after 0.1s (`key down`, line 20)
+changed after 0.1s (`key x`, line 22)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/02-A-scan-0.png
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/03-A-scan-1.png
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/04-A-after-scan.png
+19:53:30 PASS walk epic-A.steps
+changed after 0.1s (`key x`, line 1)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/01-A-move-running.png
+settle: still after 4.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/02-A-move-done.png
+changed after 0.1s (`key x`, line 7)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/03-A-rescan.png
+settle: still after 4.7s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/04-A-options-after-move.png
+dismiss-dialogs: 5 press(es) moved the screen, back on the carousel
+19:53:53 PASS walk epic-A2.steps
+19:53:53   cloud after the move: Rasteratops/.layout Rasteratops/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz Rasteratops/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz Rasteratops/Content/BIOS/disksys.rom Rasteratops/Content/ROMs/nes/Probe.nes Rasteratops/Saves-replaced/nes/Probe.srm.1 Rasteratops/Saves/nes/Probe.srm
+19:53:53   marker: layout=2
+19:53:53   guest conf: SAVES_REMOTE="/Rasteratops/Saves" SETTINGS_REMOTE="/Rasteratops/Backups" CONTENT_REMOTE="/Rasteratops/Content" LAYOUT_KEEP=""
+19:53:53 PASS A: the four folders of ours are under /Rasteratops after MOVE (saves, settings backup, content, the set-aside)
+19:53:53 PASS A: nothing of ours remains under /ROCKNIX
+19:53:53 PASS A: the layout marker is written
+19:53:53 PASS A: the guest now points at /Rasteratops/Saves
+2026-10-03T15:53:26-04:00 GENERIC-X64-474c cloud_scan[9361]: scan: done (2 archives, superseded-with-files, content ok)
+2026-10-03T15:53:32-04:00 GENERIC-X64-474c cloud_migrate_layout[9722]: migration step=1 from=1 to=2 stage=begin
+2026-10-03T15:53:33-04:00 GENERIC-X64-474c cloud_migrate_layout[9874]: migration step=1 from=1 to=2 stage=backups
+2026-10-03T15:53:33-04:00 GENERIC-X64-474c cloud_migrate_layout[9972]: migration step=1 from=1 to=2 stage=saves
+2026-10-03T15:53:34-04:00 GENERIC-X64-474c cloud_migrate_layout[10060]: migration step=1 from=1 to=2 stage=discarded
+2026-10-03T15:53:34-04:00 GENERIC-X64-474c cloud_migrate_layout[10189]: migration step=1 from=1 to=2 stage=content
+2026-10-03T15:53:35-04:00 GENERIC-X64-474c cloud_migrate_layout[10248]: migration step=1 from=1 to=2 stage=complete
+2026-10-03T15:53:41-04:00 GENERIC-X64-474c cloud_scan[11610]: scan: done (2 archives, current, content ok)
+19:53:53   frames: 0 under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames (epic-*.png), plus /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/A/frames/E-boot/
+19:53:53 done: 6 PASS, 0 FAIL

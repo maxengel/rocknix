@@ -1,0 +1,29 @@
+signin-memory - what the cloud sign-in window costs in memory on a QA guest:
+the peak resident size of the window and WebKit's processes while a page
+loads, and the guest's free memory before and after (fork #228,
+D-WORKFLOW-038: the number the webkitgtk bump is decided on).
+
+  tools/signin-memory <ssh-port> [--url URL] [--seconds N] [--key PATH] [--json]
+
+Over ssh to root@127.0.0.1:<port> (the vm-pair key by default): reads the
+image's webkitgtk version from /usr/lib, opens /usr/bin/cloud-signin-window
+on the guest's sway session the way cloud_oauth does (XDG_RUNTIME_DIR and
+WAYLAND_DISPLAY from the running session, GDK_BACKEND=wayland), samples
+VmRSS and VmHWM of cloud-signin-window, WebKitWebProcess and
+WebKitNetworkProcess once a second for N seconds (default 30), then closes
+the window and reports. The URL defaults to a provider's authorize page
+with a made-up client id: it renders a real sign-in form and signs nobody
+in, and it touches no account -- the page is the load, not the login.
+
+Two runs, one per image, are two rows in docs/vm-qa-log.md; the tool
+prints the row's cells. A guest that shows no wayland session, a window
+that never spawns a web process, or a page that never finishes loading (the
+window's own "load finished" line) is a FAIL, not an empty measurement.
+
+The page is the load. Until 2026-09-25 the default was Dropbox's authorize
+page, and on a QA guest that load fails inside WebKit ("WebKit encountered
+an internal error", right after libsoup's HTTP/2 warning) under 2.52.6 and
+2.54 alike, so the window sat on "Opening the sign-in page..." and the
+246 MB baseline of #228 measured a failed load; frames showed it. The
+default is now a page that loads on the guest (example.org), the allowed
+host is the URL's own, and a provider's page is still --url away.

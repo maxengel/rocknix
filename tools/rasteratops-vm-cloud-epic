@@ -391,6 +391,6 @@ G_ 'test -s /storage/.cache/cloud_sync/scan/done && grep -qx STATE=current /stor
 steps G2 'dismiss-dialogs'
 fi
 
-say "  frames: $(ls "$FR"/epic-*.png 2>/dev/null | wc -l) under $FR (epic-*.png), plus $FR/E-boot/"
+say "  frames: $(find "$FR" -maxdepth 1 -type f -name '*.png' | wc -l) under $FR (numbered walk captures); boot and continuous captures are in their named subdirectories"
 done_line
 [ "$FAILS" -eq 0 ]

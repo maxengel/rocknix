@@ -45,7 +45,7 @@ PROCS = ("cloud-signin-wi", "WebKitWebProces", "WebKitNetworkPr")
 def main():
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
-        print(open(__file__).read().split("\n\n")[1].replace("# ", "").replace("#", ""))
+        print("\n".join(line[2:] if line.startswith("# ") else "" for line in open(__file__).read().split("\n\n", 1)[0].splitlines()[4:]))
         return 0
     port = args[0]
     url, seconds, key, as_json = DEFAULT_URL, 30, "/tmp/rocknix-vm-pair/qa-key", False

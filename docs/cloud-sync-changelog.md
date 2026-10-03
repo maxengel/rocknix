@@ -21,6 +21,19 @@ document is asking for help with.
 ---
 
 
+## Stop content transfers that stop progressing (2026-10-03)
+
+Source and isolated full-script controls pass; rebuilt image qualification
+under M7.P3 remains required.
+
+- **ROMs, BIOS and game-content transfers stop after prolonged inactivity.**
+  Provider retries follow the same progress-sensitive bound as saves and
+  settings; large transfers can continue while making progress (#401,
+  D-CLOUD-127). A failed copy does not start another game-list transfer.
+- **A failed content scan reports an unfinished operation and offers retry.**
+  The S3 interruption fixture now reaches this path; the result reads
+  `Couldn't finish reading your cloud. Try again.` (#401/#402).
+
 ## Keep interface memory bounded between games (2026-10-03)
 
 Diagnostic VM qualification under #310; the combined Rasteratops image still

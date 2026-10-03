@@ -217,6 +217,8 @@ RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 
 _net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
 [ -n "${_net_opts}" ] || _net_opts="${RCLONE_NET_OPTS_FALLBACK}"
 read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
+# Installed beside this script, also when the host fixtures copy it.
+. "$(dirname "${BASH_SOURCE[0]}")/cloud_content_transfer" || exit 1
 # A probe is a single listing that exists to answer quickly: one attempt,
 # tighter than the transfers (the same values the saves scripts probe with).
 readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
@@ -260,7 +262,7 @@ say_why() {
 why_for() {
     case "$1" in
         3|4) echo "COULDN'T FIND YOUR CLOUD FOLDER" ;;
-        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        5|124) echo "YOUR CLOUD STOPPED ANSWERING" ;;
         6)   echo "SOME FILES DIDN'T FINISH" ;;
         7|8) echo "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         130) echo "IT WAS STOPPED" ;;
@@ -703,7 +705,7 @@ for DIR in "${DIRS[@]}"; do
     # --seed-folders) is not content, and neither side counts it (#308 gpt
     # F-CS-30): it came down into /storage/roms/bios and read ever after as a
     # file this device has and the cloud does not.
-    rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+    bounded_content_rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
         --exclude "gamelist.xml" --exclude "**/gamelist.xml" --exclude "/README.txt" \
         --progress --stats 1s \
@@ -715,8 +717,8 @@ for DIR in "${DIRS[@]}"; do
     # result is the unit's, by the same 0|9 rule (audit #307 PL-066): it
     # was discarded with `|| true`, so a game list that did not move left a
     # unit, a stamp and a page that said the unit had.
-    if [ "${MEDIA_MODE}" != roms ]; then
-        rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+    if [ "${MEDIA_MODE}" != roms ] && { [ "${RC}" -eq 0 ] || [ "${RC}" -eq 9 ]; }; then
+        bounded_content_rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
             "${GAMELIST_ONLY[@]}" --update \
             --stats 0 \
             --log-file "${LOG_FILE}" --log-level INFO

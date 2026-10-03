@@ -1,0 +1,98 @@
+20:16:43 === cloud-epic on guest d, BUILD_ID="503e24e10dde6a59aa6c631f789b88b89f8e92e1"
+232
+20:16:43 == setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it
+remote: qa-cloud:
+20:16:45   cloud: ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Content/BIOS/disksys.rom ROCKNIX/Content/ROMs/nes/Probe.nes ROCKNIX/Saves-replaced/nes/Probe.srm.1 ROCKNIX/Saves/nes/Probe.srm
+20:16:45   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+label=GENERIC-X64
+20:17:12   picks reset: content=0 saves=1
+20:17:33 == L: the end of cloud setup (the repair route: USE A COMPUTER INSTEAD, REPAIR A CONNECTION, the three steps, CONTINUE): the step asks MOVE before CLOUD SETUP COMPLETE
+20:17:33   guest conf: SAVES_REMOTE="/Rasteratops/Saves" SETTINGS_REMOTE="/Rasteratops/Backups" CONTENT_REMOTE="/Rasteratops/Content" LAYOUT_KEEP=""
+20:18:09   reboot_guest: /isIdle yes after 1s
+settle: still after 1.9s
+20:18:19   an SSH session held open for the walk (pid 1368937): CONNECTED
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+changed after 0.1s (`key ret`, line 3)
+settle: still after 1.7s
+changed after 0.1s (`key x`, line 6)
+settle: still after 1.3s
+changed after 0.1s (`key up`, line 9)
+changed after 0.1s (`key up`, line 11)
+changed after 0.1s (`key up`, line 13)
+settle: still after 1.3s
+changed after 0.0s (`key x`, line 16)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/01-L-hub.png
+changed after 0.1s (`key down`, line 20)
+changed after 0.1s (`key down`, line 22)
+changed after 0.1s (`key down`, line 24)
+changed after 0.1s (`key down`, line 26)
+changed after 0.1s (`key down`, line 28)
+changed after 0.0s (`key down`, line 30)
+changed after 0.0s (`key down`, line 32)
+changed after 0.1s (`key down`, line 34)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/02-L-connect-row.png
+changed after 0.1s (`key x`, line 38)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/03-L-provider-list.png
+changed after 0.1s (`key up`, line 42)
+changed after 0.1s (`key up`, line 44)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/04-L-use-computer-row.png
+changed after 0.0s (`key x`, line 48)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/05-L-setup-page.png
+changed after 0.0s (`key up`, line 52)
+changed after 0.1s (`key up`, line 54)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/06-L-repair-row.png
+changed after 0.1s (`key x`, line 58)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/07-L-step1.png
+changed after 0.1s (`key up`, line 62)
+changed after 0.0s (`key right`, line 64)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/08-L-step1-continue.png
+changed after 0.0s (`key x`, line 68)
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/09-L-after-step1.png
+changed after 0.1s (`key up`, line 72)
+changed after 0.1s (`key right`, line 74)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/10-L-step2-continue.png
+changed after 0.1s (`key x`, line 78)
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/11-L-after-step2.png
+changed after 0.1s (`key up`, line 82)
+changed after 0.1s (`key right`, line 84)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/12-L-step3-continue.png
+changed after 0.0s (`key x`, line 88)
+settle: still after 4.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/13-L-after-step3.png
+20:19:33 PASS walk epic-L.steps
+20:19:33   L-setup: 148 frames under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/L-setup (the step's scan page between step 3 and the question)
+2026-10-03 16:18:58	[1428]	INFO	cloud_setup wizard: entry, remotes=1
+2026-10-03 16:19:04	[1428]	INFO	cloud_setup wizard: step 1 ssh setup, password=*** sshd=active
+2026-10-03 16:19:11	[1428]	INFO	cloud_setup wizard: step 2 connect, override=1
+2026-10-03 16:19:19	[1428]	INFO	cloud_setup wizard: --connected=1
+2026-10-03 16:19:20	[1428]	INFO	cloud_setup wizard: step 3 configure, mode=2 remote=qa-cloud: auth_port=free
+2026-10-03 16:19:28	[2717]	INFO	cloud_setup wizard: --check rc=0 remote=qa-cloud:
+2026-10-03 16:19:28	[1428]	INFO	cloud folder step: checking the folder (end of cloud setup)
+2026-10-03 16:19:29	[1428]	INFO	cloud folder: /ROCKNIX holds saves and /Rasteratops does not exist; offering the move
+20:19:33 PASS L: the step ran at the end of cloud setup
+20:19:33 PASS L: and asked the move for the earlier folder holding the saves
+20:19:33 PASS L: the step's scan joined the folder the saves are in
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/01-L-move-question.png
+changed after 0.0s (`key z`, line 2)
+settle: still after 4.7s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/02-L-after-not-now.png
+20:19:40 PASS walk epic-L2.steps
+20:19:41 PASS L: NOT NOW went on to the seeding and CLOUD SETUP COMPLETE
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/01-L-setup-complete.png
+dismiss-dialogs: 6 press(es) moved the screen, back on the carousel
+20:19:52 PASS walk epic-L3.steps
+20:19:52   guest conf: SAVES_REMOTE="/Rasteratops/Saves" SETTINGS_REMOTE="/Rasteratops/Backups" CONTENT_REMOTE="/Rasteratops/Content" LAYOUT_KEEP=""
+20:19:52   frames: 0 under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames (epic-*.png), plus /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/L/frames/E-boot/
+20:19:52 done: 7 PASS, 0 FAIL

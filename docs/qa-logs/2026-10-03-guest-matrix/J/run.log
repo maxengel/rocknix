@@ -1,0 +1,26 @@
+20:09:15 === cloud-epic on guest d, BUILD_ID="503e24e10dde6a59aa6c631f789b88b89f8e92e1"
+232
+20:09:16 == setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it
+remote: qa-cloud:
+20:09:17   cloud: ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Content/BIOS/disksys.rom ROCKNIX/Content/ROMs/nes/Probe.nes ROCKNIX/Saves-replaced/nes/Probe.srm.1 ROCKNIX/Saves/nes/Probe.srm
+20:09:18   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+label=GENERIC-X64
+20:09:45   picks reset: content=0 saves=1
+20:10:05 == J: the boot step offline (the guest's link cut on the monitor): FINISH CLOUD SETUP / YOU'RE NOT ONLINE ... with CONNECT TO WI-FI and NOT NOW
+20:10:06   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+20:10:06   link off at 20:10:06
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/J/frames/01-J-offline.png
+changed after 0.1s (`key z`, line 2)
+settle: still after 2.2s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/J/frames/02-J-after-not-now.png
+20:12:01 PASS walk epic-J1.steps
+20:12:07   link on; ssh back after 1 tries
+2026-10-03 16:10:24	[1453]	INFO	cloud folder step: a folder to settle and no network; asking to connect
+2026-10-03 16:11:58	[1453]	INFO	cloud folder step: NOT NOW; asked again at the next boot
+20:12:07 PASS J: offline, the step asked to connect
+20:12:07 PASS J: and NOT NOW put it off to the next boot
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+20:12:12 PASS walk epic-J2.steps
+20:12:12   guest conf: SAVES_REMOTE="/Rasteratops/Saves" SETTINGS_REMOTE="/Rasteratops/Backups" CONTENT_REMOTE="/Rasteratops/Content" LAYOUT_KEEP=""
+20:12:12   frames: 0 under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/J/frames (epic-*.png), plus /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/J/frames/E-boot/
+20:12:12 done: 4 PASS, 0 FAIL

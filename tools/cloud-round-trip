@@ -5677,7 +5677,8 @@ def fx_link6(L):
 
 def fx_link7(L):
     """The picker scan, cut mid-scan. Twenty-four systems and BIOS in the
-    cloud, the listing paced to two transactions a second; the scan prints
+    cloud, the listing paced to two transactions a second; S3 is paginated
+    one entry per request so its batched listing stays in flight. The scan prints
     nothing until it is done, so the cut lands once it holds a connection.
     The re-run must name every planted system."""
     systems = [f"sys{d:02d}" for d in range(1, 25)]
@@ -5690,8 +5691,15 @@ def fx_link7(L):
         missing = sorted(set(systems + ["bios"]) - names)
         return (not missing, f"the re-run's scan names all {len(systems)} systems and bios"
                 if not missing else f"the re-run's scan is missing {missing}")
+    env = f"RCLONE_TPSLIMIT={LINK_TPS}"
+    if backend("backend").strip() == "s3":
+        # Default MaxKeys=1000 fits this entire fixture in one response,
+        # before the cut can land (#402). Page size changes only the QA
+        # invocation, not the product or endpoint. Completion before the
+        # actual cut remains a failure in Link.exercise.
+        env += " RCLONE_S3_LIST_CHUNK=1"
     return L.exercise("LINK7", "cloud_content_restore --scan", None, None, {}, ["last-content-match", "last-content-restore"],
-                      env=f"RCLONE_TPSLIMIT={LINK_TPS}", verify=verify)
+                      env=env, verify=verify)
 
 
 LINK_FIXTURES = [

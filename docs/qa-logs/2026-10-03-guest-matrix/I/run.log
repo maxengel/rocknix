@@ -1,0 +1,53 @@
+20:03:41 === cloud-epic on guest d, BUILD_ID="503e24e10dde6a59aa6c631f789b88b89f8e92e1"
+232
+20:03:41 == setup: the QA remote on the guest (the host backend's conf), then the QA cloud holds the fork's earlier layout with files in every folder of ours; the guest points at it
+remote: qa-cloud:
+20:03:43   cloud: ROCKNIX/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz ROCKNIX/Content/BIOS/disksys.rom ROCKNIX/Content/ROMs/nes/Probe.nes ROCKNIX/Saves-replaced/nes/Probe.srm.1 ROCKNIX/Saves/nes/Probe.srm
+20:03:43   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+label=GENERIC-X64
+20:04:11   picks reset: content=0 saves=1
+20:04:31 == I: the boot step on a device still on /ROCKNIX with saves there: after the startup card, CHECKING YOUR CLOUD, then MOVE; NOT NOW asks again next boot; after MOVE nothing
+20:04:31   cloud: ROCKNIX/Saves/nes/Boot.srm _rasteratops_hold/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Content/BIOS/disksys.rom _rasteratops_hold/Content/ROMs/nes/Probe.nes _rasteratops_hold/Saves-replaced/nes/Probe.srm.1 _rasteratops_hold/Saves/nes/Probe.srm
+20:04:31   guest conf: SAVES_REMOTE="/ROCKNIX/Saves" SETTINGS_REMOTE="/ROCKNIX/Backups" CONTENT_REMOTE="/ROCKNIX/Content" LAYOUT_KEEP=""
+needs-step rc=0
+20:05:07   reboot_guest: /isIdle yes after 1s
+settle: still after 1.9s
+20:05:56   I-boot1: 122 frames under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/I-boot1
+2026-10-03 16:04:52	[1512]	INFO	cloud folder step: checking the folder (boot)
+2026-10-03 16:04:53	[1512]	INFO	cloud folder: /ROCKNIX holds saves and /Rasteratops does not exist; offering the move
+20:05:56 PASS I: the step came up at boot
+20:05:57 PASS I: and asked the move for /ROCKNIX
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/01-I-move-question.png
+changed after 0.1s (`key z`, line 2)
+settle: still after 1.3s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/02-I-after-not-now.png
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+20:06:04 PASS walk epic-I1.steps
+20:06:04 PASS I: NOT NOW left the conf on /ROCKNIX
+20:06:40   reboot_guest: /isIdle yes after 1s
+settle: still after 1.9s
+20:07:29   I-boot2: 122 frames under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/I-boot2
+20:07:29 PASS I: the next boot asked again
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/01-I-move-question-again.png
+changed after 0.1s (`key x`, line 2)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/02-I-move-running.png
+settle: still after 3.4s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/03-I-move-done.png
+changed after 0.0s (`key x`, line 8)
+settle: still after 2.2s
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/04-I-after-move.png
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+20:07:45 PASS walk epic-I2.steps
+20:07:45   cloud after the move: Rasteratops/.layout Rasteratops/Saves/nes/Boot.srm _rasteratops_hold/Backups/2026_09_29-090000-Retroid-Pocket-Nova-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Backups/2026_09_30-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz _rasteratops_hold/Content/BIOS/disksys.rom _rasteratops_hold/Content/ROMs/nes/Probe.nes _rasteratops_hold/Saves-replaced/nes/Probe.srm.1 _rasteratops_hold/Saves/nes/Probe.srm
+20:07:45 PASS I: MOVE at boot moved the saves to /Rasteratops and left nothing under /ROCKNIX
+20:07:45 PASS I: the conf points at /Rasteratops/Saves
+20:07:45 PASS I: and the step's own check after the move reads it settled
+20:08:21   reboot_guest: /isIdle yes after 1s
+settle: still after 1.9s
+20:09:10   I-boot3: 122 frames under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/I-boot3
+20:09:10 PASS I: the boot after the move raises nothing (--needs-step 1)
+captured /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/01-I-boot3-quiet.png
+dismiss-dialogs: 1 press(es) moved the screen, back on the carousel
+20:09:15 PASS walk epic-I3.steps
+20:09:15   frames: 0 under /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames (epic-*.png), plus /workspace/tmp/rasteratops-m7-guest-d-01/artifacts/cloud-epic/I/frames/E-boot/
+20:09:15 done: 11 PASS, 0 FAIL
