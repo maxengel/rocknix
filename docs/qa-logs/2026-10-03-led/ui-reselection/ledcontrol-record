@@ -1,0 +1,4 @@
+#!/bin/sh
+printf '%s %s\n' "$(date +%s)" "$*" >> /storage/m7-led/calls.log
+export LED_PATH=/storage/m7-led/sys BATTERY_PATH=/storage/m7-led/battery
+exec /storage/m7-led/ledcontrol "$@"

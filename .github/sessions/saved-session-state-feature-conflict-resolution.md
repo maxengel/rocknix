@@ -1,7 +1,7 @@
 # Session pointer
 
 Read `.github/sessions/saved-session-state-next.md` on `next` first.
-Current delivery: #383. Binding order: M7 milestone body. M7.P1 migration and
-settings source fixes pass; actor/predecessor coverage and guest-case promotion
-remain before P2 inputs. Continue the existing authorized work without another
-kickoff or confirmation menu. See canonical checkpoint for commits and evidence.
+It is the sole current execution checkpoint. The binding ordered priorities
+are in https://github.com/rasteratops/distribution/milestone/7 (D-WORKFLOW-139).
+This branch pointer deliberately carries no duplicated phase or job status.
+Continue the authorized work recorded there; do not restart the initial audit.

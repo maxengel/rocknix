@@ -21,6 +21,30 @@ document is asking for help with.
 ---
 
 
+## Keep interface memory bounded between games (2026-10-03)
+
+Diagnostic VM qualification under #310; the combined Rasteratops image still
+needs its own M7.P3 checks. Renderer teardown releases Mesa's executable arena,
+SDL display modes and an empty virgl cache. Input-device scans release their
+lists, and glibc returns unused heap pages around a game. Software10/50-cycle
+and accelerated10-cycle controls pass with no address-space growth; the long
+sync-enabled run adds364KiB RSS and completes every exit sync. Renderer and
+input functionality are preserved by the same actual launch/exit controls.
+
+## Current offline proxy and saved LED brightness (2026-10-03)
+
+Source and fixture qualification only; the combined image still needs M7.P3.
+
+- **Offline preparation still covers the whole library.** The current upstream
+  proxy keeps its queue budget for ordinary work; deliberate preparation opts
+  out explicitly and waits for queued work. Old cached sign-in, base/subset
+  awards and images survive the source upgrade controls (#361/#384).
+- **Battery colors and low-charge blinking respect saved LED brightness.**
+  The Nova scripts preserve min, mid and max across all eight RGB devices;
+  explicit custom RGB tuples retain their own brightness (#332). Actual
+  script fixture tests and guest reselection pass; physical illumination remains
+  an open item to test.
+
 ## Recover earlier cloud moves and refuse unlinked transfers (2026-10-03)
 
 Source changes with production-script host evidence; candidate VM qualification
@@ -71,7 +95,7 @@ and VM frames are still required before these changes are qualified.
   its timer masked (D-WORKFLOW-093/110). The adoption filename contains
   `-from-ROCKNIX` so RC2 can apply it (D-WORKFLOW-128).
 - **Offline subset achievements keep their own game identity.** The upstream
-  correction is backported to the current proxy; its award-parity tests pass.
+  correction is supplied by the refreshed upstream proxy; its award-parity tests pass.
   Queue/flush verification on the image remains required (#384).
 
 

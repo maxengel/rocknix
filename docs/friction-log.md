@@ -88,3 +88,19 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 03:57 UTC -- T19 actor controls exposed an existing-but-empty rclone config passing the file-existence guard. Both transfer scripts then interpreted the cloud path locally, and backup reported COMPLETED. The paired edit stopped on different caller comments; the bounded retest retained the restore failures until its explicit fix. Guard: tools/rasteratops-cloud-layout-test T19-local-path and T19-actor; issue: #392.
 
 - 2026-10-03 04:25 UTC -- the initial predecessor recovery fix passed319 focused cases but failed11 existing broad controls: it inferred an old saves source from content/shelf remnants and changed the no-move result. Stronger controls reproduced unselected live-tier movement; the corrected record retains its discarded shelf separately and preserves current pointer/no-op semantics. Guard: T23 predecessor live-tier controls plus last-good-scripts-test A5/A55; issue: #391.
+
+- 2026-10-03 04:48 UTC -- the current proxy sharded image paths invalidated three old fixture checks and the ctl schema annotation still named the predecessor. The broad run retains these failures; transport and retry assertions must follow the actual stored paths, preserving their behavior. Guard: last-good-scripts-test D19 and schema read; issue: #361.
+
+- 2026-10-03 04:48 UTC -- tllist was labelled unresolved even though Codeberg answered: the freshness tool had no Codeberg resolver. Six controls now distinguish current/new stable tags, prereleases and unavailable or malformed responses. A shaderc patch also lacked its final newline, requiring fuzz; a terminated copy applies cleanly in compatibility preparation. Guard: docs/qa-logs/2026-10-03-dependencies/check-codeberg.py and package patch application; issue: #386.
+
+- 2026-10-03 05:06 UTC -- the launch-memory harness treated execute_kill return1 as a failed exit even though RetroArch ended; killall can fail on another named process. Retain the return and assert the emulator is gone with a stable ES PID. The original binary also stays flat under the narrowed controls, so a code-fix claim would be unsupported. Guard: tools/es-launch-memory; issue: #310.
+
+- 2026-10-03 05:06 UTC -- push-history controls reproduced both the known rejudged-published-history refusal and an unrelated-remote exemption of unpublished credentials. Destination-scoped history exclusion passes seven controls and the real formerly blocked merge. Guard: .githooks/pre-push and docs/qa-logs/2026-10-03-push-hook/check-history.py; issue: #371.
+
+- 2026-10-03 05:29 UTC -- one warmup launch was insufficient to separate initial renderer allocation from continuing retention. Mesa cleanup removed the10MiB executable leak, but a50-cycle continuation found a later ordinary-heap jump. A bounded malloc_trim probe returned almost40MiB of freed memory; diagnostic lifecycle trimming is being timed and checked, with every failing run retained. Guard: tools/es-launch-memory; issue: #310.
+
+- 2026-10-03 05:29 UTC -- the memory runner failed on curl7 immediately after restarting ES instead of waiting for API readiness. Empty startup responses now remain inside the bounded idle wait; SSH failures still fail. Guard: tools/es-launch-memory; issue: #310.
+
+- 2026-10-03 05:29 UTC -- the LED fixture mocked the RGB helper and omitted the battery writer, so green brightness cases missed charge transitions resetting255. The new real-script fixture fails8 cases before and passes14 after, including the full critical-charge blink. Guard: tools/nova-led-test; issue: #332.
+
+- 2026-10-03 06:50 UTC -- flat VmSize after renderer trimming hid continuing live-heap growth; the stricter RSS endurance control failed. Actual VM LeakSanitizer traced ES udev lists, SDL mode arrays and an empty Mesa cache. All lifetimes fixed; noninstrumented10/50/virgl limits now pass without relaxation. Guard: tools/es-launch-memory and retained sanitizer comparison; issue: #310.
