@@ -221,6 +221,17 @@ Neither alone is a watch. The sentence that satisfies this rule names
 waiter on `<rc>` will deliver the result."* If the waiter has been reaped and
 not re-armed, say so, and read the file by hand at a stated interval.
 
+**Completion must reach the maintainer (D-WORKFLOW-143, #395).** Before the
+next long build or QA job, name and verify its result-delivery path. During
+an active session, await the job or check its status at most 60 seconds
+apart, and announce success, failure or death as soon as observed, before
+unrelated work. Do not end the turn with only a detached recorder and imply
+an alert will arrive. Delivery across a disconnected session needs a named,
+tested destination; a log, callback submission or GitHub update alone does
+not prove receipt. Until that path is configured, call the run actively
+supervised and state that it cannot alert after disconnection. A missing
+delivery path stays an open issue, even if every recorder control passes.
+
 Two more traps met arming it, both already in this project's records:
 `pgrep -f` on the job's name matched the session's own shell (blindspot: the
 self-matching pattern — anchor it: `^/bin/bash \./build-h700\.sh$`), and

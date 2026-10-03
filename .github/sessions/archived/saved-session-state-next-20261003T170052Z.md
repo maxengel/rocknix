@@ -30,7 +30,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T174627Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T170052Z.md.
+> Saved: 20261003T170052Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T165225Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -155,19 +155,6 @@ change product pin7450aa8180ae66684814dd460f31eb502b2abf61. Push/remote/freshnes
 receipts: `docs/qa-logs/2026-10-03-m7-es-delivery/`. Full freshness rechecked
 immediately before input freeze: exit0; all current/inherited/local or coupled
 pins with stated reasons. Future release/device/personal-cloud gates remain.
-
-## Notification follow-up — #395
-
-The maintainer requires completion notices, not just status files
-(D-WORKFLOW-143). #393/#394 remain completed recorder/routing work; #395 owns
-actual delivery and is open. The off-session destination has been asked in
-chat but not selected yet. Do not infer email, desktop or GitHub delivery.
-Before a long job, name and verify delivery. While active, await/check it
-within 60 seconds and announce its terminal result promptly. Until a tested
-off-session destination exists, explicitly state the disconnection limit.
-No build or QA run is active. Product work remains P3 source inventory and
-image qualification, then P4. The first handheld is RG35XX SP/H700 DDR4;
-create its own qualified image before any named migration/device action.
 
 ## Immediate next actions
 

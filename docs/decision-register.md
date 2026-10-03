@@ -599,6 +599,8 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 
 | D-WORKFLOW-142 | 2026-10-03 | **Every normal future build enters the shared monitored runner automatically.** Native device, image, compatibility and package entrypoints and the host Docker launch use `tools/watch-build`; nested calls reuse its private run and `tools/watch-job`. Retain logs, PIDs, atomic result and heartbeat; refuse an unarmed launch and guard routing in fork CI. Existing frozen builds keep their exact inputs. The maintainer asked whether this framework will be used going forward with all builds. Status recording does not imply automatic chat notification. | #394; D-WORKFLOW-141; `.claude/rules/device-builds.md` |
 
+| D-WORKFLOW-143 | 2026-10-03 | **Future build watchers must deliver completion and failure notices, as well as retain status.** Reinforces the existing recording-plus-delivery rule and extends D-WORKFLOW-142's automatic recording with explicit delivery acceptance. Maintainer: *"in the future, We should make sure the watcher notifies when it's complete."* Verify a named delivery path before long jobs; actively supervised sessions announce terminal outcomes promptly. Off-session delivery needs a selected destination and an actual receipt; until configured, state the limitation and keep the implementation open. | #395; D-WORKFLOW-142; `.claude/rules/engineering-practices.md` |
+
 ## Open decisions
 
 | ID | Question | Home |

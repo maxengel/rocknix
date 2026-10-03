@@ -385,9 +385,11 @@ The CI lifecycle/routing controls exercise actual entrypoint prefixes and
 Makefile recipes, including a removed-hook failing control. A run started
 from an older frozen checkout keeps that checkout's tooling; attach a current
 run-owned watcher explicitly, as M7 cold01 does, without advancing its source.
-For all runs, status recording and notification remain separate. This harness
-does not deliver automatic chat alerts; no such notification is armed. A
-runner killed outright may leave its command alive: inspect `command.pid`
+For all runs, status recording and notification remain separate. Before a
+long run, verify the delivery path and follow active supervision in
+`engineering-practices.md` (D-WORKFLOW-143, #395). Off-session notification
+is not yet configured; do not describe a detached recorder as an alert
+service. A runner killed outright may leave its command alive: inspect `command.pid`
 before starting a replacement build.
 
 `tools/build-preflight` reports it and `--stop-vms` clears what it can. Run it

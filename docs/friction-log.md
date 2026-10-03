@@ -112,3 +112,5 @@ issue is needed; `issue: none` is the state that expires.
 - 2026-10-03 16:29 UTC -- the M7 watcher inferred a stall from a quiet aggregate log while WebKit wrote its package log. Add explicit per-job activity logs and lifecycle controls; preserve the live shell until its replacement is verified. Guard: `tools/watch-job --activity-dir`; issue: #393.
 
 - 2026-10-03 16:52 UTC -- a private-log umask in the new runner also reached build children during implementation review. Preserve the caller umask in the child and prove product file/directory modes; guard: `docs/qa-logs/2026-10-03-watch-job/test-watch-build.py`; issue: #394.
+
+- 2026-10-03 17:46 UTC -- a working status recorder and automatic entrypoint routing were mistaken for complete monitoring; the finished build had no alert delivery and its result was buried in a framework update. Existing two-mechanism rule reinforced; actual delivery remains open #395, with a destination question for disconnected sessions. Guard: engineering-practices.md; issue: #395.
