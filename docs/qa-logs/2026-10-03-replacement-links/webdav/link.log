@@ -1,0 +1,143 @@
+
+=== device reachable and equipped
+    PASS  ssh works
+    PASS  rclone and cloud scripts present
+
+=== point the device at the QA bucket
+    PASS  first remote is 'qa-cloud', which is what the scripts will use
+    scratch tree /storage/cloud-qa (pass --real-roms to use /storage/roms)
+    SAVES_REMOTE /Rasteratops/Saves on the webdav endpoint
+
+=== the link-loss cells: a serial console, a throttled endpoint, one guest
+    PASS  the endpoint is throttled (--bwlimit on the server)
+    PASS  the serial console is this device's; its default route runs over eth0; the endpoint is 10.0.2.2:9010
+    link restored 40s after each cut; a run must end within 90s of it
+
+=== LINK1 -- saves restore (the startup sync's command), link cut during the compare
+          48 saves in 24 directories on both sides; RCLONE_TPSLIMIT=2 makes the compare last
+          cut eth0 at guest uptime 17.99 (21:48:40); last line: 'Elapsed time:         1.0s'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 30.2s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 30.2s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (46 of 48 there)
+    PASS  last-restore records the failure (1791064149 69)
+          waited 10s for the endpoint to let go of the cut run before the re-run
+          outputs kept: /tmp/qa-link-LINK1/ on the guest
+    PASS  the cut run: no developer words on the 99 card-visible line(s) or the outcome line ("Couldn't finish: lost the network during the saves restore. Try again ")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network during the saves restore. Try again ")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 48 files match on the receiving side
+    PASS  LINK1: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 2 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== LINK2 -- saves backup, link cut during the transfer
+          cut eth0 at guest uptime 117.39 (21:50:19); last line: '*                       savestates/link-3.state:100% / 3 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 29.8s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 29.8s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (3 of 3 there)
+    PASS  last-backup records the failure (1791064249 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+          outputs kept: /tmp/qa-link-LINK2/ on the guest
+    PASS  the cut run: no developer words on the 128 card-visible line(s) or the outcome line ("Couldn't finish: lost the network during the saves backup. Try again w")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network during the saves backup. Try again w")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 3 files match on the receiving side
+    PASS  LINK2: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 2 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== LINK3 -- ROMs and BIOS backup, link cut during the transfer
+          cut eth0 at guest uptime 169.28 (21:51:11); last line: '*                                    link-3.bin:100% / 3 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 30.0s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 30.0s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (3 of 3 there)
+    PASS  last-content-backup records the failure (1791064301 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+          outputs kept: /tmp/qa-link-LINK3/ on the guest
+    PASS  the cut run: no developer words on the 128 card-visible line(s) or the outcome line ("Couldn't finish: lost the network while backing up vectrex. Try again ")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network while backing up vectrex. Try again ")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 3 files match on the receiving side
+    PASS  LINK3: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 3 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== LINK4 -- ROMs and BIOS restore, link cut during the transfer
+          cut eth0 at guest uptime 221.82 (21:52:04); last line: '*                                    link-3.bin: 33% / 3 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 30.2s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.4s
+    PASS  ended 30.2s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (1 of 3 there)
+    PASS  last-content-restore records the failure (1791064354 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+          waited 4s for the endpoint to let go of the cut run before the re-run
+          outputs kept: /tmp/qa-link-LINK4/ on the guest
+    PASS  the cut run: no developer words on the 128 card-visible line(s) or the outcome line ("Couldn't finish: lost the network while restoring vectrex. Try again w")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network while restoring vectrex. Try again w")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 3 files match on the receiving side
+    PASS  LINK4: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 4 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== LINK5 -- settings archive upload (backuptool backup; cloud_backup --system-only), link cut mid-upload
+          archive 2026_10_03-175307-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz, 6.0 MiB
+          cut eth0 at guest uptime 288.79 (21:53:11); last line: '* 2026_10_03-175307-GENE…OCKNIX_SETTINGS.tar.gz:100% / 6.012 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 29.5s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 29.5s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (1 of 1 there)
+    PASS  last-settings-backup records the failure (1791064420 69)
+    PASS  settings-backup.uploaded unchanged
+          outputs kept: /tmp/qa-link-LINK5/ on the guest
+    PASS  the cut run: no developer words on the 64 card-visible line(s) or the outcome line ("Couldn't finish: lost the network during the settings backup. Try agai")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network during the settings backup. Try agai")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 1 files match on the receiving side
+    PASS  LINK5: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 5 last-* stamps, 0 capture line(s), 0 manifest; 1 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 2 settings file(s)
+
+=== LINK6 -- the exit sync (cloud_backup --yes --saves-only --recent), link cut during the transfer
+          cut eth0 at guest uptime 352.14 (21:54:14); last line: '*                       savestates/link-3.state:100% / 3 MiB, 0 B/s, -'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 30.1s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.4s
+    PASS  ended 30.1s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  no *.partial left on the receiving side
+    PASS  every file present on the receiving side is whole, by content (3 of 3 there)
+    PASS  last-backup records the failure (1791064484 69)
+          outputs kept: /tmp/qa-link-LINK6/ on the guest
+    PASS  the cut run: no developer words on the 158 card-visible line(s) or the outcome line ("Couldn't finish: lost the network during the saves backup. Try again w")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Couldn't finish: lost the network during the saves backup. Try again w")
+    PASS  a plain re-run with the link back exits 0
+    PASS  after the re-run all 3 files match on the receiving side
+    PASS  LINK6: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 5 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== LINK7 -- the picker scan (cloud_content_restore --scan), link cut mid-scan
+          cut eth0 at guest uptime 403.76 (21:55:06); last line: 'no output yet'
+          11s into the outage: default route gone; NetworkManager says unavailable; no address on eth0
+          ended 30.5s after the cut, with the link still down (rc 69)
+          link restored 40.7s after the cut; address, default route and the endpoint back in 0.3s
+    PASS  ended 30.5s after the cut (bound 90s)
+    PASS  exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel
+    PASS  last-content-match unchanged (absent)
+    PASS  last-content-restore unchanged (1791064383 0)
+          waited 12s for the endpoint to let go of the cut run before the re-run
+          outputs kept: /tmp/qa-link-LINK7/ on the guest
+    PASS  the cut run: no developer words on the 0 card-visible line(s) or the outcome line ("Skipped: there's no network connection. Try again when you're online.")
+    PASS  the cut run: the outcome line is one of the three outcome words ("Skipped: there's no network connection. Try again when you're online.")
+    PASS  a plain re-run with the link back exits 0
+    PASS  the re-run's scan names all 24 systems and bios
+    PASS  LINK7: one record each, no litter: system.cfg 225 keys, record .backup; es_settings.cfg 0 keys; 5 last-* stamps, 0 capture line(s), 0 manifest; 0 archive at root, 0 in archive/; saves tree clean of *.partial/*.tmp; cloud 0 settings file(s)
+
+=== clean up root@127.0.0.1 port 10022
+    scratch tree and bucket emptied; the device's own remote, paths and settings-backup setting restored
+
+PASSED
