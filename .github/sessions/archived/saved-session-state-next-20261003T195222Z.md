@@ -20,7 +20,7 @@ remain open, including a replacement image for missing policy files (#397). Work
 
 https://github.com/rasteratops/distribution/milestone/7 is **M7: Rasteratops
 0.0.1** and holds the current execution order (D-WORKFLOW-139). P0 tracking
-complete; P1 source complete; **P2 source gate complete; P3 current: guest-d migration/recovery matrix; #401 product fix/#402 scan fixture remain**;
+complete; P1 source complete; **P2 source gate complete; P3 current: strict S3 link comparison; WebDAV retry fixture #400 remains**;
 P3 cold engineering image/qualification; P4 approved independent fixes review;
 P5 separately gated release staging/publication. Image-only criteria remain
 P3; they require creating the engineering image and do not prohibit it.
@@ -32,7 +32,7 @@ historical contract section numbers with execution phases. Update the live
 body/current-next work on a transition and read it back in the same session.
 The current30-rule inventory and ES/splash entrypoints are repaired.
 
-> Saved: 20261003T195222Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T195222Z.md.
+> Saved: 20261003T194027Z. Previous checkpoint: .github/sessions/archived/saved-session-state-next-20261003T194027Z.md.
 
 ## Completed source and diagnostic proof
 
@@ -167,7 +167,7 @@ chat but not selected yet. Do not infer email, desktop or GitHub delivery.
 Before a long job, name and verify delivery. While active, await/check it
 within 60 seconds and announce its terminal result promptly. Until a tested
 off-session destination exists, explicitly state the disconnection limit.
-The current guest-d matrix below is active. Product work remains P3 image
+The current link-loss QA run below is active. Product work remains P3 image
 qualification and the #397 replacement, then P4; consumed-source inventory is now retained. The first handheld is RG35XX SP/H700 DDR4;
 create its own qualified image before any named migration/device action.
 
@@ -183,7 +183,8 @@ create its own qualified image before any named migration/device action.
    wording was corrected after the fresh resume proof; final result readback
    at16:59:43UTC used short-lived recorder48573 and explicitly states that
    the heartbeat stops normally. It is no longer running.
-3. Default suites and RC2 upgrade passed as detailed below. Consume the active guest-d results, fix #401/#402, then RA and remaining P3 cases.
+3. Default suites and RC2 upgrade passed as detailed below. Consume the
+   active link-loss result, then guest-d cases, RA and remaining P3 cases.
    Artifact and source inventory verification passed. Continue M7.P3 in the live body's order: clean/RC2
    upgrade, full suites and opt-ins, provider/pair/recovery, memory/UI/timing/
    identity/licence proof. Run image QA from the frozen checkout, with the
@@ -222,55 +223,47 @@ uses the bundle's suffix bcd9877d21 only as a label; actual guest BUILD_IDs
 are asserted inside its log. A setup typo's observation path was repaired
 through a same-inode log alias; `pair/activity-alias.log` retains the proof.
 
-**ACTIVE since19:50:14UTC:** independently reset19-case cloud-epic matrix
-on the fresh640x480 guest d. Owner `/workspace/tmp/rasteratops-m7-guest-d-01/`;
-mode500 `matrix.sh` and `seed.py`, retained harness hashes. Runner1157659,
-watcher1157674; waiter35838. Status `.build-runs/20261003T195014Z-e4ade52d/build.status`.
-Check status and nested `artifacts/cloud-epic/<case>/logs/run.log` within60s;
-interval5s, suspected inactivity5min. Guest exact503e BUILD_ID and all three
-QA homebrew ROM hashes verified; initial interface idle. Case order:
-H A C D B E I J K L F G T08 T11 T12 T17 T19 T23 T26. Every case resets its
-fixture. No parallel reset of its WebDAV endpoint; no editing executing shell
-tools. Cleanup stops owned guest d and cloud endpoint after matrix exits.
+**ACTIVE since19:35:15UTC:** all-seven strict S3 link-loss comparison, 200k.
+Owner `/workspace/tmp/rasteratops-m7-link-s3-01/`, launcher `link.sh`.
+Status `.build-runs/20261003T193515Z-f051b307/build.status` under the owner.
+Runner1084545, watcher1084561, active waiter95342. Poll within60s; recursive
+activity every5s, suspected inactivity5min. Read nested link.log for failures.
+Do not edit tools/cloud-round-trip or reset this run's pair/backend mid-run.
 
-All link jobs are finished. WebDAV link-01 ended19:15 rc1 (#398 stamp parser).
-Link-02 failed before suites (#399 isolated identity). Corrected sources are
-published: #398 feature052e974e68/nextd426f7058c; #399 featurecb6e792b91/
-next031f41beaa. Controls14/14 and3/3 pass; fresh link-03 used a distinct key,
-authenticated and exercised all seven cases. Six passed; #400 owned LINK5's
-retry124 from an oversized12MiB fixture. Original reports remain retained.
+WebDAV link-01 ended19:15 rc1: stale extended-stamp assertions (#398).
+Corrected actual-loop controls14/14; source published feature052e974e68 /
+nextd426f7058c. Link-02 failed before suites: vm-qa ignored isolated pair
+identity (#399). Corrected featurecb6e792b91 / next031f41beaa is published;
+default/empty/spaced-path controls pass. Fresh link-03 used a distinct key,
+authenticated, executed all seven cases and ended19:34UTC rc1. All three
+formerly rejected stamps now pass. Six cases pass; LINK5 retry124 remains
+separately tracked #400. Logs/public-key digests and terminal cleanup retained.
 
-#400 correction is now applied:6MiB archive stays in flight at cut but drains
-inside the unchanged36s product ceiling; strict_retry=True forbids skipping
-retry or receiving-content checks. Actual AST controls old3/6, current6/6.
-Strict real LINK5 passes without any skip on WebDAV19:46UTC (interruption69
-in29.5s) and S3 19:49UTC (69 in35.9s), both retry0, whole bytes, no partials
-and unchanged upload marker after interruption. All7 WebDAV cases now have
-passing evidence across the corrected whole run and strict LINK5 rerun.
-Receipts `docs/qa-logs/2026-10-03-link-retry/`; all owned pairs/endpoints stopped.
+#400's source trace: the 12MiB WebDAV fixture deliberately drains longer
+than the unchanged36s product stall ceiling. Rerun.out shows100% then retry0%,
+so the old narrow skip correctly does not accept it. Full data matches after
+the retry; interruption bounded, marker unchanged. Do not relabel as PASS.
+Prepared `/tmp/rasteratops-m7-testing/cloud-round-trip-link5-fixed` uses6MiB
+and strict_retry=True so neither retry nor content verdict can skip. Actual
+AST verdict controls old3/6 vs prepared6/6. Apply ONLY after active S3 run exits;
+then real strict WebDAV and S3 LINK5 proof, keeping all original failures.
 
-**Product failure #401:** original full S3 run ended19:43 rc1. LINK3/4
-content backup/restore waited out the40.7s outage and returned0 at70.3/59.0s,
-stamping success. Route/address loss is observed; content/retries match but
-that does not excuse missing inactivity bounds. Content scripts call rclone
-directly with30s I/O timeout/ten SDK retries and only probe network after
-nonzero return. Saves/settings already have progress-sensitive bounded_rclone.
-Fix content inactivity without ending long progressing transfers; inspect
-cancellation, partial accounting and sibling listings. No product correction
-has been applied. Baseline/filtered live guest evidence is retained under
-`docs/qa-logs/2026-10-03-content-network/`.
-**Fixture gap #402:** S3 LINK7 finished before a cut could land. Its24-folder,
-TPS2 premise works on WebDAV but S3 batches listings. Prove a real in-flight
-S3 scan; a completed-before-cut result remains a failure. Do not call the
-whole S3 link suite PASS. Other four S3 cases passed, no accepted skips.
+Guest-d disk preparation completed19:28:37 rc0, qemu-img check PASS. It is
+not booted: `/workspace/tmp/rasteratops-m7-guest-d-01/guest-d.qcow2`, its own
+16GiB disk and QA key. Prepared mode500 `matrix.sh`/`seed.py` plus harness
+hashes there assert exact BUILD_ID, seed three QA homebrew ROMs and run the
+independently reset19-case cloud-epic matrix at640x480, with owned cleanup.
+Launch with its runner/watch-build, activity-dir its artifacts, recursive,
+interval5/stall5, AFTER link runs release pair/cloud resources. Check any
+existing guest-d PID belongs to no live process first; launcher refuses one.
 
-RA preflight is a pending fixture dependency: live dedicated QA account
-already earned Tobu achievement100359; hardcore unearned but current routed
-offline test checks ordinary award. User question pending to reset that QA
-achievement or configure another QA account privately. Do not reset progress
-or claim RA PASS without reply and live availability recheck. No credentials
-printed. Receipt `docs/qa-logs/2026-10-03-m7-qa-01/ra-fixture-preflight.json`.
-Continue independent tests. No physical device/personal cloud touched.
+RA preflight is a real pending fixture dependency: live dedicated QA account
+already earned Tobu achievement100359; hardcore unearned but the existing
+routed offline test requires the unearned ordinary award. A user question is
+pending to reset that QA achievement or configure another QA account privately.
+Do not reset account progress or claim RA PASS without the reply and live
+availability check. No credentials were printed. Sanitized receipt is
+`docs/qa-logs/2026-10-03-m7-qa-01/ra-fixture-preflight.json`. Continue other tests.
 
 **New product gate #397:** actual SYSTEM has no fork branding licence or
 trademark policy under /usr/share/licenses. Source terms already existed.

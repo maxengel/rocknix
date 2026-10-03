@@ -5382,7 +5382,7 @@ class Link:
             where += f", {host_dir}/ here"
         print(f"          outputs kept: {where}")
 
-    def exercise(self, key, cmd, marker, receiving, sources, stamps, env="", rerun=None, verify=None, upload_marker=False):
+    def exercise(self, key, cmd, marker, receiving, sources, stamps, env="", rerun=None, verify=None, upload_marker=False, strict_retry=False):
         """Start `cmd` detached, cut at `marker`, restore after
         restore_after seconds, and assert the contract. `receiving` is
         ("cloud", endpoint path) or ("device", directory) -- where the
@@ -5543,11 +5543,11 @@ class Link:
         archive_whole = receiving and all(got.get(r) == src for r, src in sources.items())
         telling = [l for l in out2.splitlines() if re.search(r"ERROR|WARN|Failed|failed|exit", l)]
         last = (telling or out2.strip().splitlines() or ["no output"])[-1].strip()[:160]
-        if locked and archive_whole:
+        if locked and archive_whole and not strict_retry:
             print("    SKIP  the re-run is refused by the QA WebDAV server's stale-PUT lock (423 Locked) on the same "
                   "archive name -- a slirp artifact, not the script; the archive is already whole in the cloud. "
                   "Asserted on MinIO (LINK5, 2026-09-13): no lock, the re-run exits 0 and the archive matches after it.")
-        elif drained and archive_whole:
+        elif drained and archive_whole and not strict_retry:
             print("    SKIP  the re-run was ended by the stall ceiling with rclone's counter at 100%: QEMU's user-mode "
                   "stack takes the whole body at once and the throttled QA WebDAV server drains it for longer than the "
                   "ceiling, so the counter shows no progress while the upload completes -- the fixture, not the script "
@@ -5558,7 +5558,7 @@ class Link:
         if verify:
             ok, msg = verify(out2)
             f += not check(ok, msg, msg)
-        elif receiving and locked and archive_whole:
+        elif receiving and locked and archive_whole and not strict_retry:
             # The lock's second face: the stale PUT the server is still
             # holding open commits or aborts when slirp finally drops the
             # connection, and the stored file changes under a name the re-run
@@ -5635,19 +5635,13 @@ def fx_link5(L):
     --system-only -- cut mid-upload. The upload marker must not move unless
     the archive completed."""
     broot = f"{L.root}/backup"
-    # The cell's premise is an upload long enough to cut. Until #45 the
-    # archive was 16 MiB of PPSSPP's shipped assets and needed no help;
-    # since #45 a stock guest's archive is a few KB and the run ended
-    # before the cut could land (db6b42c180, 2026-09-13). Twelve MiB of
-    # random bytes in a location backuptool archives by default -- no
-    # /usr/config twin, so the identity prune keeps it -- put the premise
-    # back: ~60 s in flight at 200k after the 4 MiB burst. Removed as soon
-    # as the archive holds it; the archive is what travels. That drain is
-    # longer than the deliberate run's 36 s stall ceiling by construction,
-    # which on WebDAV ends the plain re-run at 100% (exercise() SKIPs that
-    # one signature there, D-CLOUD-128); on S3 the re-run has passed.
+    # Six MiB leaves data in flight after the endpoint's four-MiB burst,
+    # but drains inside the unchanged 36-second stall ceiling at 200k.
+    # The old 12-MiB fixture exceeded that bound by construction, masking
+    # retry evidence behind a WebDAV skip (D-CLOUD-128, #400). Assert the
+    # cut actually lands and require a successful retry on both providers.
     pad = "/storage/.config/retroarch/link5-padding.bin"
-    L.dev.run(f"head -c 12582912 /dev/urandom > {pad}; sync")
+    L.dev.run(f"head -c 6291456 /dev/urandom > {pad}; sync")
     try:
         rc, out = run_rc(L.dev, "backuptool backup")
     finally:
@@ -5667,7 +5661,7 @@ def fx_link5(L):
     L.dev.run(f"rm -f {CACHE}/settings-backup.uploaded", check=False)
     return L.exercise("LINK5", "cloud_backup --yes --system-only", LINK_MARKER_FILE,
                       ("cloud", f"{epath(L.settings_remote)}/{folder}"), {name: (size, digest)},
-                      ["last-settings-backup"], upload_marker=True)
+                      ["last-settings-backup"], upload_marker=True, strict_retry=True)
 
 
 def fx_link6(L):

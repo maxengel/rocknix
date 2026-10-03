@@ -43,14 +43,19 @@ on the unchanged candidate:14 passed in the first run; #396 corrected the
 host archive-name assertion and the complete round-trip rerun passed81s.
 All16 visual walks and frame comparison pass. Source/candidate custody was
 verified before and after the default run. RC2 upgrade passed18:57UTC, S3 round-trip passed107s, and mixed-install
-pair migration passed42/42 at19:04UTC. First WebDAV link run exposed the extended-stamp host assertion (#398);
-14 corrected parser controls pass and the complete rerun is active. Strict
-S3 coverage must replace the existing WebDAV LINK5 fixture skip. Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
+pair migration passed42/42 at19:04UTC. All7 WebDAV link cases have passing evidence after host fixes #398/#399 and
+strict LINK5 fixture correction #400; the corrected archive interruption/retry
+also passes S3 without skips. Full S3 link proof exposed #401: content backup
+and restore outwait an outage because they lack the saves/settings progress
+stall guard. #402 owns a scan that completed before its cut could land.
+The independent19-case640x480 guest-d matrix is active. RA award fixture100359
+is already earned; the owner reset/alternate-QA-account question is pending.
+Evidence: `docs/qa-logs/2026-10-03-m7-qa-01/` and
 `docs/qa-logs/2026-10-03-archive-harness/rerun/`.
 **New image gate #397:** SYSTEM lacks the approved branding licence and
 trademark policy. Image-assembly correction passes byte/mode/failure staging
 controls; a replacement immutable image and clean/upgrade readback are owed.
-**Next:** consume link-loss results, complete remaining P3 tests, then assemble
+**Next:** consume guest-d results, correct #401/#402 and complete remaining P3 tests, then assemble
 and qualify the replacement with all observed fixes. Shared recorder and
 active waiter delivered failure and success without a status request; no
 disconnected alert is configured (#395, D-WORKFLOW-143).
