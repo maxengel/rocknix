@@ -1,6 +1,6 @@
 # Saved Session State
 
-> Saved 2026-10-04T05:02:04.970139+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T050204Z.md`.
+> Saved 2026-10-04T04:45:01.135245+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T044501Z.md`.
 
 ## Start here
 
@@ -244,48 +244,35 @@ Preparation was published normally and remote-ref verified:
 feature4d6890395ce09c56ca9c352d99d4f44d3b70ab2f →
 next1ae3190d0cab648bac232a160b49810d1b6b2f8e. Frozen build remainsb137.
 
-## Host helper #410 — reviewed, prepared for administrator bootstrap
+## Parallel host helper #410 — in progress, not installed
 
 Owner: "I'll do it manually now, and then let's create the guarded host helper."
-Manual reset completed before the current build; never repeat it during work.
-Implementation feature8c448fcb3520f8b2702b2f873c082679756a67f7 integrated onto
-nextf8a320c8f6. This does not change frozenb137. Earlier running-checkpoint
-feature50cbeff730→nextdb3f5563c5 was pushed and remote-ref verified.
+Manual reset completed; do not repeat it while build/VM work is active.
+Issue410 M7.P3 tracks fixed /swap.img reclamation on serval/max1000.
+Current uncommitted code: tools/host-maintenance/{reclaim-swap,install,
+test-swap-reclaim,README.md} and tools/build-preflight --reclaim-swap.
+Default preflight remains read-only. Root helper: isolated system Python,
+fixed installed path/argument, trusted files/lock, single active swapfile,
+default fstab, 16GiB reserve plus used swap, repeat process/headroom checks,
+reactivation/readback with handled-signal cleanup. No broad sudo grant.
+Actual sudo-rs0.2.13 rejects command digests: retained parser failure;
+exact-command policy uses root-owned0755 helper and0440 policy instead.
+Thirty isolated tests pass, negative removed-memory-guard control fails twice;
+no actual host installation or kernel recycle through the helper yet.
+D-INFRA-015, futro2026-10-04-guarded-swap-reclaim record the bounded choice.
 
-Tools: host-maintenance/{reclaim-swap,install,test-swap-reclaim,README.md};
-explicit build-preflight --reclaim-swap. Default is read-only. Root helper:
-fixed /swap.img, isolated Python, root0755 /run lock directory,16GiB reserve
-plus used swap, repeated busy/memory checks, exact commands, restoration and
-verified readback. Serval active priority -1 is observed; other negative
-priorities refuse rather than claiming portable defaults. Exact-action sudo
-policy (sudo-rs lacks digest matchers), no general grant. Installer validates
-the direct include and full policy; rollback attempts both files independently.
-35 tests PASS; same35-test RAM-guard-removed control fails2. Before-fix
-regressions and host/Python probes are retained. No helper installed yet.
+Issue-level independent audit is running through Facilitator/OpenRouter,
+Anthropic Fable5.1/xhigh, session84577, /tmp/pixelelated-410-review.{log,rc}.
+Packet/source hashes and eventual response/provenance are under
+`docs/audits/2026_10_04-issue-410-guarded-swap/`. Do not edit the five audited
+source files until the call completes; verify model/effort/outcome/digest,
+then grade every lead against source and executable probes. This is not P4.
+Code-auditor Phase5/6/7 artifacts and audit tracker still pending.
 
-Independent Issue audit completed through Facilitator/OpenRouter,
-Anthropic Fable5.1/xhigh,580.7s, successful model/effort/digest verification.
-`docs/audits/2026_10_04-issue-410-guarded-swap/`, audit tracker411:
-five confirmed improvements all resolved; High proposed priority blocker
-refuted by actual host -1; timeout hypothesis unconfirmed. This is not P4.
-Original packet/response immutable, final-source-hashes.json binds corrected
-implementation. Artifact lint including411's five checked items passes.
-Parent410 stays open for host rollout, with first two fixture criteria checked.
-
-Prepared read-only bundle `/workspace/tmp/pixelelated-host-helper-8c448fcb35`:
-install, reclaim-swap, README, sudoers.preview, SHA256SUMS. Helper hash
-acfb7936c7271cd642a628a66b9a50d2b70c765eac9dd43bca60a67a7fec0547;
-installer cd84ee28990d20ac1426ede9ac409c5e8b711e31649771fdefb7e0659d9d6d00.
-No root install/policy/swap action has occurred. One-time owner command:
-`cd /workspace/tmp/pixelelated-host-helper-8c448fcb35 && sha256sum -c SHA256SUMS && sudo /usr/bin/python3 -I ./install`.
-This needs local interactive sudo authentication and performs no swap reset.
-After owner bootstrap, verify exact root bytes/modes, effective narrow grant
-and busy refusal. Actual idle recycle/timing waits until builds/VMs end;
-never bypass guards, use privileged Docker or broaden sudo. Read current
-user messages for whether the bootstrap request has been delivered/completed.
-
-The active cold build remains runner1801222/watcher1801223 under run
-20261004T041520Z-ef28d7ab. At05:00UTC520/642, fresh detailed MAME/kernel logs,
-available RAM about38GiB and PSI negligible. Main build.log may be quiet while
-heavy packages compile; watch detailed activity and actual pressure. Remain
-actively supervising and report completion/stalls. No off-session notifier.
+After review/fixes, prepare immutable installer staging and ask owner to run
+one authenticated administrator command (sudo -n requires authentication).
+Installer does no swap operation, so installation can precede build completion.
+Never use privileged Docker or a broad NOPASSWD workaround. Actual busy-refusal
+and safe-idle recycle evidence remain to collect before closing410. Publish
+ordinary exact feature commits onto next, but never advance frozenb137.
+Checkpoint/work-log/helper changes remain uncommitted at this checkpoint.
