@@ -6,6 +6,7 @@
 #
 #   tools/build-preflight            # report only
 #   tools/build-preflight --stop-vms # also stop running QA guests
+#   tools/build-preflight --reclaim-swap # guarded host helper, before a build
 #
 # Builds here are memory-bound, not disk-bound, and the two are easy to
 # confuse: /workspace has terabytes free while the box runs out of RAM. On
@@ -20,7 +21,7 @@
 #              parallel compiler.
 #   Swap       a full swap means there is no cushion left: the next spike goes
 #              to the OOM killer rather than degrading. Reclaiming it needs
-#              root, so this prints the command rather than running it.
+#              root. Default mode reports only; --reclaim-swap uses the installed guarded helper.
 #   QA guests  each QEMU guest holds ~2 GB and they are often left up for
 #              days. They are also what the build will kill first.
 #   Disk       reported for completeness; it has never been the limit here.
@@ -31,13 +32,50 @@
 
 set -u
 STOP_VMS=0
-[ "${1:-}" = "--stop-vms" ] && STOP_VMS=1
+RECLAIM_SWAP=0
+for option in "$@"; do
+    case "$option" in
+        --stop-vms) STOP_VMS=1 ;;
+        --reclaim-swap) RECLAIM_SWAP=1 ;;
+        -h|--help)
+            echo 'usage: tools/build-preflight [--stop-vms] [--reclaim-swap]'
+            echo 'Default is read-only. Reclaim runs the installed fixed-action helper before a build.'
+            exit 0 ;;
+        *) echo "build-preflight: unknown option: $option" >&2; exit 2 ;;
+    esac
+done
+if [ "$STOP_VMS" = 1 ] && [ "$RECLAIM_SWAP" = 1 ]; then
+    echo 'Stop guests first, wait for them to exit, then run --reclaim-swap separately.' >&2
+    exit 2
+fi
 
 verdict=0
 say() { printf '%s\n' "$*"; }
 
-read -r _ mem_total mem_used _ _ _ mem_avail <<<"$(free -m | awk 'NR==2')"
-read -r _ swap_total swap_used swap_free <<<"$(free -m | awk 'NR==3')"
+read_memory() {
+    local observation value
+    observation=$(free -m) || return 1
+    read -r _ mem_total mem_used _ _ _ mem_avail <<<"$(awk 'NR==2' <<<"$observation")"
+    read -r _ swap_total swap_used swap_free <<<"$(awk 'NR==3' <<<"$observation")"
+    for value in "$mem_total" "$mem_used" "$mem_avail" "$swap_total" "$swap_used" "$swap_free"; do
+        [[ "$value" =~ ^[0-9]+$ ]] || return 1
+    done
+    [ "$mem_total" -gt 0 ] && [ "$mem_avail" -le "$mem_total" ] &&
+        [ "$swap_free" -le "$swap_total" ] && [ "$swap_used" -le "$swap_total" ]
+}
+read_memory || { say 'ERROR: cannot read valid host memory counters'; exit 1; }
+if [ "$RECLAIM_SWAP" = 1 ] && [ "$swap_total" -gt 0 ] && [ "$swap_free" -lt $(( swap_total / 5 )) ]; then
+    helper=/usr/local/sbin/pixelelated-reclaim-swap
+    if [ ! -x "$helper" ]; then
+        say '  RECLAIM UNAVAILABLE: install the reviewed tools/host-maintenance helper first.'
+        verdict=1
+    elif ! sudo -n -- "$helper" --reclaim; then
+        say '  RECLAIM REFUSED: helper guards or administrator installation need attention.'
+        verdict=1
+    fi
+    # The helper's exit status is not the memory observation; read the host again.
+    read_memory || { say 'ERROR: cannot read valid host memory counters after reclaim'; exit 1; }
+fi
 say "RAM    ${mem_total}MB total, ${mem_used}MB used, ${mem_avail}MB available"
 say "Swap   ${swap_total}MB total, ${swap_used}MB used, ${swap_free}MB free"
 say "Disk   $(df -h /workspace | awk 'NR==2{print $4" free of "$2}')  (not the usual limit)"
@@ -47,10 +85,16 @@ if [ "$mem_avail" -lt 16000 ]; then
     say "  LOW: under 16GB available. A heavyweight package will not fit beside this."
     verdict=1
 fi
+if [ "$swap_total" -eq 0 ]; then
+    say '  NO ACTIVE SWAP: inspect /proc/swaps and restore the configured swap as administrator.'
+    say '    The guarded helper only recycles an already-active /swap.img; it cannot recover this state.'
+    verdict=1
+fi
 if [ "$swap_total" -gt 0 ] && [ "$swap_free" -lt $(( swap_total / 5 )) ]; then
     say "  SWAP EXHAUSTED: ${swap_free}MB of ${swap_total}MB free. There is no cushion;"
     say "    the next spike is an OOM kill rather than a slowdown. To reclaim it:"
-    say "      sudo swapoff -a && sudo swapon -a     # needs ${swap_used}MB of free RAM"
+    say '      tools/build-preflight --reclaim-swap'
+    say '    Uses the installed guarded /swap.img helper; see tools/host-maintenance/README.md.'
     verdict=1
 fi
 

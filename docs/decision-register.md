@@ -611,6 +611,8 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 
 | D-WORKFLOW-147 | 2026-10-04 | **For0.0.1, SPIRV-Headers496543121ce6419f23d6fa5d7194ba66c36212d2 follows current glslang16.6.0 and SPIRV-Tools ef96ed763b43b59b33b31b362f09a02b729fa1c9 as an evidenced parent-coupled dependency.** Both glslang known_good.json and Tools DEPS name exactly that header pin; glslang/Tools/shaderc source builds and shader compilation passed under #386. This records the existing integration choice, applying D-WORKFLOW-138's upstream alignment and functionality preservation, rather than an unexplained lag behind the independent headers branch. Move the pair with the parent and requalify its consumers. Cold cross-build and new-image criteria remain required; no bug or VM criterion is waived. | #386; `docs/qa-logs/2026-10-03-dependencies/`; `docs/qa-logs/2026-10-04-proxy-preflight/`; `docs/releases/rc-accept.txt` |
 
+| D-INFRA-015 | 2026-10-04 | **Build-host swap reclamation uses a guarded, root-owned fixed-target helper with a narrow exact-action sudo grant, invoked explicitly before a build.** Owner: "I'll do it manually now, and then let's create the guarded host helper." Only the already-active `/swap.img` is eligible; no caller-selected path/command/threshold, broad passwordless sudo, timer or privileged-container workaround. Check memory headroom, ownership, concurrent work and actual reactivation; preserve default read-only preflight and frozen in-flight builds. | #410; `tools/host-maintenance/`; `tools/build-preflight` |
+
 ## Open decisions
 
 | ID | Question | Home |

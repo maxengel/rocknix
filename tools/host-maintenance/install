@@ -1,0 +1,161 @@
+#!/usr/bin/python3 -I
+"""One-time administrator installation of the reviewed fixed-action helper."""
+import hashlib
+import fcntl
+import os
+from pathlib import Path
+import pwd
+import stat
+import subprocess
+import sys
+import tempfile
+
+HELPER = Path('/usr/local/sbin/pixelelated-reclaim-swap')
+POLICY = Path('/etc/sudoers.d/pixelelated-reclaim-swap')
+ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
+LOCK = Path('/run/pixelelated-reclaim-swap.lock')
+
+
+def policy(data):
+    digest = hashlib.sha256(data).hexdigest()
+    return ('# Managed by pixelelated tools/host-maintenance/install (#410).\n'
+            '# Only this root-owned helper and literal argument; no environment grants.\n'
+            f'# Installed helper SHA256 {digest} (receipt; sudo-rs has no digest matcher).\n'
+            'max ALL=(root) NOPASSWD: NOSETENV: '
+            '/usr/local/sbin/pixelelated-reclaim-swap --reclaim\n').encode()
+
+
+def secure(path, directory=False):
+    info = path.lstat()
+    expected = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise RuntimeError(f'unsafe root installation path: {path}')
+    if not directory and info.st_nlink != 1:
+        raise RuntimeError(f'hard-linked installation target: {path}')
+
+
+def stage(target, data, mode):
+    fd, name = tempfile.mkstemp(prefix='.' + target.name + '-', dir=target.parent)
+    path = Path(name)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fchown(stream.fileno(), 0, 0)
+            os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        return path
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def validate(path):
+    subprocess.run(['/usr/sbin/visudo', '-c', '-f', str(path)], env=ENV,
+                   stdin=subprocess.DEVNULL, check=True)
+
+
+def assert_policy_directory_included():
+    # Installation is intentionally scoped to this host's normal direct include.
+    # A valid file in an unreferenced directory would grant no permission.
+    includes = {'@includedir /etc/sudoers.d', '#includedir /etc/sudoers.d'}
+    if not any(line.strip() in includes for line in Path('/etc/sudoers').read_text().splitlines()):
+        raise RuntimeError('expected direct /etc/sudoers.d include; administrator review required')
+
+
+def install(data):
+    if os.geteuid() != 0:
+        raise RuntimeError('administrator authentication is required for installation')
+    if pwd.getpwnam('max').pw_uid != 1000:
+        raise RuntimeError('expected serval account max with uid1000')
+    if Path('/proc/sys/kernel/hostname').read_text().strip() != 'serval':
+        raise RuntimeError('this reviewed installer is scoped to serval')
+    for path in [Path('/'), Path('/usr'), Path('/usr/local'), HELPER.parent,
+                 Path('/etc'), POLICY.parent]:
+        secure(path, directory=True)
+    for path in [HELPER, POLICY]:
+        if path.exists() or path.is_symlink():
+            secure(path)
+    validate(Path('/etc/sudoers'))
+    assert_policy_directory_included()
+    old_helper = HELPER.read_bytes() if HELPER.exists() else None
+    old_policy = POLICY.read_bytes() if POLICY.exists() else None
+    new_helper = None
+    new_policy = None
+    changed = False
+    try:
+        new_helper = stage(HELPER, data, 0o755)
+        new_policy = stage(POLICY, policy(data), 0o440)
+        validate(new_policy)
+        # Both versions permit only the same root-owned fixed action. Policy is
+        # validated before replacement; a failed final check restores both files.
+        new_helper.replace(HELPER)
+        changed = True
+        new_policy.replace(POLICY)
+        validate(Path('/etc/sudoers'))
+        for path, expected, mode in [(HELPER, data, 0o755), (POLICY, policy(data), 0o440)]:
+            secure(path)
+            assert path.read_bytes() == expected and stat.S_IMODE(path.stat().st_mode) == mode
+            print(f'VERIFIED {path} root:{path.stat().st_gid} mode{mode:o} '
+                  f'sha256:{hashlib.sha256(expected).hexdigest()}')
+    except BaseException as cause:
+        if changed:
+            failures = []
+            for path, old, mode in [(POLICY, old_policy, 0o440), (HELPER, old_helper, 0o755)]:
+                rollback = None
+                try:
+                    if old is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        rollback = stage(path, old, mode)
+                        rollback.replace(path)
+                except BaseException as error:
+                    failures.append(f'{path}: {error}')
+                finally:
+                    if rollback:
+                        try:
+                            rollback.unlink(missing_ok=True)
+                        except OSError as error:
+                            failures.append(f'cleanup {rollback}: {error}')
+            try:
+                validate(Path('/etc/sudoers'))
+            except BaseException as error:
+                failures.append(f'final policy validation: {error}')
+            if failures:
+                raise RuntimeError(f'installation failed ({cause}); rollback incomplete: '
+                                   + '; '.join(failures)
+                                   + '; administrator must inspect helper and policy') from cause
+        raise
+    finally:
+        if new_helper:
+            new_helper.unlink(missing_ok=True)
+        if new_policy:
+            new_policy.unlink(missing_ok=True)
+    print('Installed fixed action only; no swap operation was run.')
+
+
+if __name__ == '__main__':
+    try:
+        if sys.argv[1:]:
+            raise RuntimeError('installer accepts no arguments')
+        source = Path(__file__).absolute().with_name('reclaim-swap')
+        data = source.read_bytes()
+        if not data.startswith(b'#!/usr/bin/python3 -I\n'):
+            raise RuntimeError('helper must use isolated system Python')
+        compile(data, str(source), 'exec')
+        if os.geteuid() != 0:
+            raise RuntimeError('administrator authentication is required for installation')
+        secure(LOCK.parent, directory=True)
+        os.umask(0o077)
+        fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077 or info.st_nlink != 1:
+                raise RuntimeError('unsafe lock file')
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            install(data)
+        finally:
+            os.close(fd)
+    except (OSError, RuntimeError, AssertionError, subprocess.SubprocessError) as error:
+        print('INSTALL FAILED: ' + str(error), file=sys.stderr)
+        sys.exit(1)
