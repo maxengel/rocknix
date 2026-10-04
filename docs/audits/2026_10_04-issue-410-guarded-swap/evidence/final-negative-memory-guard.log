@@ -1,0 +1,74 @@
+test_failed_policy_restore_still_restores_helper_and_cleans_temps (__main__.Installation.test_failed_policy_restore_still_restores_helper_and_cleans_temps) ... ok
+test_policy_directory_must_be_included (__main__.Installation.test_policy_directory_must_be_included) ... ok
+test_policy_is_exact_action_with_hash_receipt_and_valid_sudoers (__main__.Installation.test_policy_is_exact_action_with_hash_receipt_and_valid_sudoers) ... ok
+test_policy_validation_failure_rolls_back_both_files (__main__.Installation.test_policy_validation_failure_rolls_back_both_files) ... ok
+test_real_visudo_rejects_unowned_include_directory (__main__.Installation.test_real_visudo_rejects_unowned_include_directory) ... ok
+test_unprivileged_installation_cannot_write (__main__.Installation.test_unprivileged_installation_cannot_write) ... ok
+test_activation_flags_are_not_silently_lost (__main__.Observations.test_activation_flags_are_not_silently_lost) ... ok
+test_active_jobs_and_container_namespace_refused (__main__.Observations.test_active_jobs_and_container_namespace_refused) ... ok
+test_args_nonroot_and_source_copy_cannot_mutate (__main__.Observations.test_args_nonroot_and_source_copy_cannot_mutate) ... ok
+test_available_ram_missing_or_invalid_refused (__main__.Observations.test_available_ram_missing_or_invalid_refused) ... ok
+test_command_uses_fixed_environment_no_shell_and_failure_propagates (__main__.Observations.test_command_uses_fixed_environment_no_shell_and_failure_propagates) ... ok
+test_idle_process_exit_and_unreadable_process (__main__.Observations.test_idle_process_exit_and_unreadable_process) ... ok
+test_lock_excludes_concurrent_reclamation (__main__.Observations.test_lock_excludes_concurrent_reclamation) ... ok
+test_swap_exact_and_empty (__main__.Observations.test_swap_exact_and_empty) ... ok
+test_swap_malformed_or_other_target_refused (__main__.Observations.test_swap_malformed_or_other_target_refused) ... ok
+test_unsafe_ownership_mode_links_and_type_refused (__main__.Observations.test_unsafe_ownership_mode_links_and_type_refused) ... ok
+test_writable_lock_parent_refused_before_open (__main__.Observations.test_writable_lock_parent_refused_before_open) ... ok
+test_bad_observations_or_options_never_mutate (__main__.Preflight.test_bad_observations_or_options_never_mutate) ... ok
+test_default_is_read_only (__main__.Preflight.test_default_is_read_only) ... ok
+test_inactive_swap_never_reports_ready_or_auto_recovers (__main__.Preflight.test_inactive_swap_never_reports_ready_or_auto_recovers) ... ok
+test_missing_helper_is_visible (__main__.Preflight.test_missing_helper_is_visible) ... ok
+test_missing_permission_or_false_success_does_not_pass (__main__.Preflight.test_missing_permission_or_false_success_does_not_pass) ... ok
+test_opt_in_uses_only_fixed_sudo_action_and_fresh_readback (__main__.Preflight.test_opt_in_uses_only_fixed_sudo_action_and_fresh_readback) ... ok
+test_active_job_and_changed_file_refuse_before_mutation (__main__.Reclamation.test_active_job_and_changed_file_refuse_before_mutation) ... ok
+test_failed_swapoff_still_active_is_not_success (__main__.Reclamation.test_failed_swapoff_still_active_is_not_success) ... Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_failed_swapon_never_reports_success (__main__.Reclamation.test_failed_swapon_never_reports_success) ... Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_false_swapon_success_and_priority_drift_refused (__main__.Reclamation.test_false_swapon_success_and_priority_drift_refused) ... Reclaiming /swap.img with 16 GiB RAM reserve
+Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_healthy_noop_and_inactive_refusal (__main__.Reclamation.test_healthy_noop_and_inactive_refusal) ... ok
+test_insufficient_memory_and_boundary (__main__.Reclamation.test_insufficient_memory_and_boundary) ... READY: swap has at least 20% free; no change
+Reclaiming /swap.img with 16 GiB RAM reserve
+FAIL
+test_job_started_during_checks_refuses_before_mutation (__main__.Reclamation.test_job_started_during_checks_refuses_before_mutation) ... ok
+test_partial_swapoff_failure_and_interruption_reactivate (__main__.Reclamation.test_partial_swapoff_failure_and_interruption_reactivate) ... READY: /swap.img active, priority -1, 8388608 KiB free
+Reclaiming /swap.img with 16 GiB RAM reserve
+Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_reclaims_only_one_file_and_restores_priority (__main__.Reclamation.test_reclaims_only_one_file_and_restores_priority) ... Reclaiming /swap.img with 16 GiB RAM reserve
+READY: /swap.img active, priority -1, 8388608 KiB free
+Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_second_memory_read_refuses_new_pressure (__main__.Reclamation.test_second_memory_read_refuses_new_pressure) ... READY: /swap.img active, priority 17, 8388608 KiB free
+Reclaiming /swap.img with 16 GiB RAM reserve
+FAIL
+test_signal_acknowledged_only_after_reactivation (__main__.Reclamation.test_signal_acknowledged_only_after_reactivation) ... READY: /swap.img active, priority -1, 8388608 KiB free
+Reclaiming /swap.img with 16 GiB RAM reserve
+ok
+test_unrestorable_negative_priority_refuses (__main__.Reclamation.test_unrestorable_negative_priority_refuses) ... ok
+
+======================================================================
+FAIL: test_insufficient_memory_and_boundary (__main__.Reclamation.test_insufficient_memory_and_boundary)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/host-maintenance/test-swap-reclaim", line 201, in test_insufficient_memory_and_boundary
+    with self.assertRaisesRegex(helper.Refused, 'available RAM'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Refused not raised
+
+======================================================================
+FAIL: test_second_memory_read_refuses_new_pressure (__main__.Reclamation.test_second_memory_read_refuses_new_pressure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/repos/rocknix.worktrees/conflict-resolution/tools/host-maintenance/test-swap-reclaim", line 210, in test_second_memory_read_refuses_new_pressure
+    with self.assertRaises(helper.Refused):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+AssertionError: Refused not raised
+
+----------------------------------------------------------------------
+Ran 35 tests in 0.197s
+
+FAILED (failures=2)
