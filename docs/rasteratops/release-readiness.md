@@ -9,15 +9,18 @@ The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
 is the binding **current** execution order (D-WORKFLOW-139, #388). This document
 retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
 P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P3: the cold engineering image built successfully from
-frozen inputs and awaits qualification. Update the milestone and affected open issue titles when priorities change; issue numbers are references, not queue positions.
+Current priority is M7.P3: finish the remaining identity, brand, secret,
+localisation, source/licence and live RA fixture checks. Replacement02's
+full default, actual RC2 upgrade and targeted preservation/timing tests are
+complete. The milestone and affected open titles carry the current order;
+issue numbers are references, not queue positions.
 
-**Verdict: not ready to call a build an RC.** Source/diagnostic preparation
-has completed P1/P2 source gates; exact inputs are integrated and frozen, and
-the cold branded build finished with rc0 at16:33UTC on2026-10-03. Artifact qualification and independent
-review remain.
-The image/update tar are retained by digest; prior general VM runs do not
-qualify these new bytes.
+**Verdict: not ready to call a build an RC.** Replacement02, frozen61b64817bf,
+passed all15 default suites, clean/upgraded payload readback, actual RC2
+upgrade and the recorded installed proxy/cloud/archive/timing/identity checks.
+The remaining P3 criteria and the approved P4 independent fixes review still
+apply. Exact artifact digests and scoped receipts are in the current checkpoint;
+older build completion times below are historical, not a running job.
 
 ## Current execution update — 2026-10-03
 
