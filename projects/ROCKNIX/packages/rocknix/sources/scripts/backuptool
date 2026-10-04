@@ -158,9 +158,9 @@ LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${ARCHIVE_OS_NAME}_BACKUP.zip"
 # from before the label finds a new archive with the very same code.
 newest_backup() {
     local found
-    found=$(ls -1 "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_SETTINGS.tar.gz \
-                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_BACKUP.tar.gz \
-                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS}_BACKUP.zip 2>/dev/null | sort | tail -1)
+    found=$(ls -1 "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS,pixelelated}_SETTINGS.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS,pixelelated}_BACKUP.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-{ROCKNIX,RASTERATOPS,pixelelated}_BACKUP.zip 2>/dev/null | sort | tail -1)
     if [ -n "${found}" ]; then
         echo "${found}"
     elif [ -f "${LEGACY_BACKUPFILE}" ]; then

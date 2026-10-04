@@ -194,7 +194,7 @@ def check_base(r, name, repo, base, target, acc, fetch_cmd, fetched):
 
 
 def check_bugs(r, acc):
-    rc, out, err = run(["gh", "issue", "list", "--repo", "rasteratops/distribution", "--state", "open", "--label", "bug",
+    rc, out, err = run(["gh", "issue", "list", "--repo", "pixelelated/distribution", "--state", "open", "--label", "bug",
                         "--limit", "300", "--json", "number,title"], timeout=120)
     if rc != 0:
         r.add("CANNOT", "bugs", "the tracker did not answer: %s" % (err or out).strip().splitlines()[-1:])
@@ -210,7 +210,7 @@ def check_bugs(r, acc):
     for i in issues:
         if not acc.get(("bug", str(i["number"]))):
             continue
-        rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/rasteratops/distribution/issues/%d/comments" % i["number"],
+        rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/pixelelated/distribution/issues/%d/comments" % i["number"],
                                "--jq", ".[].body"], timeout=120)
         if rc2 != 0:
             r.add("CANNOT", "bugs", "the tracker did not answer for #%d's comments: %s" % (i["number"], (err2 or out2).strip().splitlines()[-1:]))
@@ -240,10 +240,10 @@ ALREADY_WRITTEN_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?already written(?:\*\
 
 def issue_text(number):
     """The issue's body and every comment as one text, or (None, why)."""
-    rc, out, err = run(["gh", "api", "repos/rasteratops/distribution/issues/%d" % number, "--jq", ".body"], timeout=120)
+    rc, out, err = run(["gh", "api", "repos/pixelelated/distribution/issues/%d" % number, "--jq", ".body"], timeout=120)
     if rc != 0:
         return None, (err or out).strip().splitlines()[-1:]
-    rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/rasteratops/distribution/issues/%d/comments" % number,
+    rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/pixelelated/distribution/issues/%d/comments" % number,
                            "--jq", ".[].body"], timeout=120)
     if rc2 != 0:
         return None, (err2 or out2).strip().splitlines()[-1:]
@@ -253,7 +253,7 @@ def issue_text(number):
 def check_already_written(r):
     listed = []
     for state in ("open", "closed"):
-        rc, out, err = run(["gh", "issue", "list", "--repo", "rasteratops/distribution", "--state", state, "--label", "bug",
+        rc, out, err = run(["gh", "issue", "list", "--repo", "pixelelated/distribution", "--state", state, "--label", "bug",
                             "--limit", "300", "--json", "number,closedAt,stateReason"], timeout=120)
         if rc != 0:
             r.add("CANNOT", "already written", "the tracker did not answer: %s" % (err or out).strip().splitlines()[-1:])

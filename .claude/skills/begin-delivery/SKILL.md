@@ -25,7 +25,7 @@ only where a stage explicitly says so. Swarm rule: while this skill is active on
 scope, other agents pause mutations on that scope until it completes
 ([ceremony execution discipline](../../rules/ceremonies.md#execution-discipline)).
 
-## Rasteratops continuation
+## pixelelated continuation
 
 The live milestone body orders phases; follow
 [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
@@ -610,7 +610,7 @@ project's issue workflow.
 
 ## Repo-specific integrations
 
-- **Rasteratops**:
+- **pixelelated**:
   - [`issue-tracking.md`](../../rules/issue-tracking.md) and [`fork-workflow.md`](../../rules/fork-workflow.md) governs issue / PR protocol — this skill defers to it; phase / Epic naming lives in [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md)
   - The `mini-retro` skill — produces what Step 1 retrieves
   - The `futro` skill — invoked by Step 2

@@ -1,7 +1,5 @@
 # Session pointer
 
-Read `.github/sessions/saved-session-state-next.md` on `next` first.
-It is the sole current execution checkpoint. The binding ordered priorities
-are in https://github.com/rasteratops/distribution/milestone/7 (D-WORKFLOW-139).
-This branch pointer deliberately carries no duplicated phase or job status.
-Continue the authorized work recorded there; do not restart the initial audit.
+Read `.github/sessions/saved-session-state-next.md` from `next` for the
+canonical pixelelated M7 state, source pins, receipts and next commands.
+This feature branch integrates by exact commits, never wholesale merge.

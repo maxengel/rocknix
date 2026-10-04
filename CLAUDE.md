@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-ROCKNIX is an **immutable Linux distribution for handheld gaming devices** (a JELOS fork
+pixelelated is an **immutable Linux distribution for handheld gaming devices** (a ROCKNIX/JELOS fork
 built on the LibreELEC/CoreELEC cross-compilation system). There is no app to run — this
 repo is a *build system* that cross-compiles a complete OS image (kernel, bootloader,
 emulators, userland) per device.
@@ -35,6 +35,17 @@ a feature worktree, or read the rules from `next` (#367).
   (where a row belongs — and D-UI-039: a row added, moved or renamed updates it in the
   same change) and `docs/conflict-wizard-ia.md` (the wizard's IA). Open them when the
   work is theirs; `es-native-ui.md` says which owns what.
+
+## Current project identity
+
+The next RC is **pixelelated**, always lowercase (D-WORKFLOW-144).
+GitHub organization: `pixelelated`; maintainer: `rasteratops`; developer:
+`blitterbot`, unchanged. Rasteratops is a character, not the OS name.
+Use `/pixelelated` for new cloud setups and migration destinations
+(D-CLOUD-174). The required adoption path is ROCKNIX → pixelelated; no
+fielded Rasteratops migration gate exists. Preserve ROCKNIX stored interfaces,
+upstream credits and historical evidence. See `NAMING.md` and
+`docs/pixelelated/rename-plan.md` before identity changes.
 
 ## Build & development commands
 
@@ -129,13 +140,13 @@ No Conventional Commits. Scope by package or device, matching history:
 
 ## Fork workflow (this working copy is a fork)
 
-`origin` = `rasteratops/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
+`origin` = `pixelelated/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.md` / `worktrees.md`; essentials:
 
 - Branch `next` = `upstream/next` + a personal overlay (`.claude/rules/`, `docs/`, `plans/`, `.githooks/`, ...). **Never PR `next` upstream.**
 - Feature work: branch `feature/<name>` from `next` in a worktree at `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
 - Upstream PRs use a throwaway branch built **by content**: `git checkout next -- <the feature paths>` onto a detached `upstream/next`, one commit. The old `git rebase --onto upstream/next next pr/<name>` recipe is retired — it produces an empty branch, silently, once the feature has been merged into `next`. `.githooks/pre-push` guards `pr/*`; it is the backstop, not the plan.
-- Issues go on the fork: always `gh --repo rasteratops/distribution` (upstream has Issues disabled).
+- Issues go on the fork: always `gh --repo pixelelated/distribution` (upstream has Issues disabled).
 - The milestone body is the current ordered plan: current/next work, dependencies and exit evidence. Keep open titles aligned as `M7.P1: ...`; M comes from the milestone name, P from its body. Update both when priorities change; preserve closed titles (`milestone-phase-naming.md`, D-WORKFLOW-139).
 - User-facing behavior changes need a follow-up docs PR to the separate `ROCKNIX/rocknix.org` repo.
 - Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`. A learning that is a *procedure* becomes a tool or a flag, not prose (`learning-capture.md` § 3).

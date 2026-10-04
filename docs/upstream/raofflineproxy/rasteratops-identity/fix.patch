@@ -1,6 +1,6 @@
-config: recognize Rasteratops as the ROCKNIX settings layout
+config: recognize pixelelated as the ROCKNIX settings layout
 
-Rasteratops changes OS_NAME while retaining /storage and the canonical
+pixelelated changes OS_NAME while retaining /storage and the canonical
 system.cfg account. Without recognition, automatic credential discovery
 misses that file after the rename. Match complete OS_NAME records so an
 unrelated field or commented example is not treated as platform identity.
@@ -14,9 +14,9 @@ Fork #408; intended for upstream contribution with #168.
      except OSError:
          return False
 -    return 'OS_NAME="ROCKNIX"' in content
-+    # Rasteratops retains ROCKNIX's settings and emulator layout.
++    # pixelelated retains ROCKNIX's settings and emulator layout.
 +    return any(
-+        line in {'OS_NAME="ROCKNIX"', 'OS_NAME="RASTERATOPS"'}
++        line in {'OS_NAME="ROCKNIX"', 'OS_NAME="RASTERATOPS"', 'OS_NAME="pixelelated"'}
 +        for line in content.splitlines()
 +    )
  
@@ -29,11 +29,11 @@ Fork #408; intended for upstream contribution with #168.
              finally:
                  config.OS_RELEASE_PATH = original
 +
-+    def test_rasteratops_discovers_rocknix_account_settings(self) -> None:
++    def test_pixelelated_discovers_rocknix_account_settings(self) -> None:
 +        with tempfile.TemporaryDirectory() as temp_dir:
 +            os_release = Path(temp_dir) / "os-release"
 +            system_cfg = Path(temp_dir) / "system.cfg"
-+            os_release.write_text('OS_NAME="RASTERATOPS"\n', encoding="utf-8")
++            os_release.write_text('OS_NAME="pixelelated"\n', encoding="utf-8")
 +            system_cfg.touch()
 +            with patch.object(config, "OS_RELEASE_PATH", os_release), patch.object(
 +                config, "DEFAULT_ROCKNIX_SYSTEM_CFG", system_cfg

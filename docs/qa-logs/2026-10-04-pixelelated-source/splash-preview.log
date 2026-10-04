@@ -1,0 +1,13 @@
+/tmp/rasteratops-rc-delivery-20261002/splash/fbsplash.c: In function ‘fb_init’:
+/tmp/rasteratops-rc-delivery-20261002/splash/fbsplash.c:62:5: warning: ignoring return value of ‘read’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   62 |     read(fb->fd, fb->buffer, fb->screensize);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/rasteratops-rc-delivery-20261002/splash/fbsplash.c: In function ‘fb_flush’:
+/tmp/rasteratops-rc-delivery-20261002/splash/fbsplash.c:164:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  164 |         write(fb->fd, fb->buffer, fb->screensize);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+PASS 640x480 rotation=0 visible_pixels=5400
+PASS 640x480 rotation=90 visible_pixels=5400
+PASS 640x480 rotation=180 visible_pixels=5400
+PASS 640x480 rotation=270 visible_pixels=5400
+PASS 1280x960 rotation=0 visible_pixels=21600

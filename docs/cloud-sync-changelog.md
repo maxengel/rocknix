@@ -1,5 +1,15 @@
 # Cloud sync, backup and restore — change summary
 
+## 0.0.1 identity transition — 2026-10-04 (#409)
+
+The next candidate is named **pixelelated**, always lowercase. New cloud
+setups use `/pixelelated`; the existing folder-move workflow targets that
+folder and preserves saves, backups, content and retry/recovery behavior.
+ROCKNIX `/GAMES` and `/ROCKNIX` layouts remain supported migration sources;
+custom folder choices remain intact. No fielded `/Rasteratops` systems exist.
+Source changes are under validation; the new candidate image is not yet built.
+
+
 Draft for the eventual upstream PR body, the rocknix.org documentation pass,
 and a call for testing on devices we do not own.
 

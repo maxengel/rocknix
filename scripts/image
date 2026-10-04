@@ -205,11 +205,11 @@ fi
 # Keep the fork's approved identity terms with its artwork in SYSTEM (#397).
 # Install the authoritative files at image assembly time so a text change
 # cannot be hidden by an unchanged package build stamp.
-if [ "${DISTRONAME}" = "RASTERATOPS" ]; then
+if [ "${DISTRONAME}" = "pixelelated" ]; then
   for policy in LICENSE.md TRADEMARK.md; do
     install -D -m 0644 "${ROOT}/${policy}" \
-      "${INSTALL}/usr/share/licenses/rasteratops/${policy}" \
-      || die "Unable to install Rasteratops identity policy: ${policy}"
+      "${INSTALL}/usr/share/licenses/pixelelated/${policy}" \
+      || die "Unable to install pixelelated identity policy: ${policy}"
   done
 fi
 

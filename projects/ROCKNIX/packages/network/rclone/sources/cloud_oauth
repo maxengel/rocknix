@@ -730,7 +730,7 @@ document.querySelector("input[name=code]").addEventListener("paste", function ()
 # rather than carried in the address. Scanning the QR skips this page, because
 # the QR encodes the PIN.
 PIN_PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Rasteratops cloud sign-in</title>
+<title>pixelelated cloud sign-in</title>
 <style>%(style)s</style>
 <div class=card>
 <h1>Almost there</h1>
@@ -1026,7 +1026,7 @@ window.onerror = function (message) {
   var state = document.getElementById("state");
   if (!state) return;
   state.className = "err";
-  state.textContent = "This page stopped working. Reload it; if it happens again, report it to the Rasteratops project: " + message;
+  state.textContent = "This page stopped working. Reload it; if it happens again, report it to the pixelelated project: " + message;
 };
 (function () {
   var pin = "%(pin)s";
@@ -1508,7 +1508,7 @@ class RemoteKeyboard:
                 fcntl.ioctl(fd, UI_SET_KEYBIT, code)
             # struct uinput_user_dev: name[80], id{bustype,vendor,product,
             # version}, ff_effects_max, then the absmin/max/fuzz/flat arrays.
-            name = b"Rasteratops cloud sign-in".ljust(80, b"\0")
+            name = b"pixelelated cloud sign-in".ljust(80, b"\0")
             os.write(fd, name + struct.pack("HHHHi", 0x03, 0x1209, 0x0001, 1, 0)
                      + b"\0" * (4 * 64 * 4))
             fcntl.ioctl(fd, UI_DEV_CREATE)

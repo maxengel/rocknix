@@ -467,3 +467,10 @@ here.** The reason column is the point; a line with no reason is not a decision.
 - KEYBOARDTOPADS -- upstream key-to-pad editor; #63 will move its tab strip to the focus model, which does not change where it lives
 - ANALOG STICKS LEDS -- upstream LED page for controllers our devices do not have
 - PAIR A BLUETOOTH DEVICE -- upstream pairing flow, unchanged here
+
+## pixelelated identity (0.0.1)
+
+The screenshot toggle in System Settings reads **ENABLE pixelelated SCREENSHOT**;
+its persisted `rocknix.screenshot.enabled` setting is unchanged.
+The system menu version line and manual-update destination use lowercase
+pixelelated (D-WORKFLOW-144, #409). This is a name change within the same rows.

@@ -25,7 +25,7 @@ engineering evidence, never relabel its bytes as pixelelated.
    different account: do not rewrite its historic personal forks to the
    new `rasteratops` account without an actual repository transfer.
 2. Change distribution identity, player strings, ES, boot/theme wordmarks
-   using the existing Tiny5 generator, licence installation and proxy
+   using the Tiny5 Duo LCD wordmark generator, licence installation and proxy
    identity detection. Preserve upstream credits, the font licence and
    stored ROCKNIX interfaces. Publish exact sibling source commits before
    recipe pins move to them.
@@ -62,3 +62,10 @@ engineering evidence, never relabel its bytes as pixelelated.
 
 No brand-wide completion claim is made from source grep. Candidate image
 frames, installed-byte readbacks and the release criteria supply that proof.
+
+Prepared player documentation: `docs/pixelelated/cloud-folders.md`. The
+upstream proxy contribution draft under
+`docs/upstream/raofflineproxy/rasteratops-identity/` now matches the new
+identity patch; its historical directory name is retained, and nothing has
+been submitted upstream. #409 stays open through image qualification/P4;
+its source/build portion, not closure of the whole issue, precedes P4.

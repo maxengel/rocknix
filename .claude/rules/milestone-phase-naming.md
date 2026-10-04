@@ -15,7 +15,7 @@ D-WORKFLOW-139, #388.
 ## Sources of truth
 
 - A named milestone uses `M{N}: {title}`, for example
-  `M7: Rasteratops 0.0.1`. Read `M` from that **name**, never from the GitHub
+  `M7: pixelelated 0.0.1`. Read `M` from that **name**, never from the GitHub
   ordinal/URL. The explicit initial assignment of M7 is recorded in
   D-WORKFLOW-139; another host's ordinal must not rename it.
 - Its body holds the binding ordered phase chain. Each phase names its
@@ -63,7 +63,7 @@ M7.P1: Make cloud layout migrations repeatable
 M7.P2: Preserve offline achievements through the proxy refresh
 M7.P3: Qualify settings archives on the candidate
 M7.P1 E354/H1: Reject unsupported layout markers
-M7: Deliver and qualify Rasteratops 0.0.1
+M7: Deliver and qualify pixelelated 0.0.1
 ```
 
 The last form is also allowed for an explicitly documented **milestone-wide

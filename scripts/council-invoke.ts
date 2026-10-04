@@ -1076,7 +1076,7 @@ const MISTRAL_OPENROUTER_RECIPE: MemberRecipe = {
   headers: () => ({
     Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://github.com/rasteratops/distribution",
+    "HTTP-Referer": "https://github.com/pixelelated/distribution",
     "X-Title": "Estate Council Facilitator",
   }),
   buildBody: ({ userPrompt, systemPrompt, maxTokens, transport }) => {
@@ -1298,7 +1298,7 @@ function openRouterRecipe(id: MemberId, seat: OpenRouterSeat): MemberRecipe {
     headers: () => ({
       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/rasteratops/distribution",
+      "HTTP-Referer": "https://github.com/pixelelated/distribution",
       "X-Title": "Estate Council Facilitator",
     }),
     buildBody: ({ userPrompt, systemPrompt, maxTokens, transport }) => {

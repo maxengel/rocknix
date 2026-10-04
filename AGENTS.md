@@ -1,6 +1,6 @@
 # AGENTS.md
 
-ROCKNIX is an **immutable Linux distribution for handheld gaming devices** (a JELOS fork
+pixelelated is an **immutable Linux distribution for handheld gaming devices** (a ROCKNIX/JELOS fork
 built on the LibreELEC/CoreELEC cross-compilation system). There is no app to run — this
 repo is a *build system* that cross-compiles a complete OS image (kernel, bootloader,
 emulators, userland) per device.
@@ -32,6 +32,17 @@ file is right and this file has a bug.
   (where a row belongs; D-UI-039: a row added, moved or renamed updates it in the same
   change) and `docs/conflict-wizard-ia.md` (the wizard's IA). `docs/device-testing-policy.md`
   is the device and QA-guest policy.
+
+## Current project identity
+
+The next RC is **pixelelated**, always lowercase (D-WORKFLOW-144).
+GitHub organization: `pixelelated`; maintainer: `rasteratops`; developer:
+`blitterbot`, unchanged. Rasteratops is a character, not the OS name.
+Use `/pixelelated` for new cloud setups and migration destinations
+(D-CLOUD-174). The required adoption path is ROCKNIX → pixelelated; no
+fielded Rasteratops migration gate exists. Preserve ROCKNIX stored interfaces,
+upstream credits and historical evidence. See `NAMING.md` and
+`docs/pixelelated/rename-plan.md` before identity changes.
 
 ## Build & development commands
 
@@ -142,7 +153,7 @@ No Conventional Commits. Scope by package or device, matching history:
 
 ## Fork workflow (this working copy is a fork)
 
-`origin` = `rasteratops/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
+`origin` = `pixelelated/distribution`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.md` / `worktrees.md`; the essentials:
 
 - Branch `next` = `upstream/next` + a *personal overlay* (`.claude/`, `AGENTS.md`,
@@ -159,7 +170,7 @@ No Conventional Commits. Scope by package or device, matching history:
   (`git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"`).
 - Remove a worktree with `tools/fork-worktree remove`, never `git worktree remove --force`
   (D-WORKFLOW-005): it cannot tell a checkout from hours of build output.
-- Issues go on the fork: always `gh --repo rasteratops/distribution` (`gh` defaults to upstream
+- Issues go on the fork: always `gh --repo pixelelated/distribution` (`gh` defaults to upstream
   here, which has Issues disabled).
 - The milestone body is the current ordered plan: current/next work, dependencies
   and exit evidence. Keep open titles aligned as `M7.P1: ...`; M comes from the

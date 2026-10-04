@@ -135,9 +135,9 @@ G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0; set_settin
 # Each case now constructs exactly that initial state itself.
 case "$PROOF_CASE" in
  A|H) ;;
- *) mv "$DATA/ROCKNIX" "$DATA/Rasteratops"; conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content >/dev/null;;
+ *) mv "$DATA/ROCKNIX" "$DATA/pixelelated"; conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content >/dev/null;;
 esac
-if [ "$PROOF_CASE" = E ]; then cp -a "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; fi
+if [ "$PROOF_CASE" = E ]; then cp -a "$DATA/pixelelated" "$DATA/_pixelelated_hold"; fi
 case "$PROOF_CASE" in
  T17|T19|T23|T26)
   . "$R/tools/vm-walks/cloud-epic/migration-protocol.sh"
@@ -160,10 +160,10 @@ case "$PROOF_CASE" in
    conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content >/dev/null
    expected=/ROCKNIX/Saves
    if [ "$PROOF_CASE" = T12 ]; then
-    mkdir -p "$DATA/Rasteratops/Saves/nes"
-    printf 'fleet saves sentinel\n' > "$DATA/Rasteratops/Saves/nes/Boot.srm"
-    printf 'layout=2\n' > "$DATA/Rasteratops/.layout"
-    expected=/Rasteratops/Saves
+    mkdir -p "$DATA/pixelelated/Saves/nes"
+    printf 'fleet saves sentinel\n' > "$DATA/pixelelated/Saves/nes/Boot.srm"
+    printf 'layout=2\n' > "$DATA/pixelelated/.layout"
+    expected=/pixelelated/Saves
    fi
   fi
   G_ 'mkdir -p /storage/roms/nes; printf "local backup sentinel\n" > /storage/roms/nes/Local.srm; . /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 1' >/dev/null || exit 2
@@ -173,7 +173,7 @@ case "$PROOF_CASE" in
    [ ! -e "$DATA/GAMES/nes/Local.srm" ]; check $? 'T11: startup did not populate the empty old root before joining'
    [ "$(cat "$DATA/ROCKNIX/Saves/nes/Boot.srm")" = 'earlier saves sentinel' ]; check $? 'T11: earlier save bytes preserved'
   elif [ "$PROOF_CASE" = T12 ]; then
-   [ "$(cat "$DATA/Rasteratops/Saves/nes/Boot.srm")" = 'fleet saves sentinel' ]; check $? 'T12: fleet save bytes preserved'
+   [ "$(cat "$DATA/pixelelated/Saves/nes/Boot.srm")" = 'fleet saves sentinel' ]; check $? 'T12: fleet save bytes preserved'
    [ ! -e "$DATA/ROCKNIX/Saves/nes/Local.srm" ]; check $? 'T12: startup did not recreate the abandoned old root'
   else
    [ ! -e "$DATA/ROCKNIX" ]; check $? 'T08: startup did not recreate an absent old parent'
@@ -184,11 +184,11 @@ esac
 
 if want H; then
 say "== H: a fresh device (on the current default) whose cloud holds its saves only under /ROCKNIX: the scan joins that folder and the move dialog names it (D-CLOUD-169)"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 to_page restore H
 say "  guest conf after the scan: $(G_ "grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' $CONF | tr '\n' ' '")"
 G_ "grep -q '^SAVES_REMOTE=\"/ROCKNIX/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/ROCKNIX/Backups\"' $CONF && grep -q '^CONTENT_REMOTE=\"/ROCKNIX/Content\"' $CONF"; check $? "H: the scan joined the folder the saves are in"
-[ ! -e "$DATA/Rasteratops" ]; check $? "H: nothing was made at /Rasteratops beside them"
+[ ! -e "$DATA/pixelelated" ]; check $? "H: nothing was made at /pixelelated beside them"
 G_ 'journalctl -b -o short-iso -t cloud_migrate_layout -t cloud_scan 2>/dev/null | grep -i join | tail -3' | maskl | tee -a "$LOG"
 G_ 'journalctl -b -o short-iso -t cloud_migrate_layout 2>/dev/null | grep -q "joined the fleet at /ROCKNIX/Saves"'; check $? "H: the journal names the join"
 # B on the dialog is its last button, NOT NOW; the options page follows it
@@ -201,18 +201,18 @@ say "== A: RESTORE FROM THE CLOUD opens on the scan page; an earlier /ROCKNIX wi
 to_page restore A
 steps A2 'key x' 'wait-for-change' 'wait 2' 'shot A-move-running' 'settle 180 3' 'shot A-move-done' 'key x' 'wait-for-change' 'shot A-rescan' 'settle 90 3' 'shot A-options-after-move' 'dismiss-dialogs'
 say "  cloud after the move: $(host_tree)"
-say "  marker: $(cat "$DATA/Rasteratops/.layout" 2>/dev/null || echo none)"
+say "  marker: $(cat "$DATA/pixelelated/.layout" 2>/dev/null || echo none)"
 say "  guest conf: $(G_ "grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=|^LAYOUT_KEEP=' $CONF | tr '\n' ' '")"
-[ -f "$DATA/Rasteratops/Saves/nes/Probe.srm" ] && [ -f "$DATA/Rasteratops/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "$DATA/Rasteratops/Content/ROMs/nes/Probe.nes" ] && [ -f "$DATA/Rasteratops/Saves-replaced/nes/Probe.srm.1" ]; check $? "A: the four folders of ours are under /Rasteratops after MOVE (saves, settings backup, content, the set-aside)"
+[ -f "$DATA/pixelelated/Saves/nes/Probe.srm" ] && [ -f "$DATA/pixelelated/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "$DATA/pixelelated/Content/ROMs/nes/Probe.nes" ] && [ -f "$DATA/pixelelated/Saves-replaced/nes/Probe.srm.1" ]; check $? "A: the four folders of ours are under /pixelelated after MOVE (saves, settings backup, content, the set-aside)"
 [ ! -f "$DATA/ROCKNIX/Saves/nes/Probe.srm" ] && [ ! -f "$DATA/ROCKNIX/Saves-replaced/nes/Probe.srm.1" ]; check $? "A: nothing of ours remains under /ROCKNIX"
-[ "$(cat "$DATA/Rasteratops/.layout" 2>/dev/null)" = "layout=2" ]; check $? "A: the layout marker is written"
-G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF"; check $? "A: the guest now points at /Rasteratops/Saves"
+[ "$(cat "$DATA/pixelelated/.layout" 2>/dev/null)" = "layout=2" ]; check $? "A: the layout marker is written"
+G_ "grep -q '^SAVES_REMOTE=\"/pixelelated/Saves\"' $CONF"; check $? "A: the guest now points at /pixelelated/Saves"
 G_ 'journalctl -b -o short-iso -t cloud_migrate_layout -t cloud_scan 2>/dev/null | tail -8' | maskl | tee -a "$LOG"
 fi
 
 if want C; then
 say "== C: the SETTINGS row by device label: offered with the device and date after the move (above); dimmed with only a foreign archive"
-rm -f "$DATA/Rasteratops/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz"
+rm -f "$DATA/pixelelated/Backups/2026_09_30-120000-$LABEL-ROCKNIX_SETTINGS.tar.gz"
 to_page restore C
 G_ "grep -qx 'MINE=' /storage/.cache/cloud_sync/scan/settings && test -s /storage/.cache/cloud_sync/scan/done"; check $? 'C: foreign-only scan disables settings with a completed scan'
 steps C2 'dismiss-dialogs'
@@ -221,22 +221,22 @@ fi
 if want D; then
 say "== D: the content folder: nothing of ours at the configured root and nothing found -> the question and the chooser; found elsewhere -> used, then the content scan"
 mkdir -p "$DATA/Photos" "$DATA/Documents"; head -c 100 /dev/urandom > "$DATA/Photos/holiday.jpg"; : > "$DATA/Documents/notes.txt"
-mv "$DATA/Rasteratops/Content" "$DATA/_content_hold"; mkdir -p "$DATA/Rasteratops/Content"
+mv "$DATA/pixelelated/Content" "$DATA/_content_hold"; mkdir -p "$DATA/pixelelated/Content"
 reset_picks
 to_page restore D
 # tick ROMS AND BIOS (row 2), then CONTINUE: up to SAVES, up to BACK, right to CONTINUE
 steps D2 'key down' 'wait-for-change' 'key x' 'wait-for-change 12 0' 'settle' 'shot D-roms-ticked' 'key up' 'wait-for-change' 'key up' 'wait-for-change' 'key right' 'wait-for-change' 'settle' 'shot D-continue' 'key x' 'wait-for-change' 'settle 30 2' 'shot D-question' 'key x' 'wait-for-change' 'settle' 'shot D-chooser' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
-rm -rf "$DATA/Rasteratops/Content"; mv "$DATA/_content_hold" "$DATA/Rasteratops/Content"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Elsewhere)"
+rm -rf "$DATA/pixelelated/Content"; mv "$DATA/_content_hold" "$DATA/pixelelated/Content"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /Elsewhere)"
 reset_picks
 to_page restore D3
 steps D4 'key down' 'wait-for-change' 'key x' 'wait-for-change 12 0' 'settle' 'key up' 'wait-for-change' 'key up' 'wait-for-change' 'key right' 'wait-for-change' 'settle' 'key x' 'wait-for-change' 'shot D-content-scan-0' 'wait 1.5' 'shot D-content-scan-1' 'settle 90 3' 'shot D-systems' 'dismiss-dialogs'
-G_ "grep -E '^CONTENT_REMOTE=' $CONF"; G_ "grep -q '^CONTENT_REMOTE=\"/Rasteratops/Content\"' $CONF"; check $? "D: the content root found under the cloud root was used without a question"
+G_ "grep -E '^CONTENT_REMOTE=' $CONF"; G_ "grep -q '^CONTENT_REMOTE=\"/pixelelated/Content\"' $CONF"; check $? "D: the content root found under the cloud root was used without a question"
 fi
 
 if want B; then
 say "== B0: a carried /GAMES that holds saves and no current folder -> the move dialog names /GAMES; NOT NOW"
-mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"
+mv "$DATA/pixelelated" "$DATA/_pixelelated_hold"
 mkdir -p "$DATA/GAMES/nes"; head -c 3000 /dev/urandom > "$DATA/GAMES/nes/Stock.srm"
 say "  guest conf: $(conf /GAMES /GAMES/backup '')"
 to_page restore B0
@@ -248,13 +248,13 @@ say "  guest conf: $(conf /GAMES /GAMES/backup '')"
 to_page restore B
 steps B2 'key x' 'wait-for-change' 'wait 1' 'shot B-create-running' 'settle 120 3' 'shot B-rescan' 'settle 90 3' 'shot B-options-after-create' 'dismiss-dialogs'
 say "  cloud after CREATE IT: $(host_tree)"
-[ -d "$DATA/Rasteratops/Saves" ] && [ -d "$DATA/Rasteratops/Backups" ] && [ -d "$DATA/ROMs" ] && [ -d "$DATA/BIOS" ] && [ ! -e "$DATA/Rasteratops/Content" ]; check $? "B: CREATE IT makes saves/backups and preserves the explicit cloud content root"
-G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/Rasteratops/Backups\"' $CONF"; check $? "B: the carried /GAMES setting is re-pointed at the current layout"
+[ -d "$DATA/pixelelated/Saves" ] && [ -d "$DATA/pixelelated/Backups" ] && [ -d "$DATA/ROMs" ] && [ -d "$DATA/BIOS" ] && [ ! -e "$DATA/pixelelated/Content" ]; check $? "B: CREATE IT makes saves/backups and preserves the explicit cloud content root"
+G_ "grep -q '^SAVES_REMOTE=\"/pixelelated/Saves\"' $CONF && grep -q '^SETTINGS_REMOTE=\"/pixelelated/Backups\"' $CONF"; check $? "B: the carried /GAMES setting is re-pointed at the current layout"
 fi
 
 if want E; then
 say "== E: the startup sync with no saves folder in the cloud: the card says SKIPPED with the row to set it up; then the cloud folder step offers CREATE IT (D-CLOUD-170)"
-rm -rf "$DATA/Rasteratops"
+rm -rf "$DATA/pixelelated"
 # The boot with a stock-shaped conf, as a device updated from stock ROCKNIX carries it (/GAMES, a value nobody typed;
 # a substitute for that update, named: the conf is written here, not carried): the card's skip, then the step once
 # the card is done, nothing re-pointed until the player answers (D-CLOUD-166 for the card, D-CLOUD-170 for the step)
@@ -270,13 +270,13 @@ steps E2 'shot E-step-offer' 'key z' 'wait-for-change' 'settle' 'shot E-after-no
 G_ "grep -q '^SAVES_REMOTE=\"/GAMES\"' $CONF"; check $? "E: NOT NOW re-pointed nothing: the stock-shaped conf still names /GAMES"
 [ ! -e "$DATA/GAMES" ]; check $? "E: and the boot's startup sync made no /GAMES in the cloud (D-CLOUD-172)" "the cloud holds: $(cd "$DATA" && find GAMES -type f 2>/dev/null | head -3 | tr '\n' ' ')"
 G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0' >/dev/null 2>&1
-mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+mv "$DATA/_pixelelated_hold" "$DATA/pixelelated"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 fi
 
 if want I; then
 say "== I: the boot step on a device still on /ROCKNIX with saves there: after the startup card, CHECKING YOUR CLOUD, then MOVE; NOT NOW asks again next boot; after MOVE nothing"
-mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Boot.srm"
+mv "$DATA/pixelelated" "$DATA/_pixelelated_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Boot.srm"
 say "  cloud: $(host_tree)"
 say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
 G_ '/usr/bin/cloud_migrate_layout --needs-step >/dev/null 2>&1; echo "needs-step rc=$?"' | tee -a "$LOG"
@@ -291,14 +291,14 @@ boot_frames I-boot2 40
 esl 'offering the move' | grep -q .; check $? "I: the next boot asked again"
 steps I2 'shot I-move-question-again' 'key x' 'wait-for-change' 'wait 2' 'shot I-move-running' 'settle 180 3' 'shot I-move-done' 'key x' 'wait-for-change' 'settle' 'shot I-after-move' 'dismiss-dialogs'
 say "  cloud after the move: $(host_tree)"
-[ -f "$DATA/Rasteratops/Saves/nes/Boot.srm" ] && [ ! -f "$DATA/ROCKNIX/Saves/nes/Boot.srm" ]; check $? "I: MOVE at boot moved the saves to /Rasteratops and left nothing under /ROCKNIX"
-G_ "grep -q '^SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF"; check $? "I: the conf points at /Rasteratops/Saves"
+[ -f "$DATA/pixelelated/Saves/nes/Boot.srm" ] && [ ! -f "$DATA/ROCKNIX/Saves/nes/Boot.srm" ]; check $? "I: MOVE at boot moved the saves to /pixelelated and left nothing under /ROCKNIX"
+G_ "grep -q '^SAVES_REMOTE=\"/pixelelated/Saves\"' $CONF"; check $? "I: the conf points at /pixelelated/Saves"
 esl 'cloud folder step: settled' | grep -q .; check $? "I: and the step's own check after the move reads it settled"
 boot_frames I-boot3 40
 esl 'nothing to settle' | grep -q . && ! esl 'cloud folder step: checking the folder' | grep -q .; check $? "I: the boot after the move raises nothing (--needs-step 1)"
 steps I3 'shot I-boot3-quiet' 'dismiss-dialogs'
 G_ '. /etc/profile >/dev/null 2>&1; set_setting cloudsaves.startup 0' >/dev/null 2>&1
-rm -rf "$DATA/Rasteratops"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
+rm -rf "$DATA/pixelelated"; mv "$DATA/_pixelelated_hold" "$DATA/pixelelated"
 fi
 
 if want J; then
@@ -314,12 +314,12 @@ esl 'cloud folder step' | tail -4 | tee -a "$LOG"
 esl 'a folder to settle and no network; asking to connect' | grep -q .; check $? "J: offline, the step asked to connect"
 esl 'NOT NOW; asked again at the next boot' | grep -q .; check $? "J: and NOT NOW put it off to the next boot"
 require_no_game >/dev/null 2>&1; steps J2 'dismiss-dialogs'
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 fi
 
 if want K; then
 say "== K: a settings restore's marker and an earlier folder at the same boot (the marker written here, a named stand-in): FINISH RESTORE PROCESS first; LATER brings neither; FINISH brings the step"
-mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Restore.srm"
+mv "$DATA/pixelelated" "$DATA/_pixelelated_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Restore.srm"
 say "  guest conf: $(conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)"
 G_ 'echo 1 > /storage/.config/.restore-finish-pending; ls -la /storage/.config/.restore-finish-pending' | tee -a "$LOG"
 boot_frames K-boot1 40
@@ -333,16 +333,16 @@ esl 'cloud folder step|restore relink' | tail -5 | tee -a "$LOG"
 esl 'cloud folder step: checking the folder \(boot\)' | grep -q .; check $? "K: FINISH brought the step"
 ! G_ 'test -e /storage/.config/.restore-finish-pending'; check $? "K: and FINISH consumed the restore's marker"
 steps K3 'shot K-step-question' 'key z' 'wait-for-change' 'settle' 'dismiss-dialogs'
-rm -rf "$DATA/ROCKNIX"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+rm -rf "$DATA/ROCKNIX"; mv "$DATA/_pixelelated_hold" "$DATA/pixelelated"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 fi
 
 if want L; then
 say "== L: the end of cloud setup (the repair route: USE A COMPUTER INSTEAD, REPAIR A CONNECTION, the three steps, CONTINUE): the step asks MOVE before CLOUD SETUP COMPLETE"
 # a fresh install's shape: the conf on the current default, the cloud's saves only under /ROCKNIX -- the step's
 # scan joins them and asks the move, before the seeding and the last page (D-CLOUD-169, D-CLOUD-170)
-mv "$DATA/Rasteratops" "$DATA/_rasteratops_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Setup.srm"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+mv "$DATA/pixelelated" "$DATA/_pixelelated_hold"; mkdir -p "$DATA/ROCKNIX/Saves/nes"; head -c 4000 /dev/urandom > "$DATA/ROCKNIX/Saves/nes/Setup.srm"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 debug_reboot; require_no_game >/dev/null 2>&1
 # the hub, then eight downs to CONNECT OR REPAIR CLOUD STORAGE (one past CHANGE CLOUD FOLDER's seven)
 f=$P/epic-L.steps
@@ -370,8 +370,8 @@ G_ "grep -q '^SAVES_REMOTE=\"/ROCKNIX/Saves\"' $CONF"; check $? "L: the step's s
 steps L2 'shot L-move-question' 'key z' 'wait-for-change' 'settle 120 3' 'shot L-after-not-now'
 esl 'cloud_setup wizard: complete' | grep -q .; check $? "L: NOT NOW went on to the seeding and CLOUD SETUP COMPLETE"
 steps L3 'shot L-setup-complete' 'dismiss-dialogs'
-rm -rf "$DATA/ROCKNIX"; mv "$DATA/_rasteratops_hold" "$DATA/Rasteratops"
-say "  guest conf: $(conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+rm -rf "$DATA/ROCKNIX"; mv "$DATA/_pixelelated_hold" "$DATA/pixelelated"
+say "  guest conf: $(conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 fi
 
 if want F; then

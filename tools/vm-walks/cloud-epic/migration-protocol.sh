@@ -55,7 +55,7 @@ root=Path(sys.argv[1]); complete=sys.argv[2]=='complete'
 payloads={'Saves/gb/A.srm':b'save bytes\n','Backups/QA/settings.tar.gz':b'settings bytes\n',
           'Saves-replaced/gb/A.srm':b'previous progress\n','Content/ROMs/gb/A.gb':b'game bytes\n'}
 for name,data in payloads.items():
-    old,new=(root/r/name for r in ('ROCKNIX','Rasteratops'))
+    old,new=(root/r/name for r in ('ROCKNIX','pixelelated'))
     if complete:
         assert new.is_file() and new.read_bytes()==data and not old.exists(), name
     else:
@@ -81,14 +81,14 @@ protocol_main() {
     tag="T23-$operation-$stage"
     protocol_reset || { check 1 "$tag fixture reset"; return; }
     if [ "$stage" = marker ]; then
-     G_ "printf '%s\n' '$operation ${remote}/Rasteratops/.layout' > /tmp/cloud-epic-protocol/fault"
+     G_ "printf '%s\n' '$operation ${remote}/pixelelated/.layout' > /tmp/cloud-epic-protocol/fault"
     else
      G_ "printf '%s\n' '$operation ${remote}/ROCKNIX/$stage' > /tmp/cloud-epic-protocol/fault"
     fi
     protocol_call "$tag-fault" '/usr/bin/cloud_migrate_layout --apply'
     [ "$PROTOCOL_RC" -ne 0 ]; check $? "$tag returns failure"
     G_ 'test -s /tmp/cloud-epic-protocol/fired'; check $? "$tag reaches injected provider operation"
-    [ ! -e "$DATA/Rasteratops/.layout" ]; check $? "$tag has no completion marker"
+    [ ! -e "$DATA/pixelelated/.layout" ]; check $? "$tag has no completion marker"
     protocol_payloads pending; check $? "$tag preserves every payload"
     protocol_pointers > "$P/logs/$tag-pointers-before.txt"
     G_ '/usr/bin/cloud_migrate_layout --needs-step && /usr/bin/cloud_scan --folder && grep -qx STATE=migration-pending /storage/.cache/cloud_sync/scan/state' > "$P/logs/$tag-pending.log" 2>&1
@@ -97,7 +97,7 @@ protocol_main() {
     protocol_call "$tag-retry" '/usr/bin/cloud_migrate_layout --apply'
     [ "$PROTOCOL_RC" -eq 0 ]; check $? "$tag retry completes"
     protocol_payloads complete; check $? "$tag retry retains current bytes without old duplicates"
-    cmp -s "$DATA/Rasteratops/.layout" <(printf 'layout=2\n'); check $? "$tag publishes exact marker"
+    cmp -s "$DATA/pixelelated/.layout" <(printf 'layout=2\n'); check $? "$tag publishes exact marker"
     G_ 'test ! -e /storage/.config/cloud-layout-migration.json'; check $? "$tag clears completed local record"
     protocol_snapshot > "$P/logs/$tag-cloud.json"; before=$(protocol_snapshot); pointers=$(protocol_pointers)
     protocol_call "$tag-repeat" '/usr/bin/cloud_migrate_layout --apply'
@@ -106,7 +106,7 @@ protocol_main() {
     conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content >/dev/null
     protocol_call "$tag-follow" '/usr/bin/cloud_migrate_layout --follow'
     [ "$PROTOCOL_RC" -eq 0 ]; check $? "$tag clean follower configuration follows"
-    G_ "grep -qx 'SAVES_REMOTE=\"/Rasteratops/Saves\"' $CONF"; check $? "$tag follower points at current saves"
+    G_ "grep -qx 'SAVES_REMOTE=\"/pixelelated/Saves\"' $CONF"; check $? "$tag follower points at current saves"
     [ "$(protocol_snapshot)" = "$before" ]; check $? "$tag follower changes no cloud bytes"
    done
   done
@@ -115,10 +115,10 @@ protocol_main() {
    for operation in apply follow settle seed scan; do
     tag="T26-$stage-$operation"
     protocol_reset || { check 1 "$tag fixture reset"; return; }
-    mkdir -p "$DATA/Rasteratops/Saves"
+    mkdir -p "$DATA/pixelelated/Saves"
     case "$stage" in
      malformed) printf 'layout=banana\n';; future) printf 'layout=999\n';; trailing) printf 'layout=2\nextra=unrecognized\n';;
-    esac > "$DATA/Rasteratops/.layout"
+    esac > "$DATA/pixelelated/.layout"
     before=$(protocol_snapshot); pointers=$(protocol_pointers)
     case "$operation" in
      seed) protocol_call "$tag" '/usr/bin/cloud_setup --seed-folders';;

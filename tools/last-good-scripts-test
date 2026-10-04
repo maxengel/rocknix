@@ -353,9 +353,9 @@ image_tool_source() {
         printf '%s\n' "${b}"
         return 0
     fi
-    for b in "${ROOT}"/../*/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}" \
-             "${ROOT}".worktrees/*/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}" \
-             "${ROOT}"/build.{ROCKNIX,RASTERATOPS}-*/image/system/usr/bin/"${name}"; do
+    for b in "${ROOT}"/../*/build.{ROCKNIX,RASTERATOPS,pixelelated}-*/image/system/usr/bin/"${name}" \
+             "${ROOT}".worktrees/*/build.{ROCKNIX,RASTERATOPS,pixelelated}-*/image/system/usr/bin/"${name}" \
+             "${ROOT}"/build.{ROCKNIX,RASTERATOPS,pixelelated}-*/image/system/usr/bin/"${name}"; do
         if [ -x "${b}" ] && "${b}" "$@" >/dev/null 2>&1; then
             printf '%s\n' "${b}"
             return 0
@@ -4591,7 +4591,7 @@ C1RO=1 c1 --set-saves-remote /Other/Saves
 cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
 printf 'SAVES_REMOTE="/Mine/Saves"\n' >> "${CONF1}"
 c1 --info
-grep -qx 'SAVES_REMOTE=/Rasteratops/Saves' "${C1}/out"; check $? "a key assigned twice reads as its first assignment, the one the scripts run with after the duplicate cleanup (PL-021)" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (PL-021)"
+grep -qx 'SAVES_REMOTE=/pixelelated/Saves' "${C1}/out"; check $? "a key assigned twice reads as its first assignment, the one the scripts run with after the duplicate cleanup (PL-021)" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (PL-021)"
 sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE='/Q/Saves'|" "${CONF1}"
 c1 --info
 grep -qx 'SAVES_REMOTE=/Q/Saves' "${C1}/out"; check $? "a single-quoted value reads without its quotes" "SAVES_REMOTE='/Q/Saves', --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
@@ -4691,14 +4691,14 @@ c2reset() { # <path|bucket> [fail]: an empty cloud, the shipped config
 readmes() { (cd "${C2}/cloud" && find . -name README.txt | sort | tr '\n' ' '); }
 c2reset path
 c2 --seed-folders
-[ "${RC}" -eq 0 ] && [ "$(readmes)" = "./Rasteratops/Backups/README.txt ./Rasteratops/Content/BIOS/README.txt ./Rasteratops/Content/README.txt ./Rasteratops/Content/ROMs/README.txt ./Rasteratops/Saves/README.txt " ] && [ "$(grep -c '^OK ' "${C2}/out")" -eq 4 ]; check $? "a fresh path-based cloud is seeded: five READMEs, four folders reported OK" "rc ${RC}; READMEs: $(readmes); said: $(tr '\n' ' ' < "${C2}/out")"
-echo "mine" > "${C2}/cloud/Rasteratops/Saves/README.txt"
+[ "${RC}" -eq 0 ] && [ "$(readmes)" = "./pixelelated/Backups/README.txt ./pixelelated/Content/BIOS/README.txt ./pixelelated/Content/README.txt ./pixelelated/Content/ROMs/README.txt ./pixelelated/Saves/README.txt " ] && [ "$(grep -c '^OK ' "${C2}/out")" -eq 4 ]; check $? "a fresh path-based cloud is seeded: five READMEs, four folders reported OK" "rc ${RC}; READMEs: $(readmes); said: $(tr '\n' ' ' < "${C2}/out")"
+echo "mine" > "${C2}/cloud/pixelelated/Saves/README.txt"
 c2 --seed-folders
-[ "$(cat "${C2}/cloud/Rasteratops/Saves/README.txt")" = "mine" ]; check $? "an owner's README is left alone when the folder lists" "the owner's README now reads: $(head -1 "${C2}/cloud/Rasteratops/Saves/README.txt")"
+[ "$(cat "${C2}/cloud/pixelelated/Saves/README.txt")" = "mine" ]; check $? "an owner's README is left alone when the folder lists" "the owner's README now reads: $(head -1 "${C2}/cloud/pixelelated/Saves/README.txt")"
 # PL-047: the listing fails, the upload would work.
 echo 1 > "${C2}/run/fail-lsf"
 c2 --seed-folders
-[ "$(cat "${C2}/cloud/Rasteratops/Saves/README.txt")" = "mine" ]; check $? "a listing that fails does not overwrite the owner's README" "the owner's README now reads: $(head -1 "${C2}/cloud/Rasteratops/Saves/README.txt") -- a failed probe was taken as 'absent' and the note was replaced (PL-047)"
+[ "$(cat "${C2}/cloud/pixelelated/Saves/README.txt")" = "mine" ]; check $? "a listing that fails does not overwrite the owner's README" "the owner's README now reads: $(head -1 "${C2}/cloud/pixelelated/Saves/README.txt") -- a failed probe was taken as 'absent' and the note was replaced (PL-047)"
 c2reset path fail
 c2 --seed-folders
 [ -z "$(readmes)" ]; check $? "and on a fresh cloud whose listings fail, nothing is written" "READMEs written with every listing failing: $(readmes)(PL-047)"
@@ -4707,23 +4707,23 @@ c2 --seed-folders
 # exits 0 with nothing for a key that is not there.
 c2reset bucket
 c2 --seed-folders
-[ "$(readmes)" = "./Rasteratops/Backups/README.txt ./Rasteratops/Content/BIOS/README.txt ./Rasteratops/Content/README.txt ./Rasteratops/Content/ROMs/README.txt ./Rasteratops/Saves/README.txt " ]; check $? "a fresh bucket cloud gets its five READMEs too" "bucket READMEs: '$(readmes)' -- a missing key lists as nothing with exit 0, which the probe took as 'there' (#308 claude F-RS-09)"
-echo "mine" > "${C2}/cloud/Rasteratops/Saves/README.txt"
+[ "$(readmes)" = "./pixelelated/Backups/README.txt ./pixelelated/Content/BIOS/README.txt ./pixelelated/Content/README.txt ./pixelelated/Content/ROMs/README.txt ./pixelelated/Saves/README.txt " ]; check $? "a fresh bucket cloud gets its five READMEs too" "bucket READMEs: '$(readmes)' -- a missing key lists as nothing with exit 0, which the probe took as 'there' (#308 claude F-RS-09)"
+echo "mine" > "${C2}/cloud/pixelelated/Saves/README.txt"
 c2 --seed-folders
-[ "$(cat "${C2}/cloud/Rasteratops/Saves/README.txt")" = "mine" ]; check $? "and an owner's README in a bucket is left alone" "bucket: the owner's README now reads: $(head -1 "${C2}/cloud/Rasteratops/Saves/README.txt")"
+[ "$(cat "${C2}/cloud/pixelelated/Saves/README.txt")" = "mine" ]; check $? "and an owner's README in a bucket is left alone" "bucket: the owner's README now reads: $(head -1 "${C2}/cloud/pixelelated/Saves/README.txt")"
 
 # The mixed-installation test's fresh device (D-CLOUD-158): seeding a cloud whose saves are in the
-# fork's earlier /ROCKNIX joins that folder -- the conf points there, nothing is made at /Rasteratops,
+# fork's earlier /ROCKNIX joins that folder -- the conf points there, nothing is made at /pixelelated,
 # and no layout marker is written under /ROCKNIX. The control first: a fresh cloud is seeded at
-# /Rasteratops with its marker, so the absence below is the join's doing and not a shim that never
+# /pixelelated with its marker, so the absence below is the join's doing and not a shim that never
 # writes one.
 c2reset path; c2 --seed-folders
-grep -q '^rcat qa:/Rasteratops/.layout' "${C2}/rec/argv"; check $? "seeding a fresh cloud writes the layout marker at /Rasteratops (the control)" "argv: $(grep -E '^rcat' "${C2}/rec/argv" | head -2 | tr '\n' ' ')"
+grep -q '^rcat qa:/pixelelated/.layout' "${C2}/rec/argv"; check $? "seeding a fresh cloud writes the layout marker at /pixelelated (the control)" "argv: $(grep -E '^rcat' "${C2}/rec/argv" | head -2 | tr '\n' ' ')"
 c2reset path
 mkdir -p "${C2}/cloud/ROCKNIX/Saves/snes" "${C2}/cloud/ROCKNIX/Backups"; echo save > "${C2}/cloud/ROCKNIX/Saves/snes/a.srm"
 c2 --seed-folders
 [ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"' "${CONF2}" && grep -q '^SETTINGS_REMOTE="/ROCKNIX/Backups"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/ROCKNIX/Content"' "${CONF2}" \
-    && [ ! -e "${C2}/cloud/Rasteratops" ] && ! grep -q '^rcat ' "${C2}/rec/argv" && grep -qx 'OK /ROCKNIX/Saves' "${C2}/out"; check $? "seeding a cloud whose saves are in /ROCKNIX joins that folder: the conf points there, nothing at /Rasteratops, no marker written (D-CLOUD-158's fresh device)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200); said: $(tr '\n' ' ' < "${C2}/out" | cut -c1-160)"
+    && [ ! -e "${C2}/cloud/pixelelated" ] && ! grep -q '^rcat ' "${C2}/rec/argv" && grep -qx 'OK /ROCKNIX/Saves' "${C2}/out"; check $? "seeding a cloud whose saves are in /ROCKNIX joins that folder: the conf points there, nothing at /pixelelated, no marker written (D-CLOUD-158's fresh device)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200); said: $(tr '\n' ' ' < "${C2}/out" | cut -c1-160)"
 
 # A carried /GAMES at the seeding (D-CLOUD-161, D-CLOUD-169): seeding it put a README in /GAMES that every
 # later check read as saves. With the player's saves in /ROCKNIX it joins them; with nothing anywhere it is
@@ -4734,11 +4734,11 @@ c2games() { sed -i -e 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/GAMES"|' -e 's|^SETTING
 c2reset path; c2games
 mkdir -p "${C2}/cloud/ROCKNIX/Saves/snes"; echo save > "${C2}/cloud/ROCKNIX/Saves/snes/a.srm"
 c2 --seed-folders
-[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/ROCKNIX/Content"' "${CONF2}" && [ ! -e "${C2}/cloud/GAMES" ] && [ ! -e "${C2}/cloud/Rasteratops" ]; check $? "seeding a carried /GAMES whose cloud holds /ROCKNIX/Saves joins /ROCKNIX and makes no /GAMES (the Nova's shape)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
+[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/ROCKNIX/Content"' "${CONF2}" && [ ! -e "${C2}/cloud/GAMES" ] && [ ! -e "${C2}/cloud/pixelelated" ]; check $? "seeding a carried /GAMES whose cloud holds /ROCKNIX/Saves joins /ROCKNIX and makes no /GAMES (the Nova's shape)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
 c2reset path; c2games
 c2 --seed-folders
-[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"' "${CONF2}" && grep -q '^SETTINGS_REMOTE="/Rasteratops/Backups"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"' "${CONF2}" \
-    && [ ! -e "${C2}/cloud/GAMES" ] && [ -f "${C2}/cloud/Rasteratops/Saves/README.txt" ] && grep -q '^rcat qa:/Rasteratops/.layout' "${C2}/rec/argv"; check $? "seeding a carried /GAMES on an empty cloud makes the current folders, with the marker, and no /GAMES (D-CLOUD-161)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
+[ "${RC}" -eq 0 ] && grep -q '^SAVES_REMOTE="/pixelelated/Saves"' "${CONF2}" && grep -q '^SETTINGS_REMOTE="/pixelelated/Backups"' "${CONF2}" && grep -q '^CONTENT_REMOTE="/pixelelated/Content"' "${CONF2}" \
+    && [ ! -e "${C2}/cloud/GAMES" ] && [ -f "${C2}/cloud/pixelelated/Saves/README.txt" ] && grep -q '^rcat qa:/pixelelated/.layout' "${C2}/rec/argv"; check $? "seeding a carried /GAMES on an empty cloud makes the current folders, with the marker, and no /GAMES (D-CLOUD-161)" "rc ${RC}; conf: $(grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF2}" | tr '\n' ' '); cloud: $(cd "${C2}/cloud" && find . -maxdepth 2 | sort | tr '\n' ' ' | cut -c1-200)"
 
 # #308 claude F-RS-13, gpt F-RS-19: one run, three low-level retries, on every
 # call these two make -- not rclone's three runs of ten under the wizard's
@@ -4751,16 +4751,16 @@ rm -f "${C2}/rec/argv"; c2 --content-location
 
 # #308 gpt F-RS-20: CONTENT_REMOTE="" is --use-content-root's "the root",
 # which the content scripts read as the root (ROOT="qa:"); seeding put
-# /Rasteratops/Content in its place. ROMs/ and BIOS/ go at the root, and no
+# /pixelelated/Content in its place. ROMs/ and BIOS/ go at the root, and no
 # README is dropped into the top of somebody's cloud.
 c2reset path
 sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${CONF2}"
 c2 --seed-folders
-[ -f "${C2}/cloud/ROMs/README.txt" ] && [ -f "${C2}/cloud/BIOS/README.txt" ] && [ ! -e "${C2}/cloud/Rasteratops/Content" ] && [ ! -e "${C2}/cloud/README.txt" ] && grep -qx 'OK /ROMs' "${C2}/out" && grep -qx 'OK /BIOS' "${C2}/out"; check $? "an empty CONTENT_REMOTE seeds ROMs/ and BIOS/ at the cloud's root, with no README at the top" "READMEs: $(readmes); ROCKNIX/Content: $([ -e "${C2}/cloud/Rasteratops/Content" ] && echo made || echo absent); said: $(grep -E '^(OK|MISSING) ' "${C2}/out" | tr '\n' ' ') (#308 gpt F-RS-20)"
+[ -f "${C2}/cloud/ROMs/README.txt" ] && [ -f "${C2}/cloud/BIOS/README.txt" ] && [ ! -e "${C2}/cloud/pixelelated/Content" ] && [ ! -e "${C2}/cloud/README.txt" ] && grep -qx 'OK /ROMs' "${C2}/out" && grep -qx 'OK /BIOS' "${C2}/out"; check $? "an empty CONTENT_REMOTE seeds ROMs/ and BIOS/ at the cloud's root, with no README at the top" "READMEs: $(readmes); ROCKNIX/Content: $([ -e "${C2}/cloud/pixelelated/Content" ] && echo made || echo absent); said: $(grep -E '^(OK|MISSING) ' "${C2}/out" | tr '\n' ' ') (#308 gpt F-RS-20)"
 c2reset path
 sed -i '/^CONTENT_REMOTE=/d' "${CONF2}"
 c2 --seed-folders
-[ -f "${C2}/cloud/Rasteratops/Content/ROMs/README.txt" ]; check $? "while a config with no CONTENT_REMOTE line at all still gets the default /Rasteratops/Content" "READMEs: $(readmes)"
+[ -f "${C2}/cloud/pixelelated/Content/ROMs/README.txt" ]; check $? "while a config with no CONTENT_REMOTE line at all still gets the default /pixelelated/Content" "READMEs: $(readmes)"
 
 # C3. cloud_oauth, in-process and as processes. A Python file of test groups,
 # each printing P or F lines, runs in a sandbox with its own pid and network
@@ -8741,49 +8741,49 @@ sa_outcome() {
 #     --max-delete is the preview's count.
 echo "    A0. #352: the pre-tier rows list only folders this device has or systems it supports; --content-location names the folder that holds the games"
 M0=$(sa_new pl352); sa_script "${M0}" cloud_content_restore; sa_script "${M0}" cloud_setup
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nSETTINGS_REMOTE="/Rasteratops/Backups"\nCONTENT_REMOTE=""\n' > "${M0}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nSETTINGS_REMOTE="/pixelelated/Backups"\nCONTENT_REMOTE=""\n' > "${M0}/storage/.config/cloud_sync.conf"
 rm -rf "${M0}/cloud" "${M0}/storage/roms"/*; mkdir -p "${M0}/cloud/Photos" "${M0}/cloud/Documents" "${M0}/cloud/gb" "${M0}/storage/roms/gb"
 echo jpg > "${M0}/cloud/Photos/holiday.jpg"; echo txt > "${M0}/cloud/Documents/notes.txt"; echo a > "${M0}/cloud/gb/A.gb"
 printf 'gb\n' > "${M0}/storage/.cache/cloud_sync/content-systems"; : > "${M0}/ctl/fail"; : > "${M0}/ctl/argv"
 sa_run "${M0}" cloud_content_restore --scan
 grep -q '^gb|' "${M0}/out" && ! grep -q '^Photos|' "${M0}/out" && ! grep -q '^Documents|' "${M0}/out" && [ "${RC}" -eq 0 ]; check $? "#352: with the content root at the cloud's root, the scan lists gb (a folder this device has) and neither Photos nor Documents (rc ${RC})" "rc ${RC}; out: $(sa_tail "${M0}")"
-rm -rf "${M0}/cloud"/*; mkdir -p "${M0}/cloud/Rasteratops/Content/ROMs/gb" "${M0}/cloud/Photos"; echo a > "${M0}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo jpg > "${M0}/cloud/Photos/x.jpg"
+rm -rf "${M0}/cloud"/*; mkdir -p "${M0}/cloud/pixelelated/Content/ROMs/gb" "${M0}/cloud/Photos"; echo a > "${M0}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo jpg > "${M0}/cloud/Photos/x.jpg"
 sa_run "${M0}" cloud_setup --content-location
-grep -qx 'FOUND=/Rasteratops/Content' "${M0}/out" && grep -qx 'STATE=found-elsewhere' "${M0}/out"; check $? "#352: with nothing of ours at the configured root, --content-location names /Rasteratops/Content, where the ROMs folder is, and reads found-elsewhere" "rc ${RC}; out: $(sa_tail "${M0}")"
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nSETTINGS_REMOTE="/Rasteratops/Backups"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${M0}/storage/.config/cloud_sync.conf"
+grep -qx 'FOUND=/pixelelated/Content' "${M0}/out" && grep -qx 'STATE=found-elsewhere' "${M0}/out"; check $? "#352: with nothing of ours at the configured root, --content-location names /pixelelated/Content, where the ROMs folder is, and reads found-elsewhere" "rc ${RC}; out: $(sa_tail "${M0}")"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nSETTINGS_REMOTE="/pixelelated/Backups"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${M0}/storage/.config/cloud_sync.conf"
 sa_run "${M0}" cloud_setup --content-location
 grep -qx 'FOUND=' "${M0}/out" && grep -qx 'STATE=ok' "${M0}/out"; check $? "and with the root configured where the games are, FOUND is empty and the state ok" "rc ${RC}; out: $(sa_tail "${M0}")"
 echo "    A1. PL-001: --match --apply enforces the preview, and a failed listing plans nothing"
 M=$(sa_new pl001); sa_script "${M}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${M}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${M}/storage/.config/cloud_sync.conf"
 MPLAN="${M}/storage/.cache/cloud_sync/content-match-plan"
 m_seed() { # the cloud holds gb/A.gb and nes/N.nes; the device gb/A.gb, gb/B.gb, nes/N.nes and a save
-    rm -rf "${M}/cloud/Rasteratops" "${M}/storage/roms"/*
-    mkdir -p "${M}/cloud/Rasteratops/Content/ROMs/gb" "${M}/cloud/Rasteratops/Content/ROMs/nes" "${M}/storage/roms/gb" "${M}/storage/roms/nes"
-    echo a > "${M}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo a > "${M}/storage/roms/gb/A.gb"; echo bb > "${M}/storage/roms/gb/B.gb"
-    echo n > "${M}/cloud/Rasteratops/Content/ROMs/nes/N.nes"; echo n > "${M}/storage/roms/nes/N.nes"; echo s > "${M}/storage/roms/nes/N.srm"
+    rm -rf "${M}/cloud/pixelelated" "${M}/storage/roms"/*
+    mkdir -p "${M}/cloud/pixelelated/Content/ROMs/gb" "${M}/cloud/pixelelated/Content/ROMs/nes" "${M}/storage/roms/gb" "${M}/storage/roms/nes"
+    echo a > "${M}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo a > "${M}/storage/roms/gb/A.gb"; echo bb > "${M}/storage/roms/gb/B.gb"
+    echo n > "${M}/cloud/pixelelated/Content/ROMs/nes/N.nes"; echo n > "${M}/storage/roms/nes/N.nes"; echo s > "${M}/storage/roms/nes/N.srm"
     printf 'gb\nnes\n' > "${M}/storage/.cache/cloud_sync/content-systems"
     rm -f "${MPLAN}"; : > "${M}/ctl/fail"; : > "${M}/ctl/argv"
 }
 m_seed
-printf '%s\t%s\n' '^lsf qa:/Rasteratops/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
+printf '%s\t%s\n' '^lsf qa:/pixelelated/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
 sa_run "${M}" cloud_content_restore --match
 ! grep -q '^nes|remove' "${M}/out" && [ "${RC}" -ne 0 ] && [ ! -e "${MPLAN}" ]; check $? "a preview whose nes listing fails (5) plans nothing for nes, exits non-zero and leaves no plan (rc ${RC})" "rc ${RC}; plan lines: $(grep '|' "${M}/out" | tr '\n' ' '); plan file: $([ -e "${MPLAN}" ] && echo written || echo none) -- a failed listing read as an absent system (F-CS-01)"
 m_seed
 sa_run "${M}" cloud_content_restore --match
 grep -qx 'nes|sync|0|0' "${M}/out" && [ -s "${MPLAN}" ]; check $? "a clean preview plans nes as sync|0|0 and writes the plan" "rc ${RC}; out: $(sa_tail "${M}"); plan: $(tr '\n' ' ' 2>/dev/null < "${MPLAN}")"
-printf '%s\t%s\n' '^lsf qa:/Rasteratops/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
+printf '%s\t%s\n' '^lsf qa:/pixelelated/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
 sa_run "${M}" cloud_content_restore --match --apply
 [ -f "${M}/storage/roms/nes/N.nes" ] && [ "${RC}" -ne 0 ] && grep -q '^>>> why ' "${M}/out"; check $? "an apply whose nes listing fails (5) removes nothing from nes and ends non-zero with a why (rc ${RC})" "N.nes: $([ -f "${M}/storage/roms/nes/N.nes" ] && echo kept || echo DELETED); rc ${RC}; out: $(sa_tail "${M}") -- the failed listing became 'absent from the cloud' and apply deleted the system (F-CS-01)"
 m_seed
 sa_run "${M}" cloud_content_restore --match
-rm -rf "${M}/cloud/Rasteratops/Content/ROMs/nes"
+rm -rf "${M}/cloud/pixelelated/Content/ROMs/nes"
 sa_run "${M}" cloud_content_restore --match --apply
 [ -f "${M}/storage/roms/nes/N.nes" ] && [ "${RC}" -ne 0 ] && grep -q "^>>> why SOMETHING CHANGED SINCE YOU CHECKED$" "${M}/out"; check $? "a system previewed as sync and found absent at apply is refused, not removed (rc ${RC})" "N.nes: $([ -f "${M}/storage/roms/nes/N.nes" ] && echo kept || echo DELETED); rc ${RC}; out: $(sa_tail "${M}") -- apply recomputed the plan instead of enforcing the preview (F-CS-03)"
 m_seed
 sa_run "${M}" cloud_content_restore --match
 sa_run "${M}" cloud_content_restore --match --apply
-grep -E '^sync qa:/Rasteratops/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -q -- '--max-delete 1\b' && [ ! -e "${M}/storage/roms/gb/B.gb" ] && [ -f "${M}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "an apply that matches its preview runs gb with --max-delete 1, the preview's count, and removes B.gb only (rc ${RC})" "rc ${RC}; gb's sync: $(grep -E '^sync qa:/Rasteratops/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -o -- '--max-delete [0-9]*'); B.gb $([ -e "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone); out: $(sa_tail "${M}")"
+grep -E '^sync qa:/pixelelated/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -q -- '--max-delete 1\b' && [ ! -e "${M}/storage/roms/gb/B.gb" ] && [ -f "${M}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "an apply that matches its preview runs gb with --max-delete 1, the preview's count, and removes B.gb only (rc ${RC})" "rc ${RC}; gb's sync: $(grep -E '^sync qa:/pixelelated/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -o -- '--max-delete [0-9]*'); B.gb $([ -e "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone); out: $(sa_tail "${M}")"
 m_seed
 sa_run "${M}" cloud_content_restore --match
 echo cc > "${M}/storage/roms/gb/C.gb"
@@ -8803,13 +8803,13 @@ sa_run "${M}" cloud_content_restore --match --apply
 #     a system's scraper folders are excluded where --selected excludes them.
 echo "    A2. PL-012: --all restores every system and BIOS, each its own unit"
 AL=$(sa_new pl012); sa_script "${AL}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${AL}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${AL}/storage/.config/cloud_sync.conf"
 al_seed() {
     rm -rf "${AL}/cloud"/* "${AL}/storage/roms"/*
-    mkdir -p "${AL}/cloud/Rasteratops/Content/ROMs/gb" "${AL}/cloud/Rasteratops/Content/ROMs/nes/images" "${AL}/cloud/Rasteratops/Content/BIOS/psx" "${AL}/cloud/Photos"
-    echo a > "${AL}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo n > "${AL}/cloud/Rasteratops/Content/ROMs/nes/N.nes"
-    echo png > "${AL}/cloud/Rasteratops/Content/ROMs/nes/images/N.png"
-    echo bios > "${AL}/cloud/Rasteratops/Content/BIOS/scph1001.bin"; echo sub > "${AL}/cloud/Rasteratops/Content/BIOS/psx/sub.bin"
+    mkdir -p "${AL}/cloud/pixelelated/Content/ROMs/gb" "${AL}/cloud/pixelelated/Content/ROMs/nes/images" "${AL}/cloud/pixelelated/Content/BIOS/psx" "${AL}/cloud/Photos"
+    echo a > "${AL}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo n > "${AL}/cloud/pixelelated/Content/ROMs/nes/N.nes"
+    echo png > "${AL}/cloud/pixelelated/Content/ROMs/nes/images/N.png"
+    echo bios > "${AL}/cloud/pixelelated/Content/BIOS/scph1001.bin"; echo sub > "${AL}/cloud/pixelelated/Content/BIOS/psx/sub.bin"
     echo holiday > "${AL}/cloud/Photos/beach.jpg"
     : > "${AL}/ctl/fail"; : > "${AL}/ctl/argv"
 }
@@ -8821,10 +8821,10 @@ sa_run "${AL}" cloud_content_restore --all
 grep -q '^>>> unit bios|' "${AL}/out" && grep -q '^>>> unit gb|' "${AL}/out" && grep -q '^>>> unit nes|' "${AL}/out" && ! grep -q '^>>> unit everything' "${AL}/out"; check $? "each system and BIOS is announced as a unit of its own, as the journey page counts them" "units: $(grep '^>>> unit' "${AL}/out" | tr '\n' ' ')"
 [ ! -e "${AL}/storage/roms/Photos" ]; check $? "a folder beside the content folder (the owner's Photos) is not a system and is not restored" "Photos was restored into the ROMs folder"
 al_seed
-printf '%s\t%s\n' '^lsf( --dirs-only)? qa:/Rasteratops/Content/ROMs/ ' 5 > "${AL}/ctl/fail"
+printf '%s\t%s\n' '^lsf( --dirs-only)? qa:/pixelelated/Content/ROMs/ ' 5 > "${AL}/ctl/fail"
 sa_run "${AL}" cloud_content_restore --all
 [ "${RC}" -ne 0 ] && [ -z "$(find "${AL}/storage/roms" -type f 2>/dev/null | head -1)" ] && grep -q '^>>> why ' "${AL}/out"; check $? "a ROMs listing that fails (5) restores nothing and ends non-zero with a why (rc ${RC})" "rc ${RC}; on the device: $(cd "${AL}/storage/roms" && find . -type f | head -3 | tr '\n' ' '); out: $(sa_tail "${AL}")"
-rm -rf "${AL}/cloud"/*; mkdir -p "${AL}/cloud/Rasteratops/Content"; : > "${AL}/ctl/fail"
+rm -rf "${AL}/cloud"/*; mkdir -p "${AL}/cloud/pixelelated/Content"; : > "${AL}/ctl/fail"
 sa_run "${AL}" cloud_content_restore --all
 [ "${RC}" -eq 0 ] && grep -qi "nothing to restore" "${AL}/out"; check $? "a cloud with no ROMs and no BIOS yet is nothing to restore, not a failure (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AL}")"
 
@@ -8875,9 +8875,9 @@ grep -q 'Checking cloud sync rules file' "${RH}/out" && [ "$(cat "${RRULES}.bak"
 RB=$(sa_new pl020b); sa_script "${RB}" cloud_backup cloud_restore cloud_saves_root
 cat > "${RB}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="no"
@@ -8886,18 +8886,18 @@ RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage
 RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
 LOG_LEVEL="INFO"
 EOS
-mkdir -p "${RB}/storage/roms/gb" "${RB}/storage/roms/savefiles" "${RB}/cloud/Rasteratops/Saves/gb"
+mkdir -p "${RB}/storage/roms/gb" "${RB}/storage/roms/savefiles" "${RB}/cloud/pixelelated/Saves/gb"
 echo rom > "${RB}/storage/roms/gb/A.gb"; echo save > "${RB}/storage/roms/gb/A.srm"
-echo cloudrom > "${RB}/cloud/Rasteratops/Saves/gb/B.gb"; echo cloudsave > "${RB}/cloud/Rasteratops/Saves/gb/B.srm"
+echo cloudrom > "${RB}/cloud/pixelelated/Saves/gb/B.gb"; echo cloudsave > "${RB}/cloud/pixelelated/Saves/gb/B.srm"
 printf -- '+ /**/*.srm\n+ /savefiles/**\n' > "${RB}/storage/.config/cloud_sync-rules.txt"
 sa_run "${RB}" cloud_backup --yes --saves-only
-[ ! -e "${RB}/cloud/Rasteratops/Saves/gb/A.gb" ] && [ "${RC}" -ne 0 ] && sa_outcome "${RB}" | grep -q "^Couldn't finish"; check $? "cloud_backup with a rules file that has no catch-all sends nothing and ends Couldn't finish (rc ${RC})" "A.gb in the cloud: $([ -e "${RB}/cloud/Rasteratops/Saves/gb/A.gb" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${RB}") -- the allowlist without its last line let the ROMs into the saves sync (F-CS-05)"
+[ ! -e "${RB}/cloud/pixelelated/Saves/gb/A.gb" ] && [ "${RC}" -ne 0 ] && sa_outcome "${RB}" | grep -q "^Couldn't finish"; check $? "cloud_backup with a rules file that has no catch-all sends nothing and ends Couldn't finish (rc ${RC})" "A.gb in the cloud: $([ -e "${RB}/cloud/pixelelated/Saves/gb/A.gb" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${RB}") -- the allowlist without its last line let the ROMs into the saves sync (F-CS-05)"
 sa_run "${RB}" cloud_restore --yes --saves-only
 [ ! -e "${RB}/storage/roms/gb/B.gb" ] && [ "${RC}" -ne 0 ] && sa_outcome "${RB}" | grep -q "^Couldn't finish"; check $? "cloud_restore with the same file brings nothing down and ends Couldn't finish (rc ${RC})" "B.gb on the device: $([ -e "${RB}/storage/roms/gb/B.gb" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${RB}")"
 printf -- '+ /**/*.srm\n+ /savefiles/**\n- /**\n' > "${RB}/storage/.config/cloud_sync-rules.txt"
-rm -rf "${RB}/cloud/Rasteratops/Saves" "${RB}/cloud/Rasteratops/Saves-replaced"; mkdir -p "${RB}/cloud/Rasteratops/Saves"
+rm -rf "${RB}/cloud/pixelelated/Saves" "${RB}/cloud/pixelelated/Saves-replaced"; mkdir -p "${RB}/cloud/pixelelated/Saves"
 sa_run "${RB}" cloud_backup --yes --saves-only
-[ -e "${RB}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ ! -e "${RB}/cloud/Rasteratops/Saves/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "with the catch-all in place the same backup sends the save and not the ROM (rc ${RC})" "A.srm $([ -e "${RB}/cloud/Rasteratops/Saves/gb/A.srm" ] && echo sent || echo missing), A.gb $([ -e "${RB}/cloud/Rasteratops/Saves/gb/A.gb" ] && echo SENT || echo not sent); rc ${RC}; out: $(sa_tail "${RB}")"
+[ -e "${RB}/cloud/pixelelated/Saves/gb/A.srm" ] && [ ! -e "${RB}/cloud/pixelelated/Saves/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "with the catch-all in place the same backup sends the save and not the ROM (rc ${RC})" "A.srm $([ -e "${RB}/cloud/pixelelated/Saves/gb/A.srm" ] && echo sent || echo missing), A.gb $([ -e "${RB}/cloud/pixelelated/Saves/gb/A.gb" ] && echo SENT || echo not sent); rc ${RC}; out: $(sa_tail "${RB}")"
 
 # A4. PL-021 (#307, F-CS-06 gpt) with #308 claude F-CS-10: the replaced-saves
 #     root is shared by every device on the cloud and its folders are named
@@ -8907,9 +8907,9 @@ echo "    A4. PL-021: pruning keeps the folder and the archive this run wrote, w
 PR=$(sa_new pl021); sa_script "${PR}" cloud_backup cloud_saves_root
 cat > "${PR}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="yes"
@@ -8920,30 +8920,30 @@ RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1
 LOG_LEVEL="INFO"
 EOS
 printf -- '+ /**/*.srm\n- /**\n' > "${PR}/storage/.config/cloud_sync-rules.txt"
-mkdir -p "${PR}/storage/roms/gb" "${PR}/cloud/Rasteratops/Saves/gb" "${PR}/cloud/Rasteratops/Saves-replaced/2099_01_01-000000/gb"
-echo "the save as played here" > "${PR}/storage/roms/gb/A.srm"; echo "the cloud's older copy" > "${PR}/cloud/Rasteratops/Saves/gb/A.srm"
-echo "a device whose clock runs ahead" > "${PR}/cloud/Rasteratops/Saves-replaced/2099_01_01-000000/gb/Z.srm"
+mkdir -p "${PR}/storage/roms/gb" "${PR}/cloud/pixelelated/Saves/gb" "${PR}/cloud/pixelelated/Saves-replaced/2099_01_01-000000/gb"
+echo "the save as played here" > "${PR}/storage/roms/gb/A.srm"; echo "the cloud's older copy" > "${PR}/cloud/pixelelated/Saves/gb/A.srm"
+echo "a device whose clock runs ahead" > "${PR}/cloud/pixelelated/Saves-replaced/2099_01_01-000000/gb/Z.srm"
 sa_run "${PR}" cloud_backup --yes --saves-only
-kept=$(grep -rlx "the cloud's older copy" "${PR}/cloud/Rasteratops/Saves-replaced" 2>/dev/null | head -1)
-[ -n "${kept}" ] && [ "${RC}" -eq 0 ]; check $? "a future-dated sibling folder (2099) does not outrank the run's own: the copy this run replaced is still kept (rc ${RC})" "rc ${RC}; replaced root holds: $(cd "${PR}/cloud/Rasteratops/Saves-replaced" 2>/dev/null && find . -type f | tr '\n' ' '); the run's own folder was pruned because 2099_... sorts after it (F-CS-06 gpt, F-CS-10 claude)"
-[ ! -e "${PR}/cloud/Rasteratops/Saves-replaced/2099_01_01-000000" ]; check $? "and the other folder is the one pruned: one record at rest, this run's" "the 2099 folder is still there beside the run's own"
+kept=$(grep -rlx "the cloud's older copy" "${PR}/cloud/pixelelated/Saves-replaced" 2>/dev/null | head -1)
+[ -n "${kept}" ] && [ "${RC}" -eq 0 ]; check $? "a future-dated sibling folder (2099) does not outrank the run's own: the copy this run replaced is still kept (rc ${RC})" "rc ${RC}; replaced root holds: $(cd "${PR}/cloud/pixelelated/Saves-replaced" 2>/dev/null && find . -type f | tr '\n' ' '); the run's own folder was pruned because 2099_... sorts after it (F-CS-06 gpt, F-CS-10 claude)"
+[ ! -e "${PR}/cloud/pixelelated/Saves-replaced/2099_01_01-000000" ]; check $? "and the other folder is the one pruned: one record at rest, this run's" "the 2099 folder is still there beside the run's own"
 # The settings archives: three of this device's, future-dated, then this
 # run's upload with CLOUD_BACKUP_KEEP=3.
-mkdir -p "${PR}/storage/roms/backup/x/storage/.config" "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01"
+mkdir -p "${PR}/storage/roms/backup/x/storage/.config" "${PR}/cloud/pixelelated/Backups/QA-deadbeef01"
 echo cfg > "${PR}/storage/roms/backup/x/storage/.config/blob"
 tar -C "${PR}/storage/roms/backup/x" -czf "${PR}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${PR}/storage/roms/backup/x"
-for y in 2097 2098 2099; do echo old > "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01/${y}_01_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"; done
+for y in 2097 2098 2099; do echo old > "${PR}/cloud/pixelelated/Backups/QA-deadbeef01/${y}_01_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"; done
 rm -f "${PR}/storage/.cache/cloud_sync/settings-backup.uploaded"
 sa_run "${PR}" cloud_backup --yes --system-only
-[ -f "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "${RC}" -eq 0 ]; check $? "the archive this run uploaded survives the retention though three future-dated ones sort after it (rc ${RC})" "rc ${RC}; the folder holds: $(ls "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01" | tr '\n' ' ') -- the run's own upload was the one past CLOUD_BACKUP_KEEP (F-CS-06 gpt)"
-n_mine=$(ls "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01" | grep -c 'QA-ROCKNIX_SETTINGS')
-[ "${n_mine}" -eq 3 ]; check $? "and the kept history is still CLOUD_BACKUP_KEEP (3): the upload and the two newest others" "${n_mine} archive(s) kept: $(ls "${PR}/cloud/Rasteratops/Backups/QA-deadbeef01" | tr '\n' ' ')"
+[ -f "${PR}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "${RC}" -eq 0 ]; check $? "the archive this run uploaded survives the retention though three future-dated ones sort after it (rc ${RC})" "rc ${RC}; the folder holds: $(ls "${PR}/cloud/pixelelated/Backups/QA-deadbeef01" | tr '\n' ' ') -- the run's own upload was the one past CLOUD_BACKUP_KEEP (F-CS-06 gpt)"
+n_mine=$(ls "${PR}/cloud/pixelelated/Backups/QA-deadbeef01" | grep -c 'QA-ROCKNIX_SETTINGS')
+[ "${n_mine}" -eq 3 ]; check $? "and the kept history is still CLOUD_BACKUP_KEEP (3): the upload and the two newest others" "${n_mine} archive(s) kept: $(ls "${PR}/cloud/pixelelated/Backups/QA-deadbeef01" | tr '\n' ' ')"
 
 # The restore's own record, on this device: a folder from a clock that ran
 # ahead does not outrank the run's.
 mkdir -p "${PR}/storage/.cache/cloud_sync/replaced/2099_01_01-000000/gb"
 echo "an earlier run under a clock that ran ahead" > "${PR}/storage/.cache/cloud_sync/replaced/2099_01_01-000000/gb/Y.srm"
-echo "the cloud's newer copy" > "${PR}/cloud/Rasteratops/Saves/gb/A.srm"; echo "the copy on this device" > "${PR}/storage/roms/gb/A.srm"
+echo "the cloud's newer copy" > "${PR}/cloud/pixelelated/Saves/gb/A.srm"; echo "the copy on this device" > "${PR}/storage/roms/gb/A.srm"
 sa_script "${PR}" cloud_restore
 sa_run "${PR}" cloud_restore --yes --saves-only
 kept=$(grep -rlx "the copy on this device" "${PR}/storage/.cache/cloud_sync/replaced" 2>/dev/null | head -1)
@@ -8983,25 +8983,25 @@ sa_run "${MG}" cloud_migrate_layout --apply
 # PL-025 (F-CS-08 gpt): the nested backups and content do not ride into Saves.
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --apply
-[ -z "$(cd "${MG}/cloud" && find Rasteratops/Saves -path '*/backup/*' -o -path 'Rasteratops/Saves/Content/*' 2>/dev/null | head -1)" ]; check $? "PL-025: nothing lands under Saves/backup or Saves/Content (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- the saves relocation copied the root unfiltered (F-CS-08)"
-[ -f "${MG}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${MG}/cloud/Rasteratops/Saves/savefiles/gb/A.srm" ] && [ -f "${MG}/cloud/Rasteratops/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ] && [ -f "${MG}/cloud/Rasteratops/Content/BIOS/bios.bin" ]; check $? "PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS" "cloud now: $(mg_tree)"
-[ "$(mg_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ] && [ "${RC}" -eq 0 ]; check $? "PL-025: and the three pointers follow them (rc ${RC})" "pointers '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}")"
+[ -z "$(cd "${MG}/cloud" && find pixelelated/Saves -path '*/backup/*' -o -path 'pixelelated/Saves/Content/*' 2>/dev/null | head -1)" ]; check $? "PL-025: nothing lands under Saves/backup or Saves/Content (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- the saves relocation copied the root unfiltered (F-CS-08)"
+[ -f "${MG}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${MG}/cloud/pixelelated/Saves/savefiles/gb/A.srm" ] && [ -f "${MG}/cloud/pixelelated/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/pixelelated/Content/ROMs/gb/A.gb" ] && [ -f "${MG}/cloud/pixelelated/Content/BIOS/bios.bin" ]; check $? "PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS" "cloud now: $(mg_tree)"
+[ "$(mg_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ] && [ "${RC}" -eq 0 ]; check $? "PL-025: and the three pointers follow them (rc ${RC})" "pointers '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}")"
 
 # The check's plan line, the one thing the hub's TIDY UP row reads: the
 # tiers holding files, in move order, and the folder they move into. Until
 # 2026-10-01 the row's own text named /ROCKNIX on a build whose folder is
-# /Rasteratops, and the preview never listed the content move --apply made.
+# /pixelelated, and the preview never listed the content move --apply made.
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --check
-grep -qx '>>> plan backups,saves,content /Rasteratops' "${MG}/out" && grep -q 'qa:/GAMES/Content  ->  qa:/Rasteratops/Content' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "--check plans backups, saves and content into /Rasteratops on one line, and lists the content move it would make (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+grep -qx '>>> plan backups,saves,content /pixelelated' "${MG}/out" && grep -q 'qa:/GAMES/Content  ->  qa:/pixelelated/Content' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "--check plans backups, saves and content into /pixelelated on one line, and lists the content move it would make (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
 mg_seed
-sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/Rasteratops/Saves"|; s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/Rasteratops/Backups"|' "${MGC}"
-mkdir -p "${MG}/cloud/Rasteratops/Saves" "${MG}/cloud/Rasteratops/Backups"
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/pixelelated/Saves"|; s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/pixelelated/Backups"|' "${MGC}"
+mkdir -p "${MG}/cloud/pixelelated/Saves" "${MG}/cloud/pixelelated/Backups"
 sa_run "${MG}" cloud_migrate_layout --check
-grep -qx '>>> plan content /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "a device whose saves and backups are current plans the content folder alone (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+grep -qx '>>> plan content /pixelelated' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "a device whose saves and backups are current plans the content folder alone (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
 rm -rf "${MG}/cloud/GAMES/Content"; mkdir -p "${MG}/cloud/GAMES/Content"
 sa_run "${MG}" cloud_migrate_layout --check
-grep -qx '>>> plan none /Rasteratops' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "and with nothing stored there the plan is none: a setting alone would change, and the row stays away (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
+grep -qx '>>> plan none /pixelelated' "${MG}/out" && [ "${RC}" -eq 0 ]; check $? "and with nothing stored there the plan is none: a setting alone would change, and the row stays away (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 8)"
 
 # And the fixtures that stand in for a cloud take the folder names from the
 # shipped defaults (cloud-test-backend shipped-default), never from a literal
@@ -9027,7 +9027,7 @@ assert any(p.search('path="/' + old[0] + '" # history') for p in patterns)
 PYQA
 ) || stale="superseded-default guard could not run"
 [ -z "${stale}" ]; check $? "QA tools derive ordinary fixtures from shipped defaults; inline comments do not hide live old paths" "${stale}"
-[ "$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>/dev/null)" = "/Rasteratops/Saves" ] && [ "$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>/dev/null)" = "/Rasteratops/Content" ] && ! tools/cloud-test-backend shipped-default NO_SUCH_KEY >/dev/null 2>&1; check $? "cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default" "SAVES '$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>&1)', CONTENT '$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>&1)'"
+[ "$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>/dev/null)" = "/pixelelated/Saves" ] && [ "$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>/dev/null)" = "/pixelelated/Content" ] && ! tools/cloud-test-backend shipped-default NO_SUCH_KEY >/dev/null 2>&1; check $? "cloud-test-backend shipped-default reads the saves and content folders out of cloud_sync.conf.defaults, and exits non-zero for a key with no default" "SAVES '$(tools/cloud-test-backend shipped-default SAVES_REMOTE 2>&1)', CONTENT '$(tools/cloud-test-backend shipped-default CONTENT_REMOTE 2>&1)'"
 
 # PL-026 (F-CS-09 gpt): killed between the two moves, the next run finishes.
 mg_seed
@@ -9036,22 +9036,22 @@ sa_run "${MG}" cloud_migrate_layout --apply
 killed_rc=${RC}
 : > "${MG}/ctl/kill"; rm -f "${MG}/ctl/kill.count"
 sa_run "${MG}" cloud_migrate_layout --apply
-[ "${killed_rc}" -ne 0 ] && [ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ] \
-    && [ -f "${MG}/cloud/Rasteratops/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ]; check $? "PL-026: a migration killed at its second move (rc ${killed_rc}) is finished by the next run (rc ${RC})" "second run rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}"); cloud: $(mg_tree) -- the moved tier's pointer was not written, or the resume check compared the wrong source (F-CS-09)"
+[ "${killed_rc}" -ne 0 ] && [ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ] \
+    && [ -f "${MG}/cloud/pixelelated/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ]; check $? "PL-026: a migration killed at its second move (rc ${killed_rc}) is finished by the next run (rc ${RC})" "second run rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}"); cloud: $(mg_tree) -- the moved tier's pointer was not written, or the resume check compared the wrong source (F-CS-09)"
 
 # The state an earlier build left when it was cut after its moves and
 # before its pointers: the files in the new folders, the old ones emptied,
 # the pointers where they were. The next run moves only the pointers.
 mg_seed
-mkdir -p "${MG}/cloud/Rasteratops"; mv "${MG}/cloud/GAMES/backup" "${MG}/cloud/Rasteratops/Backups"
-mkdir -p "${MG}/cloud/Rasteratops/Saves"; mv "${MG}/cloud/GAMES/savefiles" "${MG}/cloud/GAMES/gb" "${MG}/cloud/Rasteratops/Saves/"
+mkdir -p "${MG}/cloud/pixelelated"; mv "${MG}/cloud/GAMES/backup" "${MG}/cloud/pixelelated/Backups"
+mkdir -p "${MG}/cloud/pixelelated/Saves"; mv "${MG}/cloud/GAMES/savefiles" "${MG}/cloud/GAMES/gb" "${MG}/cloud/pixelelated/Saves/"
 sa_run "${MG}" cloud_migrate_layout --apply
-[ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ] && [ -f "${MG}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ]; check $? "PL-026: a device an earlier build left moved but not repointed is repointed, and its content moved, by the next run (rc ${RC})" "rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}")"
+[ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ] && [ -f "${MG}/cloud/pixelelated/Content/ROMs/gb/A.gb" ]; check $? "PL-026: a device an earlier build left moved but not repointed is repointed, and its content moved, by the next run (rc ${RC})" "rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}")"
 
 # PL-053 (F-CS-07 gpt): a save written into the old folder after the
 # verification is not purged with it.
 mg_seed
-printf '%s\t%s\n' '^check qa:/GAMES qa:/Rasteratops/Saves' 'mkdir -p /cloud/GAMES/savefiles/gb && echo late > /cloud/GAMES/savefiles/gb/LATE.srm' > "${MG}/ctl/post"
+printf '%s\t%s\n' '^check qa:/GAMES qa:/pixelelated/Saves' 'mkdir -p /cloud/GAMES/savefiles/gb && echo late > /cloud/GAMES/savefiles/gb/LATE.srm' > "${MG}/ctl/post"
 sa_run "${MG}" cloud_migrate_layout --apply
 [ -n "$(cd "${MG}/cloud" && find . -name LATE.srm | head -1)" ]; check $? "PL-053: a save another device writes into the old folder after the check survives the move (rc ${RC})" "LATE.srm is gone: the old folder was purged after a point-in-time check (F-CS-07); cloud: $(mg_tree)"
 
@@ -9083,7 +9083,7 @@ rm -rf "${MG}/cloud/GAMES/savefiles" "${MG}/cloud/GAMES/gb"
 mkdir -p "${MG}/cloud/GAMES/saves/savefiles/gb"; echo sa > "${MG}/cloud/GAMES/saves/savefiles/gb/A.srm"
 mkdir -p "${MG}/storage/cwd/saves"; : > "${MG}/storage/cwd/saves/x"
 SA_CWD=/storage/cwd sa_run "${MG}" cloud_migrate_layout --apply
-[ -f "${MG}/cloud/Rasteratops/Saves/savefiles/gb/A.srm" ] && [ ! -e "${MG}/cloud/Rasteratops/Saves/saves" ]; check $? "F-CS-23: with a saves/ folder in the working directory the saves subfolder is still found and moved as the saves (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- an unquoted --exclude saves/** was expanded by the shell"
+[ -f "${MG}/cloud/pixelelated/Saves/savefiles/gb/A.srm" ] && [ ! -e "${MG}/cloud/pixelelated/Saves/saves" ]; check $? "F-CS-23: with a saves/ folder in the working directory the saves subfolder is still found and moved as the saves (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- an unquoted --exclude saves/** was expanded by the shell"
 
 # A6. PL-028 (#307, F-CS-12 gpt) with #308 claude F-CS-16: rclone's 9 (with
 #     --error-on-no-transfer, "nothing needed moving") is a completion, and
@@ -9093,9 +9093,9 @@ echo "    A6. PL-028: saves 9 beside a failed settings phase is a run that could
 OV=$(sa_new pl028); sa_script "${OV}" cloud_backup cloud_restore cloud_saves_root
 cat > "${OV}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="yes"
@@ -9105,11 +9105,11 @@ RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1
 LOG_LEVEL="INFO"
 EOS
 printf -- '+ /**/*.srm\n- /**\n' > "${OV}/storage/.config/cloud_sync-rules.txt"
-mkdir -p "${OV}/storage/roms/gb" "${OV}/cloud/Rasteratops/Saves/gb" "${OV}/storage/roms/backup/x/storage/.config" "${OV}/cloud/Rasteratops/Backups/QA-deadbeef01"
-echo same > "${OV}/storage/roms/gb/A.srm"; cp -p "${OV}/storage/roms/gb/A.srm" "${OV}/cloud/Rasteratops/Saves/gb/A.srm"
+mkdir -p "${OV}/storage/roms/gb" "${OV}/cloud/pixelelated/Saves/gb" "${OV}/storage/roms/backup/x/storage/.config" "${OV}/cloud/pixelelated/Backups/QA-deadbeef01"
+echo same > "${OV}/storage/roms/gb/A.srm"; cp -p "${OV}/storage/roms/gb/A.srm" "${OV}/cloud/pixelelated/Saves/gb/A.srm"
 echo cfg > "${OV}/storage/roms/backup/x/storage/.config/blob"
 tar -C "${OV}/storage/roms/backup/x" -czf "${OV}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${OV}/storage/roms/backup/x"
-cp "${OV}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" "${OV}/cloud/Rasteratops/Backups/QA-deadbeef01/"
+cp "${OV}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" "${OV}/cloud/pixelelated/Backups/QA-deadbeef01/"
 printf '%s\t%s\n' '^copyto ' 5 > "${OV}/ctl/fail"
 sa_run "${OV}" cloud_backup --yes
 ov_stamp=$(awk '{print $2}' "${OV}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
@@ -9222,10 +9222,10 @@ sa_run "${CP}" cloud_capture --adopt /storage/roms/savestates/nes/None.state1 --
 #     did not move is a unit that couldn't finish.
 echo "    A9. PL-066: a failed game-list pass is a unit that couldn't finish"
 GL=$(sa_new pl066); sa_script "${GL}" cloud_content_restore cloud_content_backup
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${GL}/storage/.config/cloud_sync.conf"
-mkdir -p "${GL}/cloud/Rasteratops/Content/ROMs/nes/images" "${GL}/storage/roms/nes"
-echo n > "${GL}/cloud/Rasteratops/Content/ROMs/nes/N.nes"; echo png > "${GL}/cloud/Rasteratops/Content/ROMs/nes/images/N.png"
-echo '<gameList/>' > "${GL}/cloud/Rasteratops/Content/ROMs/nes/gamelist.xml"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${GL}/storage/.config/cloud_sync.conf"
+mkdir -p "${GL}/cloud/pixelelated/Content/ROMs/nes/images" "${GL}/storage/roms/nes"
+echo n > "${GL}/cloud/pixelelated/Content/ROMs/nes/N.nes"; echo png > "${GL}/cloud/pixelelated/Content/ROMs/nes/images/N.png"
+echo '<gameList/>' > "${GL}/cloud/pixelelated/Content/ROMs/nes/gamelist.xml"
 printf '%s\t%s\n' '^copy .*--update' 5 > "${GL}/ctl/fail"
 sa_run "${GL}" cloud_content_restore --with-media nes
 gl_stamp=$(awk '{print $2}' "${GL}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
@@ -9280,9 +9280,9 @@ uz "${UZ}/whole.zip"; check $? "a whole zip is whole" "a whole zip was refused"
 #      system folder called bios under ROMs/.
 echo "    A11. PL-012's sibling: --selected with no system picked restores BIOS alone"
 BS=$(sa_new bios); sa_script "${BS}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${BS}/storage/.config/cloud_sync.conf"
-mkdir -p "${BS}/cloud/Rasteratops/Content/ROMs/gb" "${BS}/cloud/Rasteratops/Content/BIOS"
-echo a > "${BS}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo bios > "${BS}/cloud/Rasteratops/Content/BIOS/bios.bin"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${BS}/storage/.config/cloud_sync.conf"
+mkdir -p "${BS}/cloud/pixelelated/Content/ROMs/gb" "${BS}/cloud/pixelelated/Content/BIOS"
+echo a > "${BS}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo bios > "${BS}/cloud/pixelelated/Content/BIOS/bios.bin"
 : > "${BS}/storage/.cache/cloud_sync/content-systems"
 sa_run "${BS}" cloud_content_restore --selected
 [ "${RC}" -eq 0 ] && [ -f "${BS}/storage/roms/bios/bios.bin" ] && [ ! -e "${BS}/storage/roms/gb" ]; check $? "a selection with no system and BIOS in the cloud restores BIOS alone, exit 0 (rc ${RC})" "rc ${RC}; bios.bin $([ -f "${BS}/storage/roms/bios/bios.bin" ] && echo here || echo missing); out: $(sa_tail "${BS}") -- the empty selection was refused before BIOS was added"
@@ -9290,7 +9290,7 @@ rm -rf "${BS}/storage/roms"/*
 printf 'bios\n' > "${BS}/storage/.cache/cloud_sync/content-systems"
 sa_run "${BS}" cloud_content_restore --selected
 [ "${RC}" -eq 0 ] && [ -f "${BS}/storage/roms/bios/bios.bin" ] && [ "$(grep -c '^>>> unit ' "${BS}/out")" -eq 1 ] && ! grep -q 'ROMs/bios' "${BS}/ctl/argv"; check $? "the placeholder 'bios' line an earlier interface wrote reads as BIOS wanted: one unit, from BIOS/, never ROMs/bios (rc ${RC})" "rc ${RC}; units: $(grep '^>>> unit' "${BS}/out" | tr '\n' ' '); argv: $(grep -o 'ROMs/bios[^ ]*' "${BS}/ctl/argv" | head -2 | tr '\n' ' ')"
-rm -rf "${BS}/storage/roms"/* "${BS}/cloud/Rasteratops/Content/BIOS"
+rm -rf "${BS}/storage/roms"/* "${BS}/cloud/pixelelated/Content/BIOS"
 : > "${BS}/storage/.cache/cloud_sync/content-systems"
 sa_run "${BS}" cloud_content_restore --selected
 [ "${RC}" -ne 0 ] && grep -q "haven't picked any systems" "${BS}/out"; check $? "with no system picked and no BIOS in the cloud there is still nothing to do, and it says so (rc ${RC})" "rc ${RC}; out: $(sa_tail "${BS}")"
@@ -9303,9 +9303,9 @@ echo "    A12. #308 claude F-CS-04: cloud_restore under --yes waits for nobody"
 RP=$(sa_new ccs04); sa_script "${RP}" cloud_restore cloud_saves_root
 cat > "${RP}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 RESTOREMETHOD="copy"
 BACKUPFILE_RESTORE_OPTION="yes"
 RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
@@ -9313,7 +9313,7 @@ RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1
 LOG_LEVEL="INFO"
 EOS
 printf -- '+ /**/*.srm\n- /**\n' > "${RP}/storage/.config/cloud_sync-rules.txt"
-mkdir -p "${RP}/cloud/Rasteratops/Saves/gb" "${RP}/storage/roms"; echo s > "${RP}/cloud/Rasteratops/Saves/gb/A.srm"
+mkdir -p "${RP}/cloud/pixelelated/Saves/gb" "${RP}/storage/roms"; echo s > "${RP}/cloud/pixelelated/Saves/gb/A.srm"
 sa_run "${RP}" cloud_restore --yes --saves-only
 [ "${RC}" -eq 0 ] && [ "${DT}" -le 4 ]; check $? "a --yes --saves-only restore takes ${DT}s, not the seven of console pauses (rc ${RC})" "took ${DT}s (rc ${RC}) -- sleep 2, sleep 2 and sleep 3 ran with nobody reading"
 grep -q '^Settings backup: SKIPPED - SAVES ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${RP}/out"); check $? "its summary says the settings phase was skipped, not COMPLETED" "summary: $(grep -A3 'RESTORE SUMMARY' "${RP}/out" | tr '\n' '|')"
@@ -9329,7 +9329,7 @@ grep -q '^Game saves: SKIPPED - SETTINGS ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${RP
 echo "    A13. #308 claude F-CS-08: the partial-file sweep runs only after a transfer that may have left one"
 SW=$(sa_new ccs08); sa_script "${SW}" cloud_restore cloud_saves_root
 cp "${RP}/storage/.config/cloud_sync.conf" "${RP}/storage/.config/cloud_sync-rules.txt" "${SW}/storage/.config/"
-mkdir -p "${SW}/cloud/Rasteratops/Saves/gb" "${SW}/storage/roms/nes"; echo s > "${SW}/cloud/Rasteratops/Saves/gb/A.srm"
+mkdir -p "${SW}/cloud/pixelelated/Saves/gb" "${SW}/storage/roms/nes"; echo s > "${SW}/cloud/pixelelated/Saves/gb/A.srm"
 SWP="${SW}/storage/roms/nes/Game.nes.a1b2c3d4.partial"
 echo litter > "${SWP}"
 sa_run "${SW}" cloud_restore --yes --saves-only
@@ -9337,7 +9337,7 @@ sa_run "${SW}" cloud_restore --yes --saves-only
 echo litter > "${SWP}"
 sa_run "${SW}" cloud_restore --yes --saves-only
 [ -e "${SWP}" ] && [ "${RC}" -eq 0 ]; check $? "a clean run after a clean run walks nothing: a partial planted between them is not looked for (rc ${RC})" "the partial was swept -- the whole saves tree, the ROM library, was walked after a transfer that completed (F-CS-08)"
-printf '%s\t%s\n' '^copy .* qa:/Rasteratops/Saves/ /storage/roms/' 7 > "${SW}/ctl/fail"
+printf '%s\t%s\n' '^copy .* qa:/pixelelated/Saves/ /storage/roms/' 7 > "${SW}/ctl/fail"
 sa_run "${SW}" cloud_restore --yes --saves-only
 : > "${SW}/ctl/fail"
 [ ! -e "${SWP}" ] && [ "${RC}" -ne 0 ]; check $? "a transfer that failed is swept after (rc ${RC})" "the partial survived a failed transfer's sweep (rc ${RC})"
@@ -9391,7 +9391,7 @@ pw_conf() {
 SAVESPATH="/storage/roms"
 SAVES_REMOTE="/x$(touch /ctl/pwned)"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 CONTENT_REMOTE="/y`touch /ctl/pwned`"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
@@ -9438,7 +9438,7 @@ src_of "${RCLONE_REL}/cloud_restore" "${TMP}/cloud_restore.a16"
 #      after that is promoted as before.
 echo "    A17. #308 claude F-CS-11: a rule that sat below the catch-all stays inert across the upgrade"
 { cat "${RH}/usrconfig/cloud_sync-rules.txt.defaults"; printf -- '+ /roms/**\n+ /**\n'; } > "${RRULES}"
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
 rm -f "${RH}/storage/.config/.cloud_sync-rules-user-first-applied"
 rh_run
 ! grep -qx -- '+ /roms/\*\*' "${RRULES}" && ! grep -qx -- '+ /\*\*' "${RRULES}" && grep -qx -- '# inert: + /roms/\*\*' "${RRULES}"; check $? "an upstream device's rules below the catch-all (+ /roms/**, + /**) are kept commented out, not promoted above the defaults" "active lines now: $(grep -xE -- '\+ /roms/\*\*|\+ /\*\*' "${RRULES}" | tr '\n' ' ')-- the ROMs would ride into the saves folder on the next sync (F-CS-11)"
@@ -9452,7 +9452,7 @@ rh_run
 #      each game included; when nothing needs changing it writes nothing --
 #      no new conf, no new rules file, no .bak of either.
 echo "    A18. #308 claude F-CS-18: a helper run with nothing to change writes nothing"
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
 printf -- '+ /mine/**\n- /**\n' > "${RRULES}"
 rh_run
 rm -f "${RH}/storage/.config/cloud_sync.conf.bak" "${RRULES}.bak"
@@ -9470,7 +9470,7 @@ grep -q '^RSYNCRMDIR=' "${RH}/storage/.config/cloud_sync.conf" && [ -e "${RH}/st
 #      (no retry or transfer bound, a 20 s ceiling) reaches the current 90 s
 #      in one helper run, not two.
 echo "    A19. #308 gpt F-CS-29: the oldest automatic bound reaches today's in one run"
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nBACKUPMETHOD="copy"\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"\nSYNC_CEILING_SECONDS=20\n' > "${RH}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nBACKUPMETHOD="copy"\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"\nSYNC_CEILING_SECONDS=20\n' > "${RH}/storage/.config/cloud_sync.conf"
 rm -f "${RH}/storage/.config/.cloud_sync-sync-net-opts-five-applied"
 rh_run
 [ "$(sed -n 's/^RCLONE_SYNC_NET_OPTS=//p' "${RH}/storage/.config/cloud_sync.conf")" = '"--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"' ] \
@@ -9485,7 +9485,7 @@ LS=$(sa_new ccs21); sa_script "${LS}" cloud_backup cloud_restore cloud_saves_roo
 sed 's/^RCLONE_NET_OPTS=.*/RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 7 --retries 1"/' "${OV}/storage/.config/cloud_sync.conf" \
     | sed 's/ --error-on-no-transfer//' > "${LS}/storage/.config/cloud_sync.conf"
 cp "${OV}/storage/.config/cloud_sync-rules.txt" "${LS}/storage/.config/"
-mkdir -p "${LS}/storage/roms/backup/x/storage/.config" "${LS}/cloud/Rasteratops/Backups/QA-deadbeef01"
+mkdir -p "${LS}/storage/roms/backup/x/storage/.config" "${LS}/cloud/pixelelated/Backups/QA-deadbeef01"
 echo cfg > "${LS}/storage/roms/backup/x/storage/.config/blob"
 tar -C "${LS}/storage/roms/backup/x" -czf "${LS}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${LS}/storage/roms/backup/x"
 sa_run "${LS}" cloud_backup --yes --system-only
@@ -9502,12 +9502,12 @@ ls_ls=$(grep '^ls ' "${LS}/ctl/argv" | head -1)
 echo "    A21. #308 gpt F-CS-35: an undated legacy archive does not outrank a dated one"
 UA=$(sa_new gcs35); sa_script "${UA}" cloud_restore cloud_saves_root
 cp "${LS}/storage/.config/cloud_sync.conf" "${LS}/storage/.config/cloud_sync-rules.txt" "${UA}/storage/.config/"
-mkdir -p "${UA}/cloud/Rasteratops/Backups/QA-deadbeef01" "${UA}/storage/roms/backup"
-echo old > "${UA}/cloud/Rasteratops/Backups/QA-deadbeef01/ROCKNIX_BACKUP.zip"
-echo new > "${UA}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz"
+mkdir -p "${UA}/cloud/pixelelated/Backups/QA-deadbeef01" "${UA}/storage/roms/backup"
+echo old > "${UA}/cloud/pixelelated/Backups/QA-deadbeef01/ROCKNIX_BACKUP.zip"
+echo new > "${UA}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz"
 sa_run "${UA}" cloud_restore --yes --system-only
 [ -f "${UA}/storage/roms/backup/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz" ] && [ ! -e "${UA}/storage/roms/backup/ROCKNIX_BACKUP.zip" ]; check $? "the dated archive is restored, not the undated ROCKNIX_BACKUP.zip that sorts after it (rc ${RC})" "restored: $(ls "${UA}/storage/roms/backup" | tr '\n' ' ') -- lexical order put the undated name last (F-CS-35)"
-rm -f "${UA}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz" "${UA}/storage/roms/backup"/*
+rm -f "${UA}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz" "${UA}/storage/roms/backup"/*
 sa_run "${UA}" cloud_restore --yes --system-only
 [ -f "${UA}/storage/roms/backup/ROCKNIX_BACKUP.zip" ]; check $? "and with nothing dated there, the undated archive is still restored (rc ${RC})" "restored: $(ls "${UA}/storage/roms/backup" | tr '\n' ' ')"
 
@@ -9567,14 +9567,14 @@ gm_removed=$(sed -n 's/^>>> removed //p' "${M}/out" | tail -1)
 #      it, and never let a match remove it.
 echo "    A25. gpt F-CS-02: an N64 .fla save is the saves tier's, never content's"
 FL=$(sa_new fla); sa_script "${FL}" cloud_content_backup cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${FL}/storage/.config/cloud_sync.conf"
-mkdir -p "${FL}/storage/roms/n64" "${FL}/storage/.config/emulationstation" "${FL}/cloud/Rasteratops/Content/ROMs/gb"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${FL}/storage/.config/cloud_sync.conf"
+mkdir -p "${FL}/storage/roms/n64" "${FL}/storage/.config/emulationstation" "${FL}/cloud/pixelelated/Content/ROMs/gb"
 printf '<system><path>/storage/roms/n64</path></system>\n' > "${FL}/storage/.config/emulationstation/es_systems.cfg"
 echo rom > "${FL}/storage/roms/n64/Game.z64"; echo "flash save" > "${FL}/storage/roms/n64/Game.fla"
-echo a > "${FL}/cloud/Rasteratops/Content/ROMs/gb/A.gb"
+echo a > "${FL}/cloud/pixelelated/Content/ROMs/gb/A.gb"
 sa_run "${FL}" cloud_content_backup n64
-[ -f "${FL}/cloud/Rasteratops/Content/ROMs/n64/Game.z64" ] && [ ! -e "${FL}/cloud/Rasteratops/Content/ROMs/n64/Game.fla" ]; check $? "a content backup of n64 sends the ROM and not its .fla save (rc ${RC})" "in the cloud: $(ls "${FL}/cloud/Rasteratops/Content/ROMs/n64" 2>/dev/null | tr '\n' ' ') -- .fla is missing from SAVE_EXCLUDES"
-rm -rf "${FL}/cloud/Rasteratops/Content/ROMs/n64"
+[ -f "${FL}/cloud/pixelelated/Content/ROMs/n64/Game.z64" ] && [ ! -e "${FL}/cloud/pixelelated/Content/ROMs/n64/Game.fla" ]; check $? "a content backup of n64 sends the ROM and not its .fla save (rc ${RC})" "in the cloud: $(ls "${FL}/cloud/pixelelated/Content/ROMs/n64" 2>/dev/null | tr '\n' ' ') -- .fla is missing from SAVE_EXCLUDES"
+rm -rf "${FL}/cloud/pixelelated/Content/ROMs/n64"
 printf 'n64\n' > "${FL}/storage/.cache/cloud_sync/content-systems"
 sa_run "${FL}" cloud_content_restore --match
 fl_plan=$(grep '^n64|' "${FL}/out")
@@ -9588,13 +9588,13 @@ sa_run "${FL}" cloud_content_restore --match --apply
 #      a README deeper in a game's folder is content on both.
 echo "    A26. #308 gpt F-CS-30: after a restore, the scan reads the same files on both sides"
 SC=$(sa_new gcs30); sa_script "${SC}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${SC}/storage/.config/cloud_sync.conf"
-mkdir -p "${SC}/cloud/Rasteratops/Content/ROMs/dc/shared/savefiles" "${SC}/cloud/Rasteratops/Content/ROMs/scummvm/game" "${SC}/cloud/Rasteratops/Content/BIOS" \
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${SC}/storage/.config/cloud_sync.conf"
+mkdir -p "${SC}/cloud/pixelelated/Content/ROMs/dc/shared/savefiles" "${SC}/cloud/pixelelated/Content/ROMs/scummvm/game" "${SC}/cloud/pixelelated/Content/BIOS" \
     "${SC}/storage/.config/emulationstation"
 printf '<system><path>/storage/roms/dc</path></system>\n<system><path>/storage/roms/scummvm</path></system>\n' > "${SC}/storage/.config/emulationstation/es_systems.cfg"
-echo gdi > "${SC}/cloud/Rasteratops/Content/ROMs/dc/game.gdi"; echo vmu > "${SC}/cloud/Rasteratops/Content/ROMs/dc/shared/savefiles/card.dat"
-echo data > "${SC}/cloud/Rasteratops/Content/ROMs/scummvm/game/game.dat"; echo readme > "${SC}/cloud/Rasteratops/Content/ROMs/scummvm/game/README.txt"
-echo bios > "${SC}/cloud/Rasteratops/Content/BIOS/dc_boot.bin"; echo "BIOS and firmware files." > "${SC}/cloud/Rasteratops/Content/BIOS/README.txt"
+echo gdi > "${SC}/cloud/pixelelated/Content/ROMs/dc/game.gdi"; echo vmu > "${SC}/cloud/pixelelated/Content/ROMs/dc/shared/savefiles/card.dat"
+echo data > "${SC}/cloud/pixelelated/Content/ROMs/scummvm/game/game.dat"; echo readme > "${SC}/cloud/pixelelated/Content/ROMs/scummvm/game/README.txt"
+echo bios > "${SC}/cloud/pixelelated/Content/BIOS/dc_boot.bin"; echo "BIOS and firmware files." > "${SC}/cloud/pixelelated/Content/BIOS/README.txt"
 printf 'dc\nscummvm\n' > "${SC}/storage/.cache/cloud_sync/content-systems"
 mkdir -p "${SC}/storage/roms/dc/shared/savefiles"; echo "this device's own vmu" > "${SC}/storage/roms/dc/shared/savefiles/card.dat"
 sa_run "${SC}" cloud_content_restore --selected
@@ -9611,7 +9611,7 @@ sc_bad=$(awk -F'|' '($1 == "dc" || $1 == "scummvm" || $1 == "bios") && ($5 != 0 
 #      and the page read COULDN'T FINISH - SOMETHING WENT WRONG.
 echo "    A27. #308 claude F-CS-15: a content backup with nothing to send completes"
 NB=$(sa_new ccs15); sa_script "${NB}" cloud_content_backup
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${NB}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${NB}/storage/.config/cloud_sync.conf"
 mkdir -p "${NB}/storage/.config/emulationstation" "${NB}/storage/roms/gba"
 printf '<system><path>/storage/roms/gba</path></system>\n' > "${NB}/storage/.config/emulationstation/es_systems.cfg"
 echo "only a save" > "${NB}/storage/roms/gba/Game.srm"
@@ -9630,11 +9630,11 @@ done
 #      why, which the rows read as COULDN'T FINISH, not SKIPPED.
 echo "    A28. #308 claude F-CS-24: a run cut by the network after it moved files is not a skip"
 OF=$(sa_new ccs24); sa_script "${OF}" cloud_content_restore cloud_backup cloud_saves_root
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${OF}/storage/.config/cloud_sync.conf"
-mkdir -p "${OF}/cloud/Rasteratops/Content/ROMs/gb" "${OF}/cloud/Rasteratops/Content/ROMs/nes"
-echo a > "${OF}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo n > "${OF}/cloud/Rasteratops/Content/ROMs/nes/N.nes"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/gb ' 'touch /ctl/noroute' > "${OF}/ctl/post"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/nes ' 1 > "${OF}/ctl/fail"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${OF}/storage/.config/cloud_sync.conf"
+mkdir -p "${OF}/cloud/pixelelated/Content/ROMs/gb" "${OF}/cloud/pixelelated/Content/ROMs/nes"
+echo a > "${OF}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo n > "${OF}/cloud/pixelelated/Content/ROMs/nes/N.nes"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/gb ' 'touch /ctl/noroute' > "${OF}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/nes ' 1 > "${OF}/ctl/fail"
 touch "${OF}/ctl/noping"
 sa_run "${OF}" cloud_content_restore gb nes
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
@@ -9642,17 +9642,17 @@ of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore"
 rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
 cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${OF}/storage/.config/"
 sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${OF}/storage/.config/cloud_sync.conf"
-mkdir -p "${OF}/storage/roms/gb" "${OF}/storage/roms/backup/x/storage/.config" "${OF}/cloud/Rasteratops/Saves"
+mkdir -p "${OF}/storage/roms/gb" "${OF}/storage/roms/backup/x/storage/.config" "${OF}/cloud/pixelelated/Saves"
 echo "a save" > "${OF}/storage/roms/gb/New.srm"; echo cfg > "${OF}/storage/roms/backup/x/storage/.config/blob"
 tar -C "${OF}/storage/roms/backup/x" -czf "${OF}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${OF}/storage/roms/backup/x"
-printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/Rasteratops/Saves/' 'touch /ctl/noroute /ctl/noping' > "${OF}/ctl/post"
-printf '%s\t%s\n' '^mkdir qa:/Rasteratops/Backups/' 1 > "${OF}/ctl/fail"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/pixelelated/Saves/' 'touch /ctl/noroute /ctl/noping' > "${OF}/ctl/post"
+printf '%s\t%s\n' '^mkdir qa:/pixelelated/Backups/' 1 > "${OF}/ctl/fail"
 sa_run "${OF}" cloud_backup --yes
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
-[ "${RC}" -eq 69 ] && [ -f "${OF}/cloud/Rasteratops/Saves/gb/New.srm" ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: ${of_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${OF}/cloud/Rasteratops/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${of_stamp:-none}'"
+[ "${RC}" -eq 69 ] && [ -f "${OF}/cloud/pixelelated/Saves/gb/New.srm" ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: ${of_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${OF}/cloud/pixelelated/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${of_stamp:-none}'"
 rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
 touch "${OF}/ctl/noroute" "${OF}/ctl/noping"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
 sa_run "${OF}" cloud_content_restore gb
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -eq 69 ] && [ "${of_stamp}" = 69 ]; check $? "while a run the network ends before any unit completed is still the skip: a bare 69 (rc ${RC}, stamp ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}'"
@@ -10010,18 +10010,18 @@ rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"
 for n in 0 1 2 3 4 5 6 7 8 9; do echo "save ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"; done
 # Ten saves change between the copy and the check: the check finds exactly
 # ten differences, and says so in a line that ends "0 differences found".
-printf '%s\t%s\n' '^copy qa:/GAMES qa:/Rasteratops/Saves' 'for f in /cloud/GAMES/savefiles/gb/S*.srm; do echo newer >> "${f}"; done' > "${MG}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/pixelelated/Saves' 'for f in /cloud/GAMES/savefiles/gb/S*.srm; do echo newer >> "${f}"; done' > "${MG}/ctl/post"
 sa_run "${MG}" cloud_migrate_layout --apply
 ga01_left=$(ls "${MG}/cloud/GAMES/savefiles/gb" 2>/dev/null | grep -c '^S[0-9]\.srm$')
 [ "${ga01_left}" -eq 10 ] && [ "$(mg_ptr SAVES_REMOTE)" = "/GAMES" ] && [ "${RC}" -ne 0 ]; check $? "G-A-01: a check that found 10 differences keeps all ten saves and SAVES_REMOTE where they were (rc ${RC})" "${ga01_left} of 10 saves left in the old folder; SAVES_REMOTE '$(mg_ptr SAVES_REMOTE)'; rc ${RC}; out: $(sa_tail "${MG}") -- '10 differences found' matched the substring '0 differences found'"
 mg_seed
-rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb" "${MG}/cloud/Rasteratops/Saves/savefiles/gb"
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb" "${MG}/cloud/pixelelated/Saves/savefiles/gb"
 for n in 0 1 2 3 4 5 6 7 8 9; do
     echo "this device ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"
-    echo "another library ${n}" > "${MG}/cloud/Rasteratops/Saves/savefiles/gb/S${n}.srm"
+    echo "another library ${n}" > "${MG}/cloud/pixelelated/Saves/savefiles/gb/S${n}.srm"
 done
 sa_run "${MG}" cloud_migrate_layout --apply
-[ "${RC}" -eq 4 ] && [ "$(cat "${MG}/cloud/Rasteratops/Saves/savefiles/gb/S3.srm" 2>/dev/null)" = "another library 3" ] && [ -f "${MG}/cloud/GAMES/savefiles/gb/S3.srm" ]; check $? "G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc ${RC})" "rc ${RC}; new folder's S3.srm reads '$(cat "${MG}/cloud/Rasteratops/Saves/savefiles/gb/S3.srm" 2>/dev/null)'; out: $(sa_tail "${MG}") -- resumable() read '10 differences found' as none"
+[ "${RC}" -eq 4 ] && [ "$(cat "${MG}/cloud/pixelelated/Saves/savefiles/gb/S3.srm" 2>/dev/null)" = "another library 3" ] && [ -f "${MG}/cloud/GAMES/savefiles/gb/S3.srm" ]; check $? "G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc ${RC})" "rc ${RC}; new folder's S3.srm reads '$(cat "${MG}/cloud/pixelelated/Saves/savefiles/gb/S3.srm" 2>/dev/null)'; out: $(sa_tail "${MG}") -- resumable() read '10 differences found' as none"
 
 # A32. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-02,
 #      High): the old folder goes only once the pointer has landed.
@@ -10060,7 +10060,7 @@ for s in cloud_backup cloud_restore cloud_sync_helper; do
     awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CV}/${s}" > "${CV}/${s}.fn"
 done
 cv_head='SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"'
+SAVES_REMOTE="/pixelelated/Saves"'
 cv_bad() { # <name> <body>: a conf every copy must refuse
     printf '%s\n%s\n' "${cv_head}" "$2" > "${CV}/bad-$1"
 }
@@ -10109,9 +10109,9 @@ printf -- '+ /**/*.srm\n- /**\n' > "${PX}/storage/.config/cloud_sync-rules.txt"
 mkdir -p "${PX}/storage/roms/gb"; echo s > "${PX}/storage/roms/gb/A.srm"
 cat > "${PX}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="no"
@@ -10134,9 +10134,9 @@ echo "    A34. a rules file the player names themselves is theirs: honoured as w
 OF=$(sa_new ownrules); sa_script "${OF}" cloud_backup cloud_restore cloud_saves_root
 cat > "${OF}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="no"
@@ -10147,12 +10147,12 @@ LOG_LEVEL="INFO"
 EOS
 printf -- '- /**/own-rule-victim.srm\n+ /**\n' > "${OF}/storage/my-rules.txt"
 printf -- '+ /**/*.srm\n' > "${OF}/storage/.config/cloud_sync-rules.txt"
-mkdir -p "${OF}/storage/roms/saves" "${OF}/cloud/Rasteratops/Saves/saves"
+mkdir -p "${OF}/storage/roms/saves" "${OF}/cloud/pixelelated/Saves/saves"
 echo s > "${OF}/storage/roms/saves/game1.srm"; echo victim > "${OF}/storage/roms/saves/own-rule-victim.srm"
 sa_run "${OF}" cloud_backup --yes --saves-only
-[ "${RC}" -eq 0 ] && [ -f "${OF}/cloud/Rasteratops/Saves/saves/game1.srm" ] && [ ! -e "${OF}/cloud/Rasteratops/Saves/saves/own-rule-victim.srm" ]; check $? "cloud_backup with the player's own --filter-from (no catch-all) runs by their rules: the save goes, the file they excluded stays (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/cloud/Rasteratops/Saves/saves/game1.srm" ] && echo sent || echo missing), victim $([ -e "${OF}/cloud/Rasteratops/Saves/saves/own-rule-victim.srm" ] && echo SENT || echo home); out: $(sa_tail "${OF}") -- PL-020's catch-all test refused a file the player named (#71)"
+[ "${RC}" -eq 0 ] && [ -f "${OF}/cloud/pixelelated/Saves/saves/game1.srm" ] && [ ! -e "${OF}/cloud/pixelelated/Saves/saves/own-rule-victim.srm" ]; check $? "cloud_backup with the player's own --filter-from (no catch-all) runs by their rules: the save goes, the file they excluded stays (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/cloud/pixelelated/Saves/saves/game1.srm" ] && echo sent || echo missing), victim $([ -e "${OF}/cloud/pixelelated/Saves/saves/own-rule-victim.srm" ] && echo SENT || echo home); out: $(sa_tail "${OF}") -- PL-020's catch-all test refused a file the player named (#71)"
 rm -f "${OF}/storage/roms/saves/game1.srm"
-echo cloudvictim > "${OF}/cloud/Rasteratops/Saves/saves/own-rule-victim.srm"; rm -f "${OF}/storage/roms/saves/own-rule-victim.srm"
+echo cloudvictim > "${OF}/cloud/pixelelated/Saves/saves/own-rule-victim.srm"; rm -f "${OF}/storage/roms/saves/own-rule-victim.srm"
 sa_run "${OF}" cloud_restore --yes --saves-only
 [ "${RC}" -eq 0 ] && [ -f "${OF}/storage/roms/saves/game1.srm" ] && [ ! -e "${OF}/storage/roms/saves/own-rule-victim.srm" ]; check $? "cloud_restore with the same file brings the save down and leaves the excluded one in the cloud (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/storage/roms/saves/game1.srm" ] && echo restored || echo missing), victim $([ -e "${OF}/storage/roms/saves/own-rule-victim.srm" ] && echo RESTORED || echo left); out: $(sa_tail "${OF}")"
 # And the managed allowlist, named in the options as it ships, is still
@@ -10160,7 +10160,7 @@ sa_run "${OF}" cloud_restore --yes --saves-only
 sed -i 's|--filter-from /storage/my-rules.txt|--filter-from /storage/.config/cloud_sync-rules.txt|' "${OF}/storage/.config/cloud_sync.conf"
 echo s > "${OF}/storage/roms/saves/game2.srm"
 sa_run "${OF}" cloud_backup --yes --saves-only
-[ "${RC}" -ne 0 ] && [ ! -e "${OF}/cloud/Rasteratops/Saves/saves/game2.srm" ]; check $? "the device's own allowlist without its catch-all is still refused (rc ${RC})" "rc ${RC}; game2.srm $([ -e "${OF}/cloud/Rasteratops/Saves/saves/game2.srm" ] && echo SENT || echo home)"
+[ "${RC}" -ne 0 ] && [ ! -e "${OF}/cloud/pixelelated/Saves/saves/game2.srm" ]; check $? "the device's own allowlist without its catch-all is still refused (rc ${RC})" "rc ${RC}; game2.srm $([ -e "${OF}/cloud/pixelelated/Saves/saves/game2.srm" ] && echo SENT || echo home)"
 
 # A35. vm-qa run 68's round-trip, step "content transfers honour the
 #      system selection": the tool ran `--match --apply` with no `--match`
@@ -10210,8 +10210,8 @@ ga09_line="Your saves folder is your cloud's top folder, so no replaced cloud sa
 sa_run "${RX}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && grep -qx "played here" "${RX}/cloud/gb/A.srm" && sed 's/\x1b\[[0-9;]*m//g' "${RX}/out" | grep -qxF "${ga09_line}"; check $? "a backup to a saves folder at the root says on the console that no replaced cloud saves are kept (rc ${RC})" "rc ${RC}; out: $(sa_tail "${RX}" 8) -- the loss of the one-cycle record was said only in the log"
 [ "$(sa_outcome "${RX}")" = "Completed. ${ga09_line}" ]; check $? "and its outcome line says it too: '$(sa_outcome "${RX}")'" "outcome line '$(sa_outcome "${RX}")'"
-sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/Rasteratops/Saves"|' "${RX}/storage/.config/cloud_sync.conf"
-mkdir -p "${RX}/cloud/Rasteratops/Saves/gb"; echo "older" > "${RX}/cloud/Rasteratops/Saves/gb/A.srm"
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/pixelelated/Saves"|' "${RX}/storage/.config/cloud_sync.conf"
+mkdir -p "${RX}/cloud/pixelelated/Saves/gb"; echo "older" > "${RX}/cloud/pixelelated/Saves/gb/A.srm"
 sa_run "${RX}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && [ "$(sa_outcome "${RX}")" = "Completed." ] && ! grep -qF "top folder" "${RX}/out"; check $? "a saves folder with a sibling keeps its record and says nothing of the kind (rc ${RC})" "rc ${RC}; outcome '$(sa_outcome "${RX}")'"
 
@@ -10219,23 +10219,23 @@ sa_run "${RX}" cloud_backup --yes --saves-only
 #      Low; seats/A-claude.md G-A-11, Low): what the tidy page says. A copy
 #      that stopped part-way, or a check that failed, left files in the new
 #      folder, and the page said "Both folders are as they were"; a moved
-#      tier was announced by its config key ("Now using /Rasteratops/Saves for
+#      tier was announced by its config key ("Now using /pixelelated/Saves for
 #      SAVES_REMOTE").
 echo "    A37. G-A-12 (gpt) and G-A-11 (claude): the tidy's lines say what is true, in the player's words"
 mg_seed
 chmod 000 "${MG}/cloud/GAMES/gb/B.srm"
 sa_run "${MG}" cloud_migrate_layout --apply
 chmod 644 "${MG}/cloud/GAMES/gb/B.srm"
-[ "${RC}" -ne 0 ] && [ -f "${MG}/cloud/Rasteratops/Saves/savefiles/gb/A.srm" ] && ! grep -q 'Both folders are as they were' "${MG}/out" \
-    && grep -qF "some files may already be in the new one" "${MG}/out"; check $? "a saves copy that stopped part-way (one file unreadable) says the new folder may already hold some files, not that both are as they were (rc ${RC})" "rc ${RC}; A.srm copied: $([ -f "${MG}/cloud/Rasteratops/Saves/savefiles/gb/A.srm" ] && echo yes || echo no); out: $(sa_tail "${MG}" 5)"
+[ "${RC}" -ne 0 ] && [ -f "${MG}/cloud/pixelelated/Saves/savefiles/gb/A.srm" ] && ! grep -q 'Both folders are as they were' "${MG}/out" \
+    && grep -qF "some files may already be in the new one" "${MG}/out"; check $? "a saves copy that stopped part-way (one file unreadable) says the new folder may already hold some files, not that both are as they were (rc ${RC})" "rc ${RC}; A.srm copied: $([ -f "${MG}/cloud/pixelelated/Saves/savefiles/gb/A.srm" ] && echo yes || echo no); out: $(sa_tail "${MG}" 5)"
 mg_seed
 rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"; echo s > "${MG}/cloud/GAMES/savefiles/gb/S1.srm"
-printf '%s\t%s\n' '^copy qa:/GAMES qa:/Rasteratops/Saves' 'echo newer >> /cloud/GAMES/savefiles/gb/S1.srm' > "${MG}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/pixelelated/Saves' 'echo newer >> /cloud/GAMES/savefiles/gb/S1.srm' > "${MG}/ctl/post"
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "${RC}" -ne 0 ] && ! grep -q 'Both folders are as they were' "${MG}/out" && grep -qF "nothing was removed from the old folder" "${MG}/out"; check $? "a check that failed says nothing was removed from the old folder, not that both are as they were (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 5)"
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --apply
-[ "${RC}" -eq 0 ] && ! grep -qE 'for (SAVES|SETTINGS|CONTENT)_REMOTE' "${MG}/out" && grep -qF 'Now using /Rasteratops/Saves for your saves.' "${MG}/out"; check $? "a tier that moved is named in words, not by its config key (rc ${RC})" "rc ${RC}; lines: $(grep 'Now using' "${MG}/out" | tr '\n' '|')"
+[ "${RC}" -eq 0 ] && ! grep -qE 'for (SAVES|SETTINGS|CONTENT)_REMOTE' "${MG}/out" && grep -qF 'Now using /pixelelated/Saves for your saves.' "${MG}/out"; check $? "a tier that moved is named in words, not by its config key (rc ${RC})" "rc ${RC}; lines: $(grep 'Now using' "${MG}/out" | tr '\n' '|')"
 
 # A38. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-11 and
 #      seats/A-claude.md G-A-10, Medium/Low): the hash query the migration
@@ -10264,18 +10264,18 @@ cg_run() { # <CONTENT_REMOTE line(s)>: a content backup of nes, from an empty cl
     printf 'SAVESPATH="/storage/roms"\n%s\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' "$1" > "${CG}/storage/.config/cloud_sync.conf"
     sa_run "${CG}" cloud_content_backup nes
 }
-cg_run 'CONTENT_REMOTE="/Rasteratops/Content"   # where the ROMs live'
-[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/ROMs" ]; check $? "a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
-cg_run "CONTENT_REMOTE='/Rasteratops/Content'"
-[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ]; check $? "a single-quoted CONTENT_REMOTE is the folder it names (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run 'CONTENT_REMOTE="/pixelelated/Content"   # where the ROMs live'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/pixelelated/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/ROMs" ]; check $? "a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run "CONTENT_REMOTE='/pixelelated/Content'"
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/pixelelated/Content/ROMs/nes/N.nes" ]; check $? "a single-quoted CONTENT_REMOTE is the folder it names (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
 # Of two lines the first counts: every saves run EmulationStation starts
 # is --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the
 # first -- so the first is the value the saves scripts run with, and the
 # one the file is left holding.
-cg_run 'CONTENT_REMOTE="/Rasteratops/Content"
+cg_run 'CONTENT_REMOTE="/pixelelated/Content"
 CONTENT_REMOTE="/Old/Content"'
-[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the first counts, as the duplicate cleanup keeps it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
-cg_run 'CONTENT_REMOTE="/Rasteratops/Content" ; echo'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/pixelelated/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the first counts, as the duplicate cleanup keeps it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run 'CONTENT_REMOTE="/pixelelated/Content" ; echo'
 [ "${RC}" -ne 0 ] && [ -z "$(cd "${CG}/cloud" && find . -type f)" ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CG}/out"; check $? "a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' '); why: $(grep '^>>> why' "${CG}/out")"
 
 # A40. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-07 and
@@ -10296,13 +10296,13 @@ af_run() { # <CONTENT_REMOTE> <where nes sits in the cloud> <the listing to fail
     printf '%s\t%s\n' "$3" 5 > "${AF}/ctl/fail"
     sa_run "${AF}" cloud_content_restore --all
 }
-af_run /Rasteratops/Content /Rasteratops/Content/nes '^lsf --dirs-only qa:/Rasteratops/Content/ '
+af_run /pixelelated/Content /pixelelated/Content/nes '^lsf --dirs-only qa:/pixelelated/Content/ '
 af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out" && grep -q '^>>> why ' "${AF}/out"; check $? "--all on the flat layout whose root listing fails (5) ends Couldn't finish, not Nothing to restore (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
-af_run /Rasteratops/Content /nes '^lsf --dirs-only qa: '
+af_run /pixelelated/Content /nes '^lsf --dirs-only qa: '
 af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out"; check $? "--all whose legacy root listing fails (5) ends Couldn't finish too (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
-af_run /Rasteratops/Content /Rasteratops/Content/nes '^never$'
+af_run /pixelelated/Content /pixelelated/Content/nes '^never$'
 [ "${RC}" -eq 0 ] && [ -f "${AF}/storage/roms/nes/N.nes" ]; check $? "and with nothing failing the flat layout's nes comes down (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AF}")"
 
 # A41. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-10,
@@ -10314,11 +10314,11 @@ af_run /Rasteratops/Content /Rasteratops/Content/nes '^never$'
 #      the restore had rightly left in the cloud.
 echo "    A41. G-A-10 (gpt): a nested game list is game content in the count as in the transfer"
 NG=$(sa_new ga10); sa_script "${NG}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${NG}/storage/.config/cloud_sync.conf"
-mkdir -p "${NG}/storage/.config/emulationstation" "${NG}/cloud/Rasteratops/Content/ROMs/scummvm/title"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${NG}/storage/.config/cloud_sync.conf"
+mkdir -p "${NG}/storage/.config/emulationstation" "${NG}/cloud/pixelelated/Content/ROMs/scummvm/title"
 printf '<system><path>/storage/roms/scummvm</path></system>\n' > "${NG}/storage/.config/emulationstation/es_systems.cfg"
-echo game-data > "${NG}/cloud/Rasteratops/Content/ROMs/scummvm/title/game.dat"
-echo '<gameList><game><path>./x</path></game></gameList>' > "${NG}/cloud/Rasteratops/Content/ROMs/scummvm/title/gamelist.xml"
+echo game-data > "${NG}/cloud/pixelelated/Content/ROMs/scummvm/title/game.dat"
+echo '<gameList><game><path>./x</path></game></gameList>' > "${NG}/cloud/pixelelated/Content/ROMs/scummvm/title/gamelist.xml"
 sa_run "${NG}" cloud_content_restore scummvm
 ng_rrc=${RC}
 sa_run "${NG}" cloud_content_restore --scan
@@ -10356,20 +10356,20 @@ cp_exit
 #      untouched cloud). Progress is what rclone logged moving.
 echo "    A43. G-A-08 (gpt) / G-A-13 (claude): progress is files moved, not units completed"
 PG=$(sa_new ga08); sa_script "${PG}" cloud_content_restore cloud_content_backup
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${PG}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${PG}/storage/.config/cloud_sync.conf"
 mkdir -p "${PG}/storage/.config/emulationstation"
 printf '<system><path>/storage/roms/nes</path></system>\n<system><path>/storage/roms/gb</path></system>\n' > "${PG}/storage/.config/emulationstation/es_systems.cfg"
 pg_reset() {
     rm -rf "${PG}/cloud"/* "${PG}/storage/roms"/* "${PG}/storage/.cache/cloud_sync"/last-* "${PG}/ctl/noroute" "${PG}/ctl/noping"
     : > "${PG}/ctl/fail"; : > "${PG}/ctl/post"
-    mkdir -p "${PG}/cloud/Rasteratops/Content/ROMs/nes" "${PG}/cloud/Rasteratops/Content/ROMs/gb" "${PG}/storage/roms/nes" "${PG}/storage/roms/gb"
+    mkdir -p "${PG}/cloud/pixelelated/Content/ROMs/nes" "${PG}/cloud/pixelelated/Content/ROMs/gb" "${PG}/storage/roms/nes" "${PG}/storage/roms/gb"
 }
 pg_stamp() { cut -d' ' -f2- "${PG}/storage/.cache/cloud_sync/last-content-$1" 2>/dev/null; }
 # A restore whose one unit lands its ROM and then loses the network in the
 # game-list pass.
 pg_reset
-echo n > "${PG}/cloud/Rasteratops/Content/ROMs/nes/N.nes"; echo '<gameList/>' > "${PG}/cloud/Rasteratops/Content/ROMs/nes/gamelist.xml"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+echo n > "${PG}/cloud/pixelelated/Content/ROMs/nes/N.nes"; echo '<gameList/>' > "${PG}/cloud/pixelelated/Content/ROMs/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
 printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
 sa_run "${PG}" cloud_content_restore --with-media nes
 [ "${RC}" -eq 69 ] && [ -f "${PG}/storage/roms/nes/N.nes" ] && pg_stamp restore | grep -q '^69 gaps .'; check $? "a restore whose unit landed its ROM and then lost the network in its game-list pass stamps '69 gaps', not a bare skip (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; N.nes $([ -f "${PG}/storage/roms/nes/N.nes" ] && echo arrived || echo missing); stamp '$(pg_stamp restore)'"
@@ -10379,14 +10379,14 @@ echo n > "${PG}/storage/roms/nes/N.nes"; echo '<gameList/>' > "${PG}/storage/rom
 printf '%s\t%s\n' '^copy /storage/roms/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
 printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
 sa_run "${PG}" cloud_content_backup --with-media nes
-[ "${RC}" -eq 69 ] && [ -f "${PG}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ] && pg_stamp backup | grep -q '^69 gaps .'; check $? "a content backup that sent its ROM and then lost the network stamps '69 gaps' (rc ${RC}, stamp $(pg_stamp backup))" "rc ${RC}; N.nes in the cloud $([ -f "${PG}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ] && echo yes || echo no); stamp '$(pg_stamp backup)'"
+[ "${RC}" -eq 69 ] && [ -f "${PG}/cloud/pixelelated/Content/ROMs/nes/N.nes" ] && pg_stamp backup | grep -q '^69 gaps .'; check $? "a content backup that sent its ROM and then lost the network stamps '69 gaps' (rc ${RC}, stamp $(pg_stamp backup))" "rc ${RC}; N.nes in the cloud $([ -f "${PG}/cloud/pixelelated/Content/ROMs/nes/N.nes" ] && echo yes || echo no); stamp '$(pg_stamp backup)'"
 # A first unit with nothing to move, then the network gone: nothing was
 # touched, so the skip.
 pg_reset
-echo a > "${PG}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; cp -p "${PG}/cloud/Rasteratops/Content/ROMs/gb/A.gb" "${PG}/storage/roms/gb/A.gb"
-echo n > "${PG}/cloud/Rasteratops/Content/ROMs/nes/N.nes"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/gb .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/nes ' 1 > "${PG}/ctl/fail"
+echo a > "${PG}/cloud/pixelelated/Content/ROMs/gb/A.gb"; cp -p "${PG}/cloud/pixelelated/Content/ROMs/gb/A.gb" "${PG}/storage/roms/gb/A.gb"
+echo n > "${PG}/cloud/pixelelated/Content/ROMs/nes/N.nes"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/gb .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/nes ' 1 > "${PG}/ctl/fail"
 sa_run "${PG}" cloud_content_restore gb nes
 [ "${RC}" -eq 69 ] && [ "$(pg_stamp restore)" = 69 ]; check $? "a restore whose first unit had nothing to move, then lost the network, is the skip: a bare 69 (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; stamp '$(pg_stamp restore)' -- a unit that moved nothing counted as progress"
 
@@ -10400,14 +10400,14 @@ echo "    A44. G-A-01 (claude): an automatic run cut by the network after it sen
 AU=$(sa_new ga01c); sa_script "${AU}" cloud_backup cloud_saves_root
 cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${AU}/storage/.config/"
 sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${AU}/storage/.config/cloud_sync.conf"
-mkdir -p "${AU}/storage/roms/gb" "${AU}/storage/roms/backup/x/storage/.config" "${AU}/cloud/Rasteratops/Saves"
+mkdir -p "${AU}/storage/roms/gb" "${AU}/storage/roms/backup/x/storage/.config" "${AU}/cloud/pixelelated/Saves"
 echo "a save" > "${AU}/storage/roms/gb/New.srm"; echo cfg > "${AU}/storage/roms/backup/x/storage/.config/blob"
 tar -C "${AU}/storage/roms/backup/x" -czf "${AU}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${AU}/storage/roms/backup/x"
-printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/Rasteratops/Saves/' 'touch /ctl/noroute /ctl/noping' > "${AU}/ctl/post"
-printf '%s\t%s\n' '^mkdir qa:/Rasteratops/Backups/' 1 > "${AU}/ctl/fail"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/pixelelated/Saves/' 'touch /ctl/noroute /ctl/noping' > "${AU}/ctl/post"
+printf '%s\t%s\n' '^mkdir qa:/pixelelated/Backups/' 1 > "${AU}/ctl/fail"
 sa_run "${AU}" cloud_backup --yes --automatic
 au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
-[ "${RC}" -eq 69 ] && [ -f "${AU}/cloud/Rasteratops/Saves/gb/New.srm" ] && echo "${au_stamp}" | grep -q '^69 gaps .'; check $? "an automatic backup whose saves phase sent a file before the network went stamps '69 gaps <why>' (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${AU}/cloud/Rasteratops/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
+[ "${RC}" -eq 69 ] && [ -f "${AU}/cloud/pixelelated/Saves/gb/New.srm" ] && echo "${au_stamp}" | grep -q '^69 gaps .'; check $? "an automatic backup whose saves phase sent a file before the network went stamps '69 gaps <why>' (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${AU}/cloud/pixelelated/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
 # And one that sent nothing before the network went is still the skip.
 rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping" "${AU}/storage/.cache/cloud_sync/last-backup"
 sa_run "${AU}" cloud_backup --yes --automatic
@@ -10507,17 +10507,17 @@ SA_EXTRA=()
 #      and the next content backup sent the partial as a ROM.
 echo "    A49. G-A-07 (claude): a content transfer's leftovers are swept and never sent"
 cp "${RP}/storage/.config/cloud_sync.conf" "${SW}/storage/.config/cloud_sync.conf"
-grep -q '^CONTENT_REMOTE=' "${SW}/storage/.config/cloud_sync.conf" || printf 'CONTENT_REMOTE="/Rasteratops/Content"\n' >> "${SW}/storage/.config/cloud_sync.conf"
+grep -q '^CONTENT_REMOTE=' "${SW}/storage/.config/cloud_sync.conf" || printf 'CONTENT_REMOTE="/pixelelated/Content"\n' >> "${SW}/storage/.config/cloud_sync.conf"
 sa_script "${SW}" cloud_content_restore cloud_content_backup
-mkdir -p "${SW}/storage/.config/emulationstation" "${SW}/cloud/Rasteratops/Content/ROMs/nes"
+mkdir -p "${SW}/storage/.config/emulationstation" "${SW}/cloud/pixelelated/Content/ROMs/nes"
 printf '<system><path>/storage/roms/nes</path></system>\n' > "${SW}/storage/.config/emulationstation/es_systems.cfg"
-echo n > "${SW}/cloud/Rasteratops/Content/ROMs/nes/N.nes"
+echo n > "${SW}/cloud/pixelelated/Content/ROMs/nes/N.nes"
 : > "${SW}/ctl/fail"; : > "${SW}/ctl/post"
 sa_run "${SW}" cloud_restore --yes --saves-only
 sw_clean_before=$([ -e "${SW}/storage/.cache/cloud_sync/restore-tree-clean" ] && echo yes || echo no)
 # The content restore is cut at its copy (the process group killed), and
 # the file rclone was writing is left behind.
-printf '%s\t%s\n' '^copy qa:/Rasteratops/Content/ROMs/nes ' 1 > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
+printf '%s\t%s\n' '^copy qa:/pixelelated/Content/ROMs/nes ' 1 > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
 sa_run "${SW}" cloud_content_restore nes
 : > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
 echo litter > "${SWP}"
@@ -10525,7 +10525,7 @@ sa_run "${SW}" cloud_restore --yes --saves-only
 [ "${sw_clean_before}" = yes ] && [ ! -e "${SWP}" ]; check $? "after a content restore was cut, the next saves restore sweeps the tree (the record said clean before it: ${sw_clean_before})" "the partial is still there: the tree was recorded clean across a content restore that was cut"
 echo litter > "${SWP}"; echo n > "${SW}/storage/roms/nes/N.nes"
 sa_run "${SW}" cloud_content_backup nes
-[ "${RC}" -eq 0 ] && [ -z "$(find "${SW}/cloud/Rasteratops/Content" -name '*.partial' | head -1)" ]; check $? "a content backup never sends a transfer's leftover as a ROM (rc ${RC})" "rc ${RC}; in the cloud: $(find "${SW}/cloud/Rasteratops/Content" -name '*.partial' | sed "s|${SW}/cloud||" | tr '\n' ' ')"
+[ "${RC}" -eq 0 ] && [ -z "$(find "${SW}/cloud/pixelelated/Content" -name '*.partial' | head -1)" ]; check $? "a content backup never sends a transfer's leftover as a ROM (rc ${RC})" "rc ${RC}; in the cloud: $(find "${SW}/cloud/pixelelated/Content" -name '*.partial' | sed "s|${SW}/cloud||" | tr '\n' ' ')"
 rm -f "${SWP}"
 # And a content restore that ends by itself gives the record back, so the
 # saves restore after it still walks nothing (F-CS-08's saving kept).
@@ -10944,8 +10944,8 @@ cp "${CF2}/dup.conf" "${CF2}/cleaned.conf"
 PATH="${TMP}/bbin:${PATH}" bash "${CF}/src/cloud_sync_cleanup_duplicates.sh" "${CF2}/cleaned.conf" >/dev/null 2>&1
 cf_run=$(bash -c 'source "$1" >/dev/null 2>&1; printf "%s|%s" "${SAVES_REMOTE}" "${CONTENT_REMOTE}"' _ "${CF2}/cleaned.conf")
 cfget "${CF2}/content_get.sh" /unused CONTENT_REMOTE; cf_content="${GVAL}"
-[ "${cf_info}" = "/Rasteratops/Saves" ] && [ "${cf_run%%|*}" = "/Rasteratops/Saves" ]; check $? "PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: ${cf_info}" "PL-021: --info names '${cf_info}', the saves scripts after the cleanup '${cf_run%%|*}' -- two readers of one file, two folders"
-[ "${cf_loc}" = "/Rasteratops/Content" ] && [ "${cf_run#*|}" = "/Rasteratops/Content" ] && [ "${cf_content}" = "/Rasteratops/Content" ]; check $? "PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: ${cf_loc}" "PL-021: CONTENT_REMOTE is '${cf_loc}' to --content-location, '${cf_run#*|}' after the cleanup, '${cf_content}' to the content scripts"
+[ "${cf_info}" = "/pixelelated/Saves" ] && [ "${cf_run%%|*}" = "/pixelelated/Saves" ]; check $? "PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: ${cf_info}" "PL-021: --info names '${cf_info}', the saves scripts after the cleanup '${cf_run%%|*}' -- two readers of one file, two folders"
+[ "${cf_loc}" = "/pixelelated/Content" ] && [ "${cf_run#*|}" = "/pixelelated/Content" ] && [ "${cf_content}" = "/pixelelated/Content" ]; check $? "PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: ${cf_loc}" "PL-021: CONTENT_REMOTE is '${cf_loc}' to --content-location, '${cf_run#*|}' after the cleanup, '${cf_content}' to the content scripts"
 # CF2, gpt G2-C-01: a value in a form the scripts refuse. conf_valid
 # (cloud_backup's gate) refuses the file and the content scripts' reader
 # exits 2; cloud_setup read /Mine/'My as the folder.
@@ -12282,10 +12282,10 @@ printf 'export PATH=/shim2:/shim:/nbin:/usr/bin:/bin\nexport HOME=/storage\n' > 
 sa2_conf() { # <fixture>
     cat > "$1/storage/.config/cloud_sync.conf" <<'EOC'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
-CONTENT_REMOTE="/Rasteratops/Content"
+SETTINGS_REMOTE="/pixelelated/Backups"
+CONTENT_REMOTE="/pixelelated/Content"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="no"
@@ -12316,7 +12316,7 @@ for s in cloud_backup cloud_restore cloud_sync_helper; do
     awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CR2}/${s}" > "${CR2}/${s}.fn"
 done
 cr_bad() { # <name> <printf format of the line>: a conf a control byte makes run a command
-    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\n'; printf "$2\n"; } > "${CR2}/bad-$1"
+    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\n'; printf "$2\n"; } > "${CR2}/bad-$1"
 }
 cr_bad cr-after-value 'EXTRA="x"\r#$(touch /ctl/pwned)'
 cr_bad cr-comment '\r#$(touch /ctl/pwned)'
@@ -12356,7 +12356,7 @@ for s in cloud_content_restore cloud_content_backup; do
         sa2_conf "${CC2}"
         if [ "${where}" = "its own" ]; then
             sed -i '/^CONTENT_REMOTE=/d' "${CC2}/storage/.config/cloud_sync.conf"
-            printf 'CONTENT_REMOTE="/Rasteratops/Content"\r#$(touch /ctl/pwned)\n' >> "${CC2}/storage/.config/cloud_sync.conf"
+            printf 'CONTENT_REMOTE="/pixelelated/Content"\r#$(touch /ctl/pwned)\n' >> "${CC2}/storage/.config/cloud_sync.conf"
         else
             printf 'EXTRA="x"\r#$(touch /ctl/pwned)\n' >> "${CC2}/storage/.config/cloud_sync.conf"
         fi
@@ -12385,7 +12385,7 @@ for s in cloud_backup cloud_restore cloud_sync_helper; do
 done
 cq_file() { # <name> <line>...: a conf of the shipped head and these lines, as written
     local n="$1"; shift
-    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\n'; printf '%s\n' "$@"; } > "${CQ}/${n}"
+    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\n'; printf '%s\n' "$@"; } > "${CQ}/${n}"
 }
 cq_file good-quote 'RCLONEOPTS="--exclude \"*.tmp\" --progress"'
 cq_file good-dollar 'RCLONEOPTS="--exclude \$RECYCLE.BIN/** --progress"'
@@ -12400,7 +12400,7 @@ cq_file run-closed 'RCLONEOPTS="a \\"; touch /ctl/pwned; : ""'
 # Still refused for their shape: a backslash bash would keep as it is, and
 # an escape in a folder value.
 cq_file shape-other 'RCLONEOPTS="--exclude a\qb --progress"'
-cq_file shape-folder 'SETTINGS_REMOTE="/Rasteratops/\"Backups\""'
+cq_file shape-folder 'SETTINGS_REMOTE="/pixelelated/\"Backups\""'
 cq_bad_inert=""
 for f in "${CQ}"/run-*; do
     rm -f "${CQ}/pwned"; sed "s|/ctl/pwned|${CQ}/pwned|" "${f}" > "${CQ}/sourced"
@@ -12464,7 +12464,7 @@ CA3=$(sa_new g2a03); sa_script "${CA3}" cloud_content_backup cloud_content_resto
 mkdir -p "${CA3}/storage/.config/emulationstation" "${CA3}/storage/roms/nes"
 printf '<system><path>/storage/roms/nes</path></system>\n' > "${CA3}/storage/.config/emulationstation/es_systems.cfg"
 echo n > "${CA3}/storage/roms/nes/N.nes"
-for form in '  CONTENT_REMOTE="/Rasteratops/Content"' 'export CONTENT_REMOTE="/Rasteratops/Content"' 'declare -x CONTENT_REMOTE="/Rasteratops/Content"' 'CONTENT_REMOTE+="/Rasteratops/Content"'; do
+for form in '  CONTENT_REMOTE="/pixelelated/Content"' 'export CONTENT_REMOTE="/pixelelated/Content"' 'declare -x CONTENT_REMOTE="/pixelelated/Content"' 'CONTENT_REMOTE+="/pixelelated/Content"'; do
     sa2_conf "${CA3}"; sed -i '/^CONTENT_REMOTE=/d' "${CA3}/storage/.config/cloud_sync.conf"
     printf '%s\n' "${form}" >> "${CA3}/storage/.config/cloud_sync.conf"
     rm -rf "${CA3}/cloud"/*; : > "${CA3}/ctl/argv"
@@ -12476,7 +12476,7 @@ sa2_run "${CA3}" cloud_content_restore --scan
 sa2_conf "${CA3}"; printf '%s\n' '# CONTENT_REMOTE="/Somewhere/Else"' >> "${CA3}/storage/.config/cloud_sync.conf"
 rm -rf "${CA3}/cloud"/*
 sa2_run "${CA3}" cloud_content_backup nes
-[ "${RC}" -eq 0 ] && [ -f "${CA3}/cloud/Rasteratops/Content/ROMs/nes/N.nes" ]; check $? "G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /Rasteratops/Content (rc ${RC})" "G2-A-03 (gpt): rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' '); out: $(sa_tail "${CA3}")"
+[ "${RC}" -eq 0 ] && [ -f "${CA3}/cloud/pixelelated/Content/ROMs/nes/N.nes" ]; check $? "G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /pixelelated/Content (rc ${RC})" "G2-A-03 (gpt): rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' '); out: $(sa_tail "${CA3}")"
 
 # A54. PL-004 (seats/A-gpt.md G2-A-02, High): the duplicate cleanup's safety
 #      copy was put back over the live conf when it was merely not empty --
@@ -12508,7 +12508,7 @@ done
 SA_EXTRA=()
 
 # A55. PL-001 (seats/A-claude.md G2-A-01, High): TIDY UP YOUR CLOUD FOLDERS
-#      compared the conf's raw pointers with /Rasteratops/Saves and friends, so a
+#      compared the conf's raw pointers with /pixelelated/Saves and friends, so a
 #      pointer that already named the new folder in another spelling -- a
 #      trailing slash, no leading slash, a doubled slash, a "." component,
 #      another case on a case-insensitive cloud -- read as the old layout:
@@ -12530,16 +12530,16 @@ tl_seed() { # <SAVES_REMOTE> [SETTINGS_REMOTE] [CONTENT_REMOTE]: the current lay
     rm -rf "${TL}/cloud"/* "${TL}/ctl/ci"
     : > "${TL}/ctl/fail"; : > "${TL}/ctl/kill"; : > "${TL}/ctl/post"; : > "${TL}/ctl/argv"; rm -f "${TL}/ctl/kill.count"
     printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="%s"\nSETTINGS_REMOTE="%s"\nCONTENT_REMOTE="%s"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' \
-        "$1" "${2:-/Rasteratops/Backups}" "${3:-/Rasteratops/Content}" > "${TLC}"
+        "$1" "${2:-/pixelelated/Backups}" "${3:-/pixelelated/Content}" > "${TLC}"
     cp "${TLC}" "${TL}/conf0"
-    mkdir -p "${TL}/cloud/Rasteratops/Saves/gb" "${TL}/cloud/Rasteratops/Saves/savestates/gb" "${TL}/cloud/Rasteratops/Backups/QA-deadbeef01" "${TL}/cloud/Rasteratops/Content/ROMs/gb"
-    echo "a save" > "${TL}/cloud/Rasteratops/Saves/gb/A.srm"; echo "a state" > "${TL}/cloud/Rasteratops/Saves/savestates/gb/A.state1"
-    echo archive > "${TL}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
-    echo rom > "${TL}/cloud/Rasteratops/Content/ROMs/gb/A.gb"
+    mkdir -p "${TL}/cloud/pixelelated/Saves/gb" "${TL}/cloud/pixelelated/Saves/savestates/gb" "${TL}/cloud/pixelelated/Backups/QA-deadbeef01" "${TL}/cloud/pixelelated/Content/ROMs/gb"
+    echo "a save" > "${TL}/cloud/pixelelated/Saves/gb/A.srm"; echo "a state" > "${TL}/cloud/pixelelated/Saves/savestates/gb/A.state1"
+    echo archive > "${TL}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+    echo rom > "${TL}/cloud/pixelelated/Content/ROMs/gb/A.gb"
 }
 tl_tree() { (cd "${TL}/cloud" && find . -type f | sort | tr '\n' ' '); }
-tl_whole() { [ -f "${TL}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/Rasteratops/Saves/savestates/gb/A.state1" ] \
-    && [ -f "${TL}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ]; }
+tl_whole() { [ -f "${TL}/cloud/pixelelated/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/pixelelated/Saves/savestates/gb/A.state1" ] \
+    && [ -f "${TL}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/pixelelated/Content/ROMs/gb/A.gb" ]; }
 tl_moved() { grep -cE '^(copy|delete|purge|move|moveto|rmdirs) ' "${TL}/ctl/argv"; }
 # What rclone itself does with the old script's same-folder shape, on the
 # harness's cloud: the copy of a folder onto itself under another spelling
@@ -12550,84 +12550,84 @@ tl_moved() { grep -cE '^(copy|delete|purge|move|moveto|rmdirs) ' "${TL}/ctl/argv
 tl_seed "/GAMES"
 cat > "${TL}/repo/samefolder-probe" <<'EOD'
 list=$(mktemp)
-rclone lsf -R --files-only "qa:/Rasteratops/Saves/" > "${list}"; l=$?
-rclone copy "qa:/Rasteratops/Saves/" "qa:/Rasteratops/Saves" --files-from-raw "${list}"; c=$?
-out=$(rclone check "qa:/Rasteratops/Saves/" "qa:/Rasteratops/Saves" --files-from-raw "${list}" --one-way 2>&1); k=$?
+rclone lsf -R --files-only "qa:/pixelelated/Saves/" > "${list}"; l=$?
+rclone copy "qa:/pixelelated/Saves/" "qa:/pixelelated/Saves" --files-from-raw "${list}"; c=$?
+out=$(rclone check "qa:/pixelelated/Saves/" "qa:/pixelelated/Saves" --files-from-raw "${list}" --one-way 2>&1); k=$?
 printf 'list %s copy %s check %s files %s clean %s\n' "$l" "$c" "$k" "$(wc -l < "${list}")" "$(printf '%s' "${out}" | grep -c '0 differences found')"
 EOD
 sa2_run "${TL}" samefolder-probe
 tl_probe=$(grep '^list ' "${TL}/out")
-[ "${tl_probe}" = "list 0 copy 0 check 0 files 2 clean 1" ] && tl_whole; check $? "PL-001: rclone's copy of qa:/Rasteratops/Saves/ onto qa:/Rasteratops/Saves exits 0 and changes nothing, and its check is clean (${tl_probe}): rclone does not refuse it" "PL-001: the same-folder probe gave '${tl_probe:-nothing}' (out: $(sa_tail "${TL}" 3)); cloud now: $(tl_tree) -- rclone's behaviour has changed; re-read the guard's comment"
+[ "${tl_probe}" = "list 0 copy 0 check 0 files 2 clean 1" ] && tl_whole; check $? "PL-001: rclone's copy of qa:/pixelelated/Saves/ onto qa:/pixelelated/Saves exits 0 and changes nothing, and its check is clean (${tl_probe}): rclone does not refuse it" "PL-001: the same-folder probe gave '${tl_probe:-nothing}' (out: $(sa_tail "${TL}" 3)); cloud now: $(tl_tree) -- rclone's behaviour has changed; re-read the guard's comment"
 # The audit's shape, through the script.
-tl_seed "/Rasteratops/Saves/"
+tl_seed "/pixelelated/Saves/"
 sa2_run "${TL}" cloud_migrate_layout --apply
 tl_calls=$(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|')
-tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"/Rasteratops/Saves/\" is the current layout: --apply copies and removes nothing, leaves the pointer as written, and says so (rc ${RC})" "PL-001: trailing slash, --apply: rc ${RC}; rclone was asked: ${tl_calls:-nothing}; cloud now: $(tl_tree); conf $(cmp -s "${TL}/conf0" "${TLC}" && echo unchanged || echo "changed: $(grep '^SAVES_REMOTE=' "${TLC}")"); out: $(sa_tail "${TL}" 3)"
-tl_seed "/Rasteratops/Saves/"
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"/pixelelated/Saves/\" is the current layout: --apply copies and removes nothing, leaves the pointer as written, and says so (rc ${RC})" "PL-001: trailing slash, --apply: rc ${RC}; rclone was asked: ${tl_calls:-nothing}; cloud now: $(tl_tree); conf $(cmp -s "${TL}/conf0" "${TLC}" && echo unchanged || echo "changed: $(grep '^SAVES_REMOTE=' "${TLC}")"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/pixelelated/Saves/"
 sa2_run "${TL}" cloud_migrate_layout --check
 [ "${RC}" -eq 3 ] && ! grep -q 'Would ' "${TL}/out"; check $? "PL-001: and --check offers nothing, so the row is never shown (rc ${RC})" "PL-001: trailing slash, --check: rc ${RC}; out: $(sa_tail "${TL}" 3)"
-for tl_sp in "Rasteratops/Saves" "/Rasteratops//Saves" "/Rasteratops/./Saves" "//Rasteratops/Saves//"; do
+for tl_sp in "pixelelated/Saves" "/pixelelated//Saves" "/pixelelated/./Saves" "//pixelelated/Saves//"; do
     tl_seed "${tl_sp}"
     sa2_run "${TL}" cloud_migrate_layout --apply
     tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"${tl_sp}\" is the current layout too: nothing moved, the pointer left (rc ${RC})" "PL-001: '${tl_sp}': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 done
-tl_seed "/Rasteratops/Saves" "/Rasteratops/Backups/" "Rasteratops/Content/"
+tl_seed "/pixelelated/Saves" "/pixelelated/Backups/" "pixelelated/Content/"
 sa2_run "${TL}" cloud_migrate_layout --apply
 tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: the backups and content pointers are compared as folders as well (rc ${RC})" "PL-001: backups/content spelled apart: rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 # A pointer with ".." cannot be read as one folder: refused, nothing moved.
-tl_seed "/Rasteratops/Old/../Saves"
+tl_seed "/pixelelated/Old/../Saves"
 sa2_run "${TL}" cloud_migrate_layout --apply
 tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 4 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${TL}/out"; check $? "PL-001: a pointer with a .. in it is refused, nothing moved, the why the card knows (rc ${RC})" "PL-001: '..': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 # Case: a cloud that folds it (the features say so), and one whose features
-# cannot be read, take /rasteratops/saves for /Rasteratops/Saves; a cloud that
+# cannot be read, take /rasteratops/saves for /pixelelated/Saves; a cloud that
 # keeps case apart (this one) does not, and moves the other folder.
 tl_seed "/rasteratops/saves" "/rasteratops/backups" "/rasteratops/content"; touch "${TL}/ctl/ci"
 sa2_run "${TL}" cloud_migrate_layout --apply
-tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: on a case-insensitive cloud /rasteratops/saves is /Rasteratops/Saves: nothing moved (rc ${RC})" "PL-001: case, CaseInsensitive true: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: on a case-insensitive cloud /rasteratops/saves is /pixelelated/Saves: nothing moved (rc ${RC})" "PL-001: case, CaseInsensitive true: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
 tl_seed "/rasteratops/saves" "/rasteratops/backups" "/rasteratops/content"
 printf '%s\t%s\n' '^backend features ' 1 > "${TL}/ctl/fail"
 sa2_run "${TL}" cloud_migrate_layout --apply
 tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: and so it is when the cloud's features cannot be read -- the safe side (rc ${RC})" "PL-001: case, features unreadable: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
 tl_seed "/rasteratops/saves" "/rasteratops/saves/backup" "/rasteratops/Content"
-rm -rf "${TL}/cloud/Rasteratops"
+rm -rf "${TL}/cloud/pixelelated"
 mkdir -p "${TL}/cloud/rasteratops/saves/gb"; echo "another folder's save" > "${TL}/cloud/rasteratops/saves/gb/B.srm"
 sa2_run "${TL}" cloud_migrate_layout --apply
-[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/Rasteratops/Saves/gb/B.srm" ] && [ ! -e "${TL}/cloud/rasteratops/saves/gb/B.srm" ]; check $? "PL-001: on a cloud that keeps case apart, /rasteratops/saves is another folder, and its saves are moved (rc ${RC})" "PL-001: case-sensitive: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/pixelelated/Saves/gb/B.srm" ] && [ ! -e "${TL}/cloud/rasteratops/saves/gb/B.srm" ]; check $? "PL-001: on a cloud that keeps case apart, /rasteratops/saves is another folder, and its saves are moved (rc ${RC})" "PL-001: case-sensitive: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 # relocate itself refuses one folder under two spellings (the guard behind
 # the pointers' compare), lifted from the script into a driver.
 { sed '$d' "${TL}/repo/cloud_migrate_layout" | sed '$d'; cat <<'EOD'
 MODE=--apply
 remote=$(remote_name)
 read -r -a RCLONE_NET_OPTS_ARRAY <<< "${RCLONE_NET_OPTS_FALLBACK}"
-relocate "${remote}/Rasteratops/Saves/" "${remote}/Rasteratops/Saves" "saves" SAVES_REMOTE
+relocate "${remote}/pixelelated/Saves/" "${remote}/pixelelated/Saves" "saves" SAVES_REMOTE
 EOD
 } > "${TL}/repo/relocate-driver"
 grep -q '^main "\$@"' "${TL}/repo/relocate-driver" && echo "    (PL-001 driver: main was not cut from the script)"
 tl_seed "/GAMES"
 sa2_run "${TL}" relocate-driver
-tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -ne 0 ]; check $? "PL-001: relocate refuses qa:/Rasteratops/Saves/ onto qa:/Rasteratops/Saves: nothing copied, removed, or repointed (rc ${RC})" "PL-001: relocate same folder: rc ${RC}; rclone was asked: $(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|'); cloud now: $(tl_tree); conf: $(grep '^SAVES_REMOTE=' "${TLC}")"
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -ne 0 ]; check $? "PL-001: relocate refuses qa:/pixelelated/Saves/ onto qa:/pixelelated/Saves: nothing copied, removed, or repointed (rc ${RC})" "PL-001: relocate same folder: rc ${RC}; rclone was asked: $(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|'); cloud now: $(tl_tree); conf: $(grep '^SAVES_REMOTE=' "${TLC}")"
 # The new folder inside the old one (a saves folder at /ROCKNIX): a run cut
-# after its copy left /Rasteratops/Saves holding part of it, and the resume
-# listed that copy as saves to move -- into /Rasteratops/Saves/Saves.
-tl_seed "/Rasteratops" "/Rasteratops/backup" "/Rasteratops/Content"
-rm -rf "${TL}/cloud/Rasteratops/Saves/savestates" "${TL}/cloud/Rasteratops/Backups"
-mkdir -p "${TL}/cloud/Rasteratops/gb" "${TL}/cloud/Rasteratops/backup/QA-deadbeef01"
-echo "a save" > "${TL}/cloud/Rasteratops/gb/A.srm"; echo "a second save" > "${TL}/cloud/Rasteratops/gb/C.srm"
-echo archive > "${TL}/cloud/Rasteratops/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+# after its copy left /pixelelated/Saves holding part of it, and the resume
+# listed that copy as saves to move -- into /pixelelated/Saves/Saves.
+tl_seed "/pixelelated" "/pixelelated/backup" "/pixelelated/Content"
+rm -rf "${TL}/cloud/pixelelated/Saves/savestates" "${TL}/cloud/pixelelated/Backups"
+mkdir -p "${TL}/cloud/pixelelated/gb" "${TL}/cloud/pixelelated/backup/QA-deadbeef01"
+echo "a save" > "${TL}/cloud/pixelelated/gb/A.srm"; echo "a second save" > "${TL}/cloud/pixelelated/gb/C.srm"
+echo archive > "${TL}/cloud/pixelelated/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
 sa2_run "${TL}" cloud_migrate_layout --apply
-[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/Rasteratops/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/Rasteratops/Saves/Saves" ] \
-    && [ -f "${TL}/cloud/Rasteratops/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /Rasteratops/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/pixelelated/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/pixelelated/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/pixelelated/Saves/Saves" ] \
+    && [ -f "${TL}/cloud/pixelelated/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/pixelelated/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /pixelelated/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 # D-CLOUD-165: the set-aside of conflict losers beside the saves travels with
 # them, by the same copy, verify, delete, and nothing of ours stays under the
 # old name. The fork's earlier layout as the source, on the local backend.
 tl_seed "/ROCKNIX/Saves" "/ROCKNIX/Backups" "/ROCKNIX/Content"
-rm -rf "${TL}/cloud/Rasteratops"; mkdir -p "${TL}/cloud/ROCKNIX/Saves/gb" "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${TL}/cloud/ROCKNIX/Content/ROMs/gb" "${TL}/cloud/ROCKNIX/Saves-replaced/2026_09_01-000000/gb"
+rm -rf "${TL}/cloud/pixelelated"; mkdir -p "${TL}/cloud/ROCKNIX/Saves/gb" "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${TL}/cloud/ROCKNIX/Content/ROMs/gb" "${TL}/cloud/ROCKNIX/Saves-replaced/2026_09_01-000000/gb"
 echo "a save" > "${TL}/cloud/ROCKNIX/Saves/gb/A.srm"; echo archive > "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
 echo rom > "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo "a loser" > "${TL}/cloud/ROCKNIX/Saves-replaced/2026_09_01-000000/gb/L.srm"
 sa2_run "${TL}" cloud_migrate_layout --apply
-[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/Rasteratops/Saves-replaced/2026_09_01-000000/gb/L.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves-replaced" ] \
-    && [ -f "${TL}/cloud/Rasteratops/Saves/gb/A.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ "$(sed -n 's/^SAVES_REMOTE="\(.*\)"$/\1/p' "${TLC}")" = "/Rasteratops/Saves" ] \
-    && [ "$(cat "${TL}/cloud/Rasteratops/.layout" 2>/dev/null)" = "layout=2" ]; check $? "D-CLOUD-165: the move from /ROCKNIX carries the set-aside to /Rasteratops/Saves-replaced, leaves nothing of ours under /ROCKNIX, and writes the marker (rc ${RC})" "rc ${RC}; tree: $(tl_tree); out: $(tr '\n' '|' < "${TL}/out" | cut -c1-200)"
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/pixelelated/Saves-replaced/2026_09_01-000000/gb/L.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves-replaced" ] \
+    && [ -f "${TL}/cloud/pixelelated/Saves/gb/A.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ "$(sed -n 's/^SAVES_REMOTE="\(.*\)"$/\1/p' "${TLC}")" = "/pixelelated/Saves" ] \
+    && [ "$(cat "${TL}/cloud/pixelelated/.layout" 2>/dev/null)" = "layout=2" ]; check $? "D-CLOUD-165: the move from /ROCKNIX carries the set-aside to /pixelelated/Saves-replaced, leaves nothing of ours under /ROCKNIX, and writes the marker (rc ${RC})" "rc ${RC}; tree: $(tl_tree); out: $(tr '\n' '|' < "${TL}/out" | cut -c1-200)"
 
 # A56. Lead G2-A-04 (seats/A-gpt.md, Medium): --match --apply read the
 #      preview's plan and removed it without looking whether it went. A
@@ -12637,12 +12637,12 @@ sa2_run "${TL}" cloud_migrate_layout --apply
 #      apply that cannot spend its plan removes nothing.
 echo "    A56. G2-A-04 (gpt): an apply that cannot spend its plan removes nothing"
 MP=$(sa_new g2a04); sa_script "${MP}" cloud_content_restore
-printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${MP}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${MP}/storage/.config/cloud_sync.conf"
 MPP="${MP}/storage/.cache/cloud_sync/content-match-plan"
 mp_seed() { # the cloud holds gb/A.gb; the device gb/A.gb and gb/B.gb
-    rm -rf "${MP}/cloud/Rasteratops" "${MP}/storage/roms"/*
-    mkdir -p "${MP}/cloud/Rasteratops/Content/ROMs/gb" "${MP}/storage/roms/gb"
-    echo a > "${MP}/cloud/Rasteratops/Content/ROMs/gb/A.gb"; echo a > "${MP}/storage/roms/gb/A.gb"; echo bb > "${MP}/storage/roms/gb/B.gb"
+    rm -rf "${MP}/cloud/pixelelated" "${MP}/storage/roms"/*
+    mkdir -p "${MP}/cloud/pixelelated/Content/ROMs/gb" "${MP}/storage/roms/gb"
+    echo a > "${MP}/cloud/pixelelated/Content/ROMs/gb/A.gb"; echo a > "${MP}/storage/roms/gb/A.gb"; echo bb > "${MP}/storage/roms/gb/B.gb"
     printf 'gb\n' > "${MP}/storage/.cache/cloud_sync/content-systems"
     rm -f "${MPP}"; : > "${MP}/ctl/fail"; : > "${MP}/ctl/argv"; : > "${MP}/ctl/rmfail"
 }
@@ -12662,7 +12662,7 @@ sa2_run "${MP}" cloud_content_restore --match --apply
 #      orphan the content for good, the next run comparing CONTENT_REMOTE
 #      with the one derived from the new saves folder. It does not: with
 #      the saves and the backups both current, main's first branch takes a
-#      CONTENT_REMOTE ending in /Content that is not /Rasteratops/Content
+#      CONTENT_REMOTE ending in /Content that is not /pixelelated/Content
 #      straight to migrate_content, before that comparison is reached. The
 #      cut the seat named -- the kill at the third copy, the content's -- as
 #      a case, kept as the guard of that branch.
@@ -12678,9 +12678,9 @@ sa2_run "${MC}" cloud_migrate_layout --apply
 mc_killed=${RC}; mc_mid="$(sed -n 's/^\(SAVES_REMOTE\|CONTENT_REMOTE\)="\(.*\)"$/\2/p' "${MCC}" | tr '\n' ' ')"
 : > "${MC}/ctl/kill"; rm -f "${MC}/ctl/kill.count"
 sa2_run "${MC}" cloud_migrate_layout --apply
-[ "${mc_killed}" -ne 0 ] && [ "${mc_mid}" = "/Rasteratops/Saves /GAMES/Content " ] && [ "${RC}" -eq 0 ] \
-    && [ "$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")" = "/Rasteratops/Content" ] \
-    && [ -f "${MC}/cloud/Rasteratops/Content/ROMs/gb/A.gb" ] && [ -f "${MC}/cloud/Rasteratops/Content/BIOS/bios.bin" ]; check $? "G2-A-02 (claude): killed at the content's copy (rc ${mc_killed}, pointers then: ${mc_mid}), the next run moves the content and repoints it (rc ${RC})" "G2-A-02 (claude): killed rc ${mc_killed}, pointers after the kill '${mc_mid}'; second run rc ${RC}; CONTENT_REMOTE '$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")'; cloud: $(cd "${MC}/cloud" && find . -type f | sort | tr '\n' ' '); out: $(sa_tail "${MC}" 3)"
+[ "${mc_killed}" -ne 0 ] && [ "${mc_mid}" = "/pixelelated/Saves /GAMES/Content " ] && [ "${RC}" -eq 0 ] \
+    && [ "$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")" = "/pixelelated/Content" ] \
+    && [ -f "${MC}/cloud/pixelelated/Content/ROMs/gb/A.gb" ] && [ -f "${MC}/cloud/pixelelated/Content/BIOS/bios.bin" ]; check $? "G2-A-02 (claude): killed at the content's copy (rc ${mc_killed}, pointers then: ${mc_mid}), the next run moves the content and repoints it (rc ${RC})" "G2-A-02 (claude): killed rc ${mc_killed}, pointers after the kill '${mc_mid}'; second run rc ${RC}; CONTENT_REMOTE '$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")'; cloud: $(cd "${MC}/cloud" && find . -type f | sort | tr '\n' ' '); out: $(sa_tail "${MC}" 3)"
 
 # A58. Lead G2-A-06 (seats/A-claude.md, Medium): the capture's commit lock
 #      -- which an exit capture waits five seconds for, twice -- was held
@@ -13183,9 +13183,9 @@ echo "  S315. #315: the size-only remote gets --update on every saves pass; ever
 SZ=$(sa_new s315); sa_script "${SZ}" cloud_backup cloud_restore cloud_saves_root
 cat > "${SZ}/storage/.config/cloud_sync.conf" <<'EOS'
 SAVESPATH="/storage/roms"
-SAVES_REMOTE="/Rasteratops/Saves"
+SAVES_REMOTE="/pixelelated/Saves"
 SETTINGS_BACKUPS="/storage/roms/backup"
-SETTINGS_REMOTE="/Rasteratops/Backups"
+SETTINGS_REMOTE="/pixelelated/Backups"
 BACKUPMETHOD="copy"
 RESTOREMETHOD="copy"
 BACKUPFILE_BACKUP_OPTION="no"
@@ -13194,7 +13194,7 @@ RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage
 RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
 LOG_LEVEL="INFO"
 EOS
-mkdir -p "${SZ}/storage/roms/gb" "${SZ}/cloud/Rasteratops/Saves/gb"
+mkdir -p "${SZ}/storage/roms/gb" "${SZ}/cloud/pixelelated/Saves/gb"
 echo save > "${SZ}/storage/roms/gb/A.srm"
 printf -- '+ /**/*.srm\n- /**\n' > "${SZ}/storage/.config/cloud_sync-rules.txt"
 printf '^(copy|sync|mkdir|lsd|lsf|lsjson|ls|size|backend|cat|check|md5sum|sha1sum|hashsum|deletefile|delete|purge|moveto|copyto|rcat) \t0\n' > "${SZ}/ctl/fail"
@@ -13309,7 +13309,7 @@ grep -q 'rc=0' "${SF}/o" && [ ! -e "${SF}/pd/index-pending" ]; check $? "an ack 
 echo "  aa. cloud_migrate_layout --state, --keep and --follow (#353, D-CLOUD-160/161): the layout as facts, a kept folder, the fleet followed"
 # The whole tool under bwrap against a shim rclone that answers by path and
 # by flag files: /GAMES or /ROCKNIX/Saves hold a save when the flag says so,
-# /Rasteratops/Saves exists when another device has made it, the marker
+# /pixelelated/Saves exists when another device has made it, the marker
 # answers when it is there. The conf is a real file under /storage, so
 # --keep and --follow are read back from what they wrote.
 LY="${TMP}/ly"; mkdir -p "${LY}/shim" "${LY}/rec" "${LY}/repo" "${LY}/storage/.config/rclone"
@@ -13335,11 +13335,11 @@ case "$cmd" in
       qa:/GAMES/*|qa:/GAMES) [ -e /rec/games-files ] && echo "snes/a.srm" ;;
       qa:/ROCKNIX/Saves/*|qa:/ROCKNIX/Saves) [ -e /rec/rocknix-files ] && echo "snes/a.srm" ;;
       qa:/ROCKNIX/Saves-replaced/*|qa:/ROCKNIX/Saves-replaced) [ -e /rec/replaced-files ] && echo "2026_09_01-000000/gb/L.srm" ;;
-      qa:/Rasteratops/Saves/*|qa:/Rasteratops/Saves)
+      qa:/pixelelated/Saves/*|qa:/pixelelated/Saves)
         # cur-readme: the seeding's folder, holding only its README
         if [ -e /rec/cur-exists ]; then echo "snes/"
         elif [ -e /rec/cur-readme ]; then case " $* " in *" /README.txt "*) ;; *) echo "README.txt" ;; esac; fi ;;
-      qa:/Rasteratops|qa:/Rasteratops/) { [ -e /rec/cur-exists ] || [ -e /rec/cur-readme ]; } && echo "Saves/" ;;
+      qa:/pixelelated|qa:/pixelelated/) { [ -e /rec/cur-exists ] || [ -e /rec/cur-readme ]; } && echo "Saves/" ;;
       qa:|qa:/) echo "Other/"; [ -e /rec/fail-rocknix ] && echo "ROCKNIX/" ;;
     esac ;;
   cat) [ -e /rec/marker ] || exit 3; echo "layout=2" ;;
@@ -13367,7 +13367,7 @@ ly_run() { # <conf text> <verb>: stdout in ${LY}/out, exit in LYRC
 ly_conf() { printf 'SAVESPATH="/storage/roms"\nSETTINGS_BACKUPS="/storage/roms/backup"\nSAVES_REMOTE="%s"\nSETTINGS_REMOTE="%s"\nCONTENT_REMOTE="%s"\nRCLONE_NET_OPTS=""\n' "$1" "$2" "$3"; }
 ly_out() { tr '\n' '|' < "${LY}/out" | cut -c1-240; }
 rm -f "${LY}"/rec/*
-ly_run "$(ly_conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)" --state; grep -q '^STATE=current$' "${LY}/out"; check $? "--state reads current on the current layout (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)" --state; grep -q '^STATE=current$' "${LY}/out"; check $? "--state reads current on the current layout (rc ${LYRC})" "$(ly_out)"
 ly_run "$(ly_conf /Custom/Saves /Custom/Backups /Custom/Content)" --state; grep -q '^STATE=own$' "${LY}/out"; check $? "--state reads own on a folder the player chose" "$(ly_out)"
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; grep -q '^STATE=superseded-empty$' "${LY}/out"; check $? "a carried /GAMES with nothing in it reads superseded-empty (D-CLOUD-161)" "$(ly_out)"
 touch "${LY}/rec/games-files"
@@ -13375,11 +13375,11 @@ ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; grep -q '^STATE=superseded-
 rm -f "${LY}/rec/games-files"; touch "${LY}/rec/rocknix-files"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --state; grep -q '^STATE=superseded-with-files$' "${LY}/out" && grep -q '^CURRENT_EXISTS=0$' "${LY}/out" && grep -q '^MARKER=-$' "${LY}/out"; check $? "the fork's earlier /ROCKNIX layout reads superseded-with-files, no current folder, no marker" "$(ly_out)"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'Would move' "${LY}/out" && ! grep -q 'sibling layout of your own' "${LY}/out"; check $? "--check offers the move for /ROCKNIX rather than calling it a layout of your own (rc ${LYRC})" "$(ly_out)"
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ]; check $? "--follow does nothing while no device has made /Rasteratops (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ]; check $? "--follow does nothing while no device has made /pixelelated (rc ${LYRC})" "$(ly_out)"
 touch "${LY}/rec/cur-exists" "${LY}/rec/marker"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --state; grep -q '^CURRENT_EXISTS=1$' "${LY}/out" && grep -q '^MARKER=layout=2$' "${LY}/out"; check $? "--state sees the current folder and the marker once they exist" "$(ly_out)"
 rm -f "${LY}/rec/rocknix-files"   # the old folder is empty once a move removed it: the state a follow is for
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^SETTINGS_REMOTE="/Rasteratops/Backups"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE="/Rasteratops/Content"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q 'followed the fleet' "${LY}/rec/log"; check $? "--follow re-points all three pointers once the current folder exists, with a journal line (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/pixelelated/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^SETTINGS_REMOTE="/pixelelated/Backups"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE="/pixelelated/Content"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q 'followed the fleet' "${LY}/rec/log"; check $? "--follow re-points all three pointers once the current folder exists, with a journal line (rc ${LYRC})" "$(ly_out)"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /Mine/ROMs)" --follow; [ "${LYRC}" = 0 ] && grep -q '^CONTENT_REMOTE="/Mine/ROMs"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--follow leaves a content folder the player chose (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}/rec/cur-exists" "${LY}/rec/marker"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --keep; [ "${LYRC}" = 0 ] && grep -q '^LAYOUT_KEEP="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--keep records the folder kept (rc ${LYRC})" "$(ly_out)"
@@ -13387,50 +13387,50 @@ LYK=$(cat "${LY}/storage/.config/cloud_sync.conf")
 ly_run "${LYK}" --state; grep -q '^STATE=kept$' "${LY}/out"; check $? "after --keep, --state reads kept" "$(ly_out)"
 touch "${LY}/rec/cur-exists"
 ly_run "${LYK}" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a kept folder is not followed even when the current one exists (rc ${LYRC})" "$(ly_out)"
-ly_run "$(ly_conf /GAMES /GAMES/backup "")" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE=""$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a carried /GAMES follows while preserving the explicit cloud content root (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --follow; [ "${LYRC}" = 0 ] && grep -q '^SAVES_REMOTE="/pixelelated/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^CONTENT_REMOTE=""$' "${LY}/storage/.config/cloud_sync.conf"; check $? "a carried /GAMES follows while preserving the explicit cloud content root (rc ${LYRC})" "$(ly_out)"
 # The futro's two criteria (2026-10-01): the state verb looks across every superseded folder, and a follow
 # never strands files. The Nova's real case: /GAMES in the conf, its saves in /ROCKNIX/Saves.
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; grep -q '^STATE=superseded-with-files$' "${LY}/out" && grep -q '^SOURCE=/ROCKNIX/Saves$' "${LY}/out"; check $? "a device set to /GAMES whose cloud holds /ROCKNIX/Saves reads superseded-with-files from /ROCKNIX/Saves (the Nova's case)" "$(ly_out)"
-ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; grep -q 'moving from there' "${LY}/out" && grep -q 'qa:/ROCKNIX/Saves  ->  qa:/Rasteratops/Saves' "${LY}/out"; check $? "--check for that device offers the move from /ROCKNIX/Saves, not the creation of /Rasteratops (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; grep -q 'moving from there' "${LY}/out" && grep -q 'qa:/ROCKNIX/Saves  ->  qa:/pixelelated/Saves' "${LY}/out"; check $? "--check for that device offers the move from /ROCKNIX/Saves, not the creation of /pixelelated (rc ${LYRC})" "$(ly_out)"
 touch "${LY}/rec/cur-exists"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 3 ] && grep -q '^SAVES_REMOTE="/ROCKNIX/Saves"$' "${LY}/storage/.config/cloud_sync.conf"; check $? "--follow refuses a device whose old folder still holds files, even with the current folder there (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}/rec/rocknix-files"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --follow; [ "${LYRC}" = 0 ]; check $? "and follows once the old folder is empty (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files" "${LY}/rec/replaced-files"
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'qa:/ROCKNIX/Saves-replaced  ->  qa:/Rasteratops/Saves-replaced' "${LY}/out"; check $? "--check lists the set-aside of conflict losers among what moves (D-CLOUD-165)" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'qa:/ROCKNIX/Saves-replaced  ->  qa:/pixelelated/Saves-replaced' "${LY}/out"; check $? "--check lists the set-aside of conflict losers among what moves (D-CLOUD-165)" "$(ly_out)"
 # D-CLOUD-168 (the mixed-installation test's fourth step): the second device's move onto a current folder the fleet
 # made merges -- newer wins, what differs is shelved first, the old folder goes only once every name is present;
 # the same folder with no marker is somebody's own and is still refused.
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files" "${LY}/rec/cur-exists"
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 4 ] && grep -q 'REFUSING: qa:/Rasteratops/Saves already exists' "${LY}/out" && grep -q '^>>> why THE NEW FOLDER ALREADY HAS FILES IN IT' "${LY}/out" && ! grep -q '^copy ' "${LY}/rec/argv"; check $? "a current folder with no marker is somebody's own: the move is refused with its why and nothing is copied (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 4 ] && grep -q 'REFUSING: qa:/pixelelated/Saves already exists' "${LY}/out" && grep -q '^>>> why THE NEW FOLDER ALREADY HAS FILES IN IT' "${LY}/out" && ! grep -q '^copy ' "${LY}/rec/argv"; check $? "a current folder with no marker is somebody's own: the move is refused with its why and nothing is copied (rc ${LYRC})" "$(ly_out)"
 touch "${LY}/rec/marker"
 ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --check; grep -q 'Another device has already moved' "${LY}/out" && [ "${LYRC}" = 0 ] && ! grep -q '^copy ' "${LY}/rec/argv"; check $? "--check on the fleet's folder says the tiers merge and changes nothing (rc ${LYRC})" "$(ly_out)"
 rm -f "${LY}/rec/argv"
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves .*--update --backup-dir qa:/Rasteratops/Saves-replaced/[0-9_-]+-move' "${LY}/rec/argv" && grep -q '^delete qa:/ROCKNIX/Saves ' "${LY}/rec/argv" && grep -q '^rmdirs qa:/ROCKNIX/Saves' "${LY}/rec/argv" && grep -q '^SAVES_REMOTE="/Rasteratops/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^>>> unit SAVES|1|1$' "${LY}/out"; check $? "--apply onto the fleet's folder merges the saves: copy --update with the shelf as --backup-dir, the old folder removed after the presence check, the pointer moved, the item announced (rc ${LYRC})" "$(ly_out) $(grep -E '^(copy|delete|rmdirs)' "${LY}/rec/argv" | cut -c1-120 | tr '\n' '|')"
-! grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/' "${LY}/rec/argv"; check $? "with nothing differing, nothing is shelved from the old folder"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/pixelelated/Saves .*--update --backup-dir qa:/pixelelated/Saves-replaced/[0-9_-]+-move' "${LY}/rec/argv" && grep -q '^delete qa:/ROCKNIX/Saves ' "${LY}/rec/argv" && grep -q '^rmdirs qa:/ROCKNIX/Saves' "${LY}/rec/argv" && grep -q '^SAVES_REMOTE="/pixelelated/Saves"$' "${LY}/storage/.config/cloud_sync.conf" && grep -q '^>>> unit SAVES|1|1$' "${LY}/out"; check $? "--apply onto the fleet's folder merges the saves: copy --update with the shelf as --backup-dir, the old folder removed after the presence check, the pointer moved, the item announced (rc ${LYRC})" "$(ly_out) $(grep -E '^(copy|delete|rmdirs)' "${LY}/rec/argv" | cut -c1-120 | tr '\n' '|')"
+! grep -qE '^copy qa:/ROCKNIX/Saves qa:/pixelelated/Saves-replaced/' "${LY}/rec/argv"; check $? "with nothing differing, nothing is shelved from the old folder"
 rm -f "${LY}/rec/argv"; touch "${LY}/rec/differ"
-ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/Rasteratops/Saves-replaced/[0-9_-]+-move --files-from-raw' "${LY}/rec/argv" && grep -q '1 saves file(s) differ' "${LY}/out"; check $? "a file that differs is shelved from the old folder before the update copy (rc ${LYRC})" "$(ly_out)"
+ly_run "$(ly_conf /ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content)" --apply; [ "${LYRC}" = 0 ] && grep -qE '^copy qa:/ROCKNIX/Saves qa:/pixelelated/Saves-replaced/[0-9_-]+-move --files-from-raw' "${LY}/rec/argv" && grep -q '1 saves file(s) differ' "${LY}/out"; check $? "a file that differs is shelved from the old folder before the update copy (rc ${LYRC})" "$(ly_out)"
 # The mixed-installation test's fresh device (D-CLOUD-158, #354): on the current default, no saves in
 # the current folder, the fork's earlier /ROCKNIX holding them. --join points the device there -- a
 # setting, nothing copied -- so it reads the player's saves at once and is offered the move as every
 # device on that folder is; without it the scan offered CREATE IT beside them.
 LYCONF="${LY}/storage/.config/cloud_sync.conf"
 ly_ptrs() { echo "$(sed -n 's/^SAVES_REMOTE="\(.*\)"$/\1/p' "${LYCONF}") $(sed -n 's/^SETTINGS_REMOTE="\(.*\)"$/\1/p' "${LYCONF}") $(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${LYCONF}")"; }
-LYCUR="$(ly_conf /Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content)"
+LYCUR="$(ly_conf /pixelelated/Saves /pixelelated/Backups /pixelelated/Content)"
 rm -f "${LY}"/rec/*; touch "${LY}/rec/rocknix-files"
 ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "--join points a fresh device at the earlier folder holding the saves, with its backups and content (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
 LYJ=$(cat "${LYCONF}")
 ly_run "${LYJ}" --state; grep -q '^STATE=superseded-with-files$' "${LY}/out" && grep -q '^SOURCE=/ROCKNIX/Saves$' "${LY}/out"; check $? "and the joined device then reads superseded-with-files, so the move is offered from there (D-CLOUD-160)" "$(ly_out)"
-ly_run "$(ly_conf /Rasteratops/Saves /Rasteratops/Backups /Mine/ROMs)" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /Mine/ROMs" ]; check $? "--join leaves a content folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "$(ly_conf /pixelelated/Saves /pixelelated/Backups /Mine/ROMs)" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /Mine/ROMs" ]; check $? "--join leaves a content folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 touch "${LY}/rec/cur-readme"
 ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "a current folder the seeding made, holding only its README, is joined past (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
 rm -f "${LY}/rec/cur-readme"; touch "${LY}/rec/cur-exists"
-ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "a current folder that holds saves is never joined away from (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ]; check $? "a current folder that holds saves is never joined away from (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 rm -f "${LY}"/rec/*; touch "${LY}/rec/games-files" "${LY}/rec/rocknix-files"
 ly_run "${LYCUR}" --join; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ]; check $? "with /GAMES and /ROCKNIX/Saves both holding saves, the fork's newer folder is the one joined (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 rm -f "${LY}"/rec/*
-ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "an empty cloud has nothing to join (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "${LYCUR}" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ]; check $? "an empty cloud has nothing to join (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 # The Nova's shape (2026-09-30): a carried /GAMES with nothing in it, the saves in /ROCKNIX/Saves. --join points
 # it there, so the move is offered from the folder that holds them and KEEP USING /ROCKNIX keeps /ROCKNIX -- it
 # recorded the empty /GAMES before. A /GAMES that holds saves, or one the player kept, is not joined away from.
@@ -13446,8 +13446,8 @@ ly_run "$(ly_conf /GAMES /GAMES/backup "")
 LAYOUT_KEEP=\"/GAMES\"" --join; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/GAMES /GAMES/backup " ]; check $? "nor a /GAMES the player chose to keep (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 # --settle, the seeding's step: the join, else a carried default with nothing anywhere goes to the current folders.
 rm -f "${LY}"/rec/*
-ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups " ]; check $? "--settle points a carried /GAMES with nothing anywhere at the current folders (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
-ly_run "${LYCUR}" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "and leaves a device already on them alone (rc ${LYRC})" "pointers '$(ly_ptrs)'"
+ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/pixelelated/Saves /pixelelated/Backups " ]; check $? "--settle points a carried /GAMES with nothing anywhere at the current folders (rc ${LYRC})" "pointers '$(ly_ptrs)'; $(ly_out)"
+ly_run "${LYCUR}" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ]; check $? "and leaves a device already on them alone (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 ly_run "$(ly_conf /Custom/Saves /Custom/Backups /Custom/Content)" --settle; [ "${LYRC}" = 3 ] && [ "$(ly_ptrs)" = "/Custom/Saves /Custom/Backups /Custom/Content" ]; check $? "and a folder the player chose (rc ${LYRC})" "pointers '$(ly_ptrs)'"
 touch "${LY}/rec/rocknix-files"
 ly_run "${LYGAMES}" --settle; [ "${LYRC}" = 0 ] && [ "$(ly_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups " ]; check $? "--settle joins rather than resets when an earlier folder holds the saves (rc ${LYRC})" "pointers '$(ly_ptrs)'"
@@ -13460,7 +13460,7 @@ lysub=$(grep -nE '\$\((list_or_stop|has_files|has_entries|exists|superseded_sour
 # superseded-empty, rc 0 -- the interface's CREATE IT over a cloud it could not read.
 touch "${LY}/rec/fail-rocknix"
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --state; [ "${LYRC}" -ne 0 ] && ! grep -q '^STATE=' "${LY}/out"; check $? "--state on a carried /GAMES whose /ROCKNIX listing fails ends non-zero and states nothing (rc ${LYRC})" "rc ${LYRC}; $(ly_out)"
-ly_run "${LYCUR}" --join; [ "${LYRC}" != 0 ] && [ "${LYRC}" != 3 ] && [ "$(ly_ptrs)" = "/Rasteratops/Saves /Rasteratops/Backups /Rasteratops/Content" ]; check $? "--join stops the same way and changes nothing (rc ${LYRC})" "rc ${LYRC}; pointers '$(ly_ptrs)'"
+ly_run "${LYCUR}" --join; [ "${LYRC}" != 0 ] && [ "${LYRC}" != 3 ] && [ "$(ly_ptrs)" = "/pixelelated/Saves /pixelelated/Backups /pixelelated/Content" ]; check $? "--join stops the same way and changes nothing (rc ${LYRC})" "rc ${LYRC}; pointers '$(ly_ptrs)'"
 ly_run "$(ly_conf /GAMES /GAMES/backup "")" --check; [ "${LYRC}" -ne 0 ] && ! grep -q 'Would move\|Already on' "${LY}/out"; check $? "and --check for that /GAMES device stops rather than planning from a guess (rc ${LYRC})" "rc ${LYRC}; $(ly_out)"
 rm -f "${LY}"/rec/*
 bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/ROCKNIX/Saves' && bash "${LY}/repo/cloud_migrate_layout" --superseded | grep -qFx -- '/GAMES'; check $? "--superseded lists both defaults this project once shipped, with no conf and no network" "$(bash "${LY}/repo/cloud_migrate_layout" --superseded | tr '\n' ' ')"
@@ -13498,7 +13498,7 @@ echo "  ab. cloud_scan (#350, D-CLOUD-156): the opening scan's three items, the 
 SC="${TMP}/sc"; mkdir -p "${SC}/shim" "${SC}/rec" "${SC}/repo" "${SC}/storage/.config" "${SC}/storage/.cache"
 src_of "projects/ROCKNIX/packages/network/rclone/sources/cloud_scan" "${SC}/repo/cloud_scan"
 printf 'export PATH=/shim:/usr/bin:/bin\n' > "${SC}/profile"
-printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/Rasteratops/Saves"\nSETTINGS_REMOTE="/Rasteratops/Backups"\nCONTENT_REMOTE="/Rasteratops/Content"\n' > "${SC}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/pixelelated/Saves"\nSETTINGS_REMOTE="/pixelelated/Backups"\nCONTENT_REMOTE="/pixelelated/Content"\n' > "${SC}/storage/.config/cloud_sync.conf"
 printf '#!/bin/sh\necho "logger $*" >> /rec/log\n' > "${SC}/shim/logger"
 printf '#!/bin/sh\n[ -e /rec/noroute ] || echo "default via 10.0.2.2 dev eth0"\n' > "${SC}/shim/ip"
 printf '#!/bin/sh\ncase "$1" in --label) echo QA;; esac\n' > "${SC}/repo/cloud_device_id"
@@ -13506,14 +13506,14 @@ cat > "${SC}/repo/cloud_migrate_layout" <<'EOR'
 #!/bin/sh
 printf '%s\n' "$*" >> /rec/argv
 case "$1" in
-  --state) if [ -e /rec/superseded ] && [ ! -e /rec/followed ]; then printf 'SAVES=/ROCKNIX/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=superseded-empty\n'
-           else printf 'SAVES=/Rasteratops/Saves\nCURRENT=/Rasteratops/Saves\nCURRENT_EXISTS=1\nSTATE=current\n'; fi; exit 0 ;;
+  --state) if [ -e /rec/superseded ] && [ ! -e /rec/followed ]; then printf 'SAVES=/ROCKNIX/Saves\nCURRENT=/pixelelated/Saves\nCURRENT_EXISTS=1\nSTATE=superseded-empty\n'
+           else printf 'SAVES=/pixelelated/Saves\nCURRENT=/pixelelated/Saves\nCURRENT_EXISTS=1\nSTATE=current\n'; fi; exit 0 ;;
   --follow) touch /rec/followed; exit 0 ;;
   --join) if [ -e /rec/join-fail ]; then exit 5; elif [ -e /rec/join-timeout ]; then exit 124; elif [ -e /rec/join ]; then touch /rec/joined; exit 0; else exit 3; fi ;;
 esac
 exit 1
 EOR
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> /rec/argv\ncase "$1" in --content-location) printf "CONTENT_REMOTE=/Rasteratops/Content\\nSTATE=ok\\n"; exit 0;; esac\nexit 1\n' > "${SC}/repo/cloud_setup"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> /rec/argv\ncase "$1" in --content-location) printf "CONTENT_REMOTE=/pixelelated/Content\\nSTATE=ok\\n"; exit 0;; esac\nexit 1\n' > "${SC}/repo/cloud_setup"
 cat > "${SC}/repo/cloud_content_restore" <<'EOR'
 #!/bin/sh
 printf '%s\n' "$*" >> /rec/argv
@@ -13528,7 +13528,7 @@ cat > "${SC}/shim/rclone" <<'EOR'
 printf '%s\n' "$*" >> /rec/argv
 case "$1" in
   listremotes) [ -e /rec/noremote ] || echo "qa:" ;;
-  lsf) case "$*" in *--dirs-only*) printf 'Rasteratops/\nPhotos/\n' ;;
+  lsf) case "$*" in *--dirs-only*) printf 'pixelelated/\nPhotos/\n' ;;
             *) printf '2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz\n2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz\n2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz\nROCKNIX_BACKUP.zip\n' ;; esac ;;
 esac
 exit 0
@@ -13542,9 +13542,9 @@ sc_out() { tr '\n' '|' < "${SC}/out" | cut -c1-200; }
 SCO="${SC}/storage/.cache/cloud_sync/scan"
 rm -f "${SC}"/rec/*; sc_run
 [ "${SCRC}" = 0 ] && [ "$(grep '^>>> unit' "${SC}/out" | tr '\n' ' ')" = ">>> unit CLOUD FOLDER|| >>> unit SETTINGS BACKUPS|| >>> unit GAME CONTENT|| " ] && [ "$(grep -c '^>>> doing scan' "${SC}/out")" = 3 ]; check $? "the opening scan announces CLOUD FOLDER, SETTINGS BACKUPS, GAME CONTENT in that order, each with its doing line, and exits 0 (rc ${SCRC})" "$(sc_out)"
-[ -f "${SCO}/done" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(tr '\n' ' ' < "${SCO}/root-dirs")" = "Rasteratops Photos " ] && [ ! -f "${SCO}/scan" ] && ! grep -q -- '--follow' "${SC}/rec/argv"; check $? "its files hold the state, the root folders and the done stamp; no content listing yet, no follow on a current folder" "$(ls "${SCO}" 2>/dev/null | tr '\n' ' ')"
+[ -f "${SCO}/done" ] && [ "$(sed -n 's/^STATE=//p' "${SCO}/state")" = current ] && [ "$(tr '\n' ' ' < "${SCO}/root-dirs")" = "pixelelated Photos " ] && [ ! -f "${SCO}/scan" ] && ! grep -q -- '--follow' "${SC}/rec/argv"; check $? "its files hold the state, the root folders and the done stamp; no content listing yet, no follow on a current folder" "$(ls "${SCO}" 2>/dev/null | tr '\n' ' ')"
 [ "$(sed -n 's/^MINE=//p' "${SCO}/settings")" = "2026_09_10-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^NEWEST=//p' "${SCO}/settings")" = "2026_09_20-000000-Other-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(sed -n 's/^COUNT=//p' "${SCO}/settings")" = 4 ] && [ "$(sed -n 's/^LABEL=//p' "${SCO}/settings")" = QA ]; check $? "the settings facts: this device's newest by label, the newest overall, the count, the label (D-CLOUD-162)" "$(cat "${SCO}/settings" 2>/dev/null | tr '\n' ' ')"
-grep -q 'lsf --files-only --include /\*.{zip,tar.gz} qa:/Rasteratops/Backups/ --contimeout 15s' "${SC}/rec/argv"; check $? "the archive listing is bounded and reads the Backups folder" "$(grep '^lsf' "${SC}/rec/argv" | head -1)"
+grep -q 'lsf --files-only --include /\*.{zip,tar.gz} qa:/pixelelated/Backups/ --contimeout 15s' "${SC}/rec/argv"; check $? "the archive listing is bounded and reads the Backups folder" "$(grep '^lsf' "${SC}/rec/argv" | head -1)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noroute"; sc_run
 [ "${SCRC}" = 69 ] && ! grep -q '>>> unit' "${SC}/out" && [ ! -f "${SCO}/done" ]; check $? "no default route: exit 69, nothing announced, no done stamp (rc ${SCRC})" "$(sc_out)"
 rm -f "${SC}"/rec/*; touch "${SC}/rec/noremote"; sc_run
@@ -13639,9 +13639,9 @@ sa_run "${SV}" cloud_backup --yes --automatic --recent --saves-only
 mkdir -p "${SV}/cloud/GAMES"
 sa_run "${SV}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/GAMES/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "a /GAMES the cloud does hold is backed up into as before (rc ${RC})" "rc ${RC}; A.srm $([ -e "${SV}/cloud/GAMES/gb/A.srm" ] && echo sent || echo missing); out: $(sa_tail "${SV}")"
-rm -rf "${SV}/cloud/GAMES"; sv_conf /Rasteratops/Saves /Rasteratops/Backups
+rm -rf "${SV}/cloud/GAMES"; sv_conf /pixelelated/Saves /pixelelated/Backups
 sa_run "${SV}" cloud_backup --yes --saves-only
-[ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/Rasteratops/Saves/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "the current folder, absent, is still made by the backup (rc ${RC})" "rc ${RC}; out: $(sa_tail "${SV}")"
+[ "${RC}" -eq 0 ] && [ -e "${SV}/cloud/pixelelated/Saves/gb/A.srm" ] && ! grep -q '^>>> offer' "${SV}/out"; check $? "the current folder, absent, is still made by the backup (rc ${RC})" "rc ${RC}; out: $(sa_tail "${SV}")"
 
 echo "  ae. cloud folder state table and archive writer/reader contracts (#365, #383)"
 layout_args=()

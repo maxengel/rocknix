@@ -19,30 +19,30 @@
 #      folder; the cloud also holds a ROM there.
 #   2. b (fresh) is set up as the wizard sets it up: the cloud folder
 #      step's scan (cloud_scan --folder, D-CLOUD-170) joins the earlier
-#      folder rather than leaving b on an empty /Rasteratops beside it and
+#      folder rather than leaving b on an empty /pixelelated beside it and
 #      reads the state that asks MOVE (not CREATE IT); the player's NOT NOW
 #      runs nothing; the seeding (cloud_setup --seed-folders) makes nothing
-#      at /Rasteratops; b's restore brings a's save; and --needs-step says
+#      at /pixelelated; b's restore brings a's save; and --needs-step says
 #      the step comes again at b's next boot.
 #   3. a is updated in place through /storage/.update: the new BUILD_ID, and
 #      its conf still on the earlier folder (the configured root wins).
 #   4. a's scan reads the move; MOVE (cloud_migrate_layout --apply) copies,
 #      verifies and only then removes, unit by unit in its own log; the
-#      cloud then holds /Rasteratops whole with its marker and nothing under
-#      the earlier saves folder, and a's conf points at /Rasteratops.
+#      cloud then holds /pixelelated whole with its marker and nothing under
+#      the earlier saves folder, and a's conf points at /pixelelated.
 #   5. b's step at its next boot follows (its old folder is empty now): the
 #      scan re-points it with no question, --needs-step then says no step;
-#      its new save lands at /Rasteratops and a's restore brings it.
+#      its new save lands at /pixelelated and a's restore brings it.
 #   5m. A device that missed its step (b's pointers set back by hand, a
 #      staged input): its backup does not re-make the earlier folder the
 #      move removed -- it sends nothing and offers the folder (D-CLOUD-172)
 #      -- and its next step follows the fleet with no question, after which
-#      its save goes up to /Rasteratops.
+#      its save goes up to /pixelelated.
 #   5n. A device on an older build that kept writing to the earlier folder
 #      after the move (stood in by a save put there directly, named): its
-#      step asks MOVE and the move merges into /Rasteratops (D-CLOUD-168):
+#      step asks MOVE and the move merges into /pixelelated (D-CLOUD-168):
 #      every save there, a's untouched, nothing left behind.
-#   6. Both confs read the shipped /Rasteratops folders.
+#   6. Both confs read the shipped /pixelelated folders.
 #   7. A provider error is not an absence: b pointed at a dead endpoint --
 #      its scan ends non-zero with no state written, and nothing in its conf
 #      moves.

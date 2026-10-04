@@ -127,8 +127,8 @@ package-clean:
 # digest; this line moves with it, by hand. A locally built container is
 # tagged (DOCKER_IMAGE_LOCAL), never pinned.
 docker-%: DOCKER_IMAGE_DIGEST := sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39
-docker-%: DOCKER_IMAGE = ghcr.io/rasteratops/build@$(DOCKER_IMAGE_DIGEST)
-docker-%: DOCKER_IMAGE_LOCAL := ghcr.io/rasteratops/build:local
+docker-%: DOCKER_IMAGE = ghcr.io/pixelelated/build@$(DOCKER_IMAGE_DIGEST)
+docker-%: DOCKER_IMAGE_LOCAL := ghcr.io/pixelelated/build:local
 
 # DOCKER_WORK_DIR is the directory in the Docker image - it is set to /work by default
 #   Anytime this directory changes, you must run `make clean` similarly to moving the distribution directory
@@ -196,4 +196,4 @@ docker-%:
 	rm -f .env && [ ! -e .env ] || { echo "an older .env cannot be removed: no container started" >&2; exit 1; }; \
 	trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
 	( umask 077 && set -C && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
-	BUILD_DIR=$(DOCKER_WORK_DIR) $(BUILD_WATCH) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e RASTERATOPS_BUILD_RUN -e BUILDER_NAME=rasteratops-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)
+	BUILD_DIR=$(DOCKER_WORK_DIR) $(BUILD_WATCH) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env -e RASTERATOPS_BUILD_RUN -e BUILDER_NAME=pixelelated-build -e BUILDER_VERSION=$(DOCKER_IMAGE_DIGEST) --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)

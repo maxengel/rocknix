@@ -104,7 +104,7 @@ Run when **any** of these is true:
 
 ## The installed roster
 
-Rasteratops uses Claude Fable 5.1, Gemini 3.8 Flash, GPT-6 Astra, Kimi K3 and
+pixelelated uses Claude Fable 5.1, Gemini 3.8 Flash, GPT-6 Astra, Kimi K3 and
 Muse Spark 1.3 (D-WORKFLOW-109, D-WORKFLOW-135). Future fifth-seat changes come
 through reviewed imports from the other projects. Until an update is adopted,
 use these five seats. The import procedure is in

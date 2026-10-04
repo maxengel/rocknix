@@ -1,6 +1,6 @@
 ---
 name: "council-member-deepseek"
-description: "Historical imported DeepSeek V4 Pro 0813 recipe. Inactive in Rasteratops; do not invoke."
+description: "Historical imported DeepSeek V4 Pro 0813 recipe. Inactive in pixelelated; do not invoke."
 tools: [readFile, edit, search]
 model:
   - "deepseek/deepseek-v4-pro-0813 (OpenRouter, via coreweave/fp8, effort=max)"
@@ -9,7 +9,7 @@ argument-hint: "Inactive historical recipe"
 
 # DeepSeek V4 Pro 0813 — historical recipe
 
-This member is inactive in Rasteratops. Do not invoke it or substitute it for
+This member is inactive in pixelelated. Do not invoke it or substitute it for
 one of the installed five seats (D-WORKFLOW-109, D-WORKFLOW-135). This file
 retains the imported model declaration for the pin verifier and historical
 toolchain compatibility.
