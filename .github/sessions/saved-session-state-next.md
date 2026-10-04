@@ -33,7 +33,7 @@ retain their named gates. No goal tool was created.
 Owner manually recycled swap; passing preflight at04:15:20UTC observed37961MB
 available RAM and8002MB swap free. Runner1801222/watcher1801223,
 `.build-runs/20261004T041520Z-ef28d7ab` under frozen m7-pixelelated.
-At04:43:50UTC:411/642, fresh heartbeat/log. Swap refilled within five minutes,
+At05:28:25UTC:532/642, fresh heartbeat/detailed log. Swap refilled within five minutes,
 but available RAM remains roughly32–44GiB with no sustained PSI pressure.
 Do not recycle swap or edit the frozen build tools while work is active.
 #409's source transition is implemented and checked. The main M7 engineering
@@ -155,6 +155,13 @@ already lowercase; public metadata did not retain an old project name.
    qualification. Capture outerrc and supervise as above.
    Keep `-from-ROCKNIX` on the adoption tar; RC2 init greps its filename.
    Retained helper names/watcher env vars are internal interfaces, not branding.
+   Second stage is prepared (never executed):
+   `/workspace/tmp/pixelelated-m7-link-01/run.sh <verified-bundle>`.
+   Requires first-stage outer.rc0, exact source/harness/candidate hashes and
+   no existing QEMU. Runs both WebDAV/S3 link-loss matrices, separate owned
+   pairs/backends; cleanup/results retained. Launch through5s/5min watch-build
+   with --activity-dir owner/artifacts --recursive-activity, capture outerrc.
+   Source copies/README:2026-10-04-pixelelated-build-preparation/link-stage.
 4. Complete remaining P3 brand/secret/localisation/source/licence/readiness
    mapping, public-docs criteria and the live ordinary RA fixture below.
 5. Approved P4 primary+Fable5.1/xhigh fixes review via verified Facilitator,
@@ -261,7 +268,8 @@ priorities refuse rather than claiming portable defaults. Exact-action sudo
 policy (sudo-rs lacks digest matchers), no general grant. Installer validates
 the direct include and full policy; rollback attempts both files independently.
 35 tests PASS; same35-test RAM-guard-removed control fails2. Before-fix
-regressions and host/Python probes are retained. No helper installed yet.
+regressions and host/Python probes are retained. The initial installation and
+the remaining effective-permission correction are detailed below.
 
 Independent Issue audit completed through Facilitator/OpenRouter,
 Anthropic Fable5.1/xhigh,580.7s, successful model/effort/digest verification.
