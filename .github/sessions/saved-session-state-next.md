@@ -169,6 +169,15 @@ already lowercase; public metadata did not retain an old project name.
    Synthetic WebDAV9040; installed build/name/ROM checks; owned PID-handle
    cleanup. Watch5s/5min with recursive owner/artifacts and capture outerrc.
    Source copies/README:2026-10-04-pixelelated-build-preparation/guest-stage.
+   Fourth stage is prepared (never executed):
+   `/workspace/tmp/pixelelated-m7-runtime-01/run.sh <verified-bundle>`.
+   Requires prior first/guest results0, custody/no-other-QEMU checks; creates
+   a COW overlay on the actual first-stage RC2-upgraded disk and verifies its
+   backing hash before/after. Rebound inherited archive, five alternating
+   timing samples/layout (unchanged30ms bound), installed identity/update/
+   reporting/licence checks. Hash-bound adjacent shared helper, no historical
+   owner-script dependency. Same5s/5min recursive artifact watch and outerrc.
+   Source copies/README:2026-10-04-pixelelated-build-preparation/runtime-stage.
 4. Complete remaining P3 brand/secret/localisation/source/licence/readiness
    mapping, public-docs criteria and the live ordinary RA fixture below.
 5. Approved P4 primary+Fable5.1/xhigh fixes review via verified Facilitator,
