@@ -10,11 +10,11 @@ there are no fielded /Rasteratops systems requiring an additional gate.
 The [M7 milestone body](https://github.com/pixelelated/distribution/milestone/7)
 is the binding running order. **The rename source checks are complete.
 Ocean Bands runtime integration and the final proxy refresh are complete.
-Current inputs are frozen atb137d8c373 in build/m7-pixelelated. Reclaim
-the host's full swap (owner action pending), then build new pixelelated bytes
-and qualify clean install plus ROCKNIX
-upgrade, followed by remaining P3 release checks and the approved P4 fixes
-audit.** See `docs/pixelelated/rename-plan.md` for the classified inventory.
+Current inputs are frozen atb137d8c373 in build/m7-pixelelated. The owner
+reclaimed swap and the cold build launched at04:15:20UTC under the shared
+watcher (runner1801222/watcher1801223). Once the artifact is verified and
+stored, qualify clean install plus ROCKNIX upgrade, followed by remaining
+P3 release checks and the approved P4 fixes audit.** See `docs/pixelelated/rename-plan.md` for the classified inventory.
 
 **Verdict: no pixelelated candidate image exists yet, so no RC claim.**
 Replacement02 frozen61b64817bf remains successful historical RASTERATOPS

@@ -1,6 +1,6 @@
 # Saved Session State
 
-> Saved 2026-10-04T04:45:01.135245+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T044501Z.md`.
+> Saved 2026-10-04T03:41:38.218284+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T034138Z.md`.
 
 ## Start here
 
@@ -29,13 +29,7 @@ retain their named gates. No goal tool was created.
 
 ## Current result
 
-**The first cold pixelelated build is RUNNING; no new image or RC claim yet.**
-Owner manually recycled swap; passing preflight at04:15:20UTC observed37961MB
-available RAM and8002MB swap free. Runner1801222/watcher1801223,
-`.build-runs/20261004T041520Z-ef28d7ab` under frozen m7-pixelelated.
-At04:43:50UTC:411/642, fresh heartbeat/log. Swap refilled within five minutes,
-but available RAM remains roughly32–44GiB with no sustained PSI pressure.
-Do not recycle swap or edit the frozen build tools while work is active.
+**No new pixelelated image exists; no RC claim. No QA/build job is running. Cold-build launch is waiting for the host swap recycle.**
 #409's source transition is implemented and checked. The main M7 engineering
 artifact remains historical RASTERATOPS replacement02; never rename its
 files or apply its PASS verdict to new bytes.
@@ -88,8 +82,8 @@ The316/0 result is not a claim of support for unshipped Rasteratops state.
   `docs/qa-logs/2026-10-04-pixelelated-ocean/inputs.json`. The editable clip master
   has a different canvas; flattened runtime pieces match its pixels exactly.
 - Container: `ghcr.io/pixelelated/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39`.
-  Actual running container beef680ec2ab uses this digest, uid1000:1000 and
-  the reviewed source-cache/main.git mounts. Receipt: owner consumed-container.json.
+  Pulled successfully under pixelelated; a real container/host-watcher smoke
+  passes. Actual full-image build consumption still needs its receipt.
 - Existing build tree `/workspace/repos/rocknix.worktrees/m7-generic-x64`,
   `build/m7-generic-x64`, **frozen61b64817bf8ab48237e51abb395484e36cbf924b**.
   DO NOT advance it. Preserve generated tracked
@@ -103,7 +97,7 @@ already lowercase; public metadata did not retain an old project name.
 
 ## Next work, in milestone order
 
-1. **M7.P3 #409: source/input freeze complete; cold build RUNNING.**
+1. **M7.P3 #409: source and input freeze complete; build after swap reclaim.**
    The owner supplied a six-treatment RGB555 wordmark system after the first
    monochrome source transition. Saved specification and generator are under
    `docs/pixelelated/art/wordmark-system.md` and `source/generate.py`. D-WORKFLOW-146.
@@ -118,11 +112,16 @@ already lowercase; public metadata did not retain an old project name.
    `docs/qa-logs/2026-10-04-pixelelated-ocean/`.
    Animation has no specified sequence; do not invent a required animation gate.
    Final source integration and the separate freeze are complete.
-   The owner manually recycled swap; preflight passed and build launched
-   at04:15:20UTC. Frozen `/workspace/repos/rocknix.worktrees/m7-pixelelated`,
-   `build/m7-pixelelated`, b137d8c37323abbf07788af8bf8dbd495a31e9c9.
-   Do not advance it for docs/helper. The new cold
-   `build.pixelelated-GENERIC_X64.x86_64` root exists and is active.
+   At03:30:29UTC `tools/build-preflight` still reported1.7TiB free and
+   45912MB available RAM, but only1MB swap free of8191MB.
+   `sudo -n` requires interactive authentication. An asynchronous owner question
+   asks them to run `sudo swapoff /swap.img && sudo swapon /swap.img` and reply
+   done. It has not been answered; no memory action was taken. Do not treat
+   elapsed time as permission or a successful preflight.
+   Created `/workspace/repos/rocknix.worktrees/m7-pixelelated` on
+   `build/m7-pixelelated`, frozen atb137d8c37323abbf07788af8bf8dbd495a31e9c9.
+   Do not advance it for docs. It is clean; the new
+   `build.pixelelated-GENERIC_X64.x86_64` root does not exist.
    No warm root was copied; replacement02 remains untouched.
 2. Frozen inputs and launcher are ready in
    `/workspace/tmp/pixelelated-m7-cold-01/`: `inputs.json`, `inputs.sha256`,
@@ -131,16 +130,15 @@ already lowercase; public metadata did not retain an old project name.
    launcher SHA256b1ded574b9fc0ae5b01190a32e671b40ac2d6206c2865378349a0664219b4016.
    Reverified6,547 regular input files/180 symlinks,1,608 recipes.
    Source cache `/workspace/cache/rocknix-sources`, main.git mount
-   `/workspace/repos/rocknix/.git`, global24/WebKit4. Already launched with
+   `/workspace/repos/rocknix/.git`, global24/WebKit4. From the frozen tree,
+   after a passing memory preflight, launch:
    `tools/watch-build --docker --interval 5 --stall-min 5 -- /workspace/tmp/pixelelated-m7-cold-01/build.sh`.
-   **Do not launch a second build.** Session95675 owns the outer shell.
-   Owner `run.path` points at
-   `/workspace/repos/rocknix.worktrees/m7-pixelelated/.build-runs/20261004T041520Z-ef28d7ab`.
-   Read build.status/log/rc and owner outer.log/outer.rc/inner.rc; poll<=60s,
-   announce terminal/stall events. Runner1801222/watcher1801223 are real host
-   processes; sandbox ps cannot see the host process namespace. Container
-   beef680ec2ab is recorded in consumed-container.json. Preparation receipts
-   remain in2026-10-04-pixelelated-build-preparation; they predate launch.
+   Capture the outer result. Owner `run.path` will locate `build.status`,
+   `build.log`, detailed activity and `build.rc`; poll<=60s and announce
+   terminal/stall events. There is no `run.path`, build.start or inner.rc yet:
+   **the cold build has never been launched**. Do not run old RASTERATOPS
+   launchers. Preparation receipts and exact scripts are in
+   `docs/qa-logs/2026-10-04-pixelelated-build-preparation/`.
 3. Store and verify the new artifact with `tools/rasteratops-candidate-store`
    (put/verify; it does not freeze inputs). Run clean/default/required opt-ins,
    actual ROCKNIX RC2 upgrade, migration/provider/pair/archive, visual EN/FR,
@@ -165,9 +163,9 @@ already lowercase; public metadata did not retain an old project name.
    H700 DDR4/RG35XX SP image follow qualification and existing action gates.
    GENERIC_X64 is not a handheld image. No release publication is authorized.
 
-Live M7/#409/#383 were updated/read back at04:20UTC with the running build,
-actual watcher/container and next VM qualification. Earlier #361/#386 source
-readbacks remain in the preparation receipts.
+Live M7/#409/#383/#361/#386 were updated and read back at03:28UTC:
+Ocean integration, current proxy and input freeze complete; memory reset then
+build/qualification remains current. Readbacks are in the preparation receipts.
 Current M7 title is **M7: pixelelated 0.0.1**. Body owns order; M7.Pn is stable,
 not inferred from issue numbers. Open current titles/criteria were reconciled;
 closed titles and historical receipts were not rewritten. The rename plan and
@@ -238,41 +236,7 @@ no job or cold root exists; source pins, preserved old build and tracker agree.
 Receipt:2026-10-04-pixelelated-build-preparation/handoff-proof.md. Agent could
 not access Docker socket/live M7; retained container proof and root's connected
 milestone GET cover those limited observations. Full source checks do not
-claim installed behavior. At that earlier proof, preflight failed with1MB
-swap free; the owner subsequently reset it and the04:15 build launched.
+claim installed behavior. Memory preflight still fails with1MB swap free.
 Preparation was published normally and remote-ref verified:
 feature4d6890395ce09c56ca9c352d99d4f44d3b70ab2f →
 next1ae3190d0cab648bac232a160b49810d1b6b2f8e. Frozen build remainsb137.
-
-## Parallel host helper #410 — in progress, not installed
-
-Owner: "I'll do it manually now, and then let's create the guarded host helper."
-Manual reset completed; do not repeat it while build/VM work is active.
-Issue410 M7.P3 tracks fixed /swap.img reclamation on serval/max1000.
-Current uncommitted code: tools/host-maintenance/{reclaim-swap,install,
-test-swap-reclaim,README.md} and tools/build-preflight --reclaim-swap.
-Default preflight remains read-only. Root helper: isolated system Python,
-fixed installed path/argument, trusted files/lock, single active swapfile,
-default fstab, 16GiB reserve plus used swap, repeat process/headroom checks,
-reactivation/readback with handled-signal cleanup. No broad sudo grant.
-Actual sudo-rs0.2.13 rejects command digests: retained parser failure;
-exact-command policy uses root-owned0755 helper and0440 policy instead.
-Thirty isolated tests pass, negative removed-memory-guard control fails twice;
-no actual host installation or kernel recycle through the helper yet.
-D-INFRA-015, futro2026-10-04-guarded-swap-reclaim record the bounded choice.
-
-Issue-level independent audit is running through Facilitator/OpenRouter,
-Anthropic Fable5.1/xhigh, session84577, /tmp/pixelelated-410-review.{log,rc}.
-Packet/source hashes and eventual response/provenance are under
-`docs/audits/2026_10_04-issue-410-guarded-swap/`. Do not edit the five audited
-source files until the call completes; verify model/effort/outcome/digest,
-then grade every lead against source and executable probes. This is not P4.
-Code-auditor Phase5/6/7 artifacts and audit tracker still pending.
-
-After review/fixes, prepare immutable installer staging and ask owner to run
-one authenticated administrator command (sudo -n requires authentication).
-Installer does no swap operation, so installation can precede build completion.
-Never use privileged Docker or a broad NOPASSWD workaround. Actual busy-refusal
-and safe-idle recycle evidence remain to collect before closing410. Publish
-ordinary exact feature commits onto next, but never advance frozenb137.
-Checkpoint/work-log/helper changes remain uncommitted at this checkpoint.
