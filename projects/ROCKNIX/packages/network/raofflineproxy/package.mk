@@ -2,7 +2,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Current upstream main at2026-10-03; D-WORKFLOW-138/#361 selects the
+# Current upstream main at2026-10-04; D-WORKFLOW-138/#361 selects the
 # refresh while retaining whole-library preparation and offline state.
 # The15 patches preserve the fork's service, recovery and image
 # behavior. Upstream now owns connection reuse and subset award mapping;
@@ -12,8 +12,8 @@ PKG_NAME="raofflineproxy"
 # raofflineproxy-refresh.md for dispositions and exact host/VM boundaries.
 # Patch018 recognizes pixelelated without moving ROCKNIX account/cache paths (#408).
 # Coupled rcheevos/libchdr pins remain those in this parent (D-RA-029/037).
-PKG_VERSION="5866cd9ba784c13771a99c52dd6b6f2acc546842"
-PKG_SHA256="1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e"
+PKG_VERSION="ec60fdd0f6522790d9d1d4d20add397bbc4da945"
+PKG_SHA256="393ffcec34b223fa4315622db7e68a8778a87e1dff2d3aaf289df857fcb7ff2f"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"

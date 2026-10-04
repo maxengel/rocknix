@@ -7,7 +7,10 @@ setups use `/pixelelated`; the existing folder-move workflow targets that
 folder and preserves saves, backups, content and retry/recovery behavior.
 ROCKNIX `/GAMES` and `/ROCKNIX` layouts remain supported migration sources;
 custom folder choices remain intact. No fielded `/Rasteratops` systems exist.
-Source changes are under validation; the new candidate image is not yet built.
+Source checks pass; the new candidate image is not yet built. Its shared
+boot/interface/theme wordmark now uses Tiny5 Duo LCD with the Ocean Bands
+RGB555 treatment. Source renderer and SVG-reader checks pass; new-image
+frames and ROCKNIX upgrade qualification remain required.
 
 
 Draft for the eventual upstream PR body, the rocknix.org documentation pass,

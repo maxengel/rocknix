@@ -1,6 +1,6 @@
 # Saved Session State
 
-> Saved 2026-10-04T03:14:57.285661+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T031457Z.md`.
+> Saved 2026-10-04T02:44:05.229152+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T024405Z.md`.
 
 ## Start here
 
@@ -29,7 +29,7 @@ retain their named gates. No goal tool was created.
 
 ## Current result
 
-**No new pixelelated image exists; no RC claim. No QA/build job is running. Cold-build launch is waiting for the host swap recycle.**
+**No new pixelelated image exists; no RC claim. No QA/build job is running.**
 #409's source transition is implemented and checked. The main M7 engineering
 artifact remains historical RASTERATOPS replacement02; never rename its
 files or apply its PASS verdict to new bytes.
@@ -67,19 +67,17 @@ The316/0 result is not a claim of support for unshipped Rasteratops state.
   never merge this feature branch wholesale (unrelated historical archives).
   Normal pushes use `git@github-blitterbot:pixelelated/distribution.git`.
 - ES: `/home/max/Development/emulationstation-next.worktrees/qa-integration`,
-  `test/qa-integration`, **c75aa3fac967ba532fd9ba1c21fa10ca024e8bc1** published
+  `test/qa-integration`, **4d0c7a6867045245b23cec74f33ca0ea003437cd** published
   under pixelelated/emulationstation and pinned. Clean after push.
 - Splash: `/tmp/rasteratops-rc-delivery-20261002/splash`, master,
-  **8c71126ceef702528c87a4c49625e64988609f26** published under pixelelated/splash.
-  Archive SHA6a24b287920ad553cbe1e2ecf66fac7a4fb2e3756ba1b98473ca201f3abebcba.
+  **d902ff7032e388365efbf09b523ae4ad899c606a** published under pixelelated/splash.
+  Archive SHA63367941e15e039ef3c599394df8f3216a6bfb670160770df5bd845a5f2289ed.
 - Font: unmodified Tiny5 Duo LCD2.007 at
   Gissio/font_Tiny5@f740beb653d6839fac1f8c794668ffcf22037342. OTF, SHA, OFL,
-  fonttools4.66.1 generator and source README retained in splash. Current runtime SVG copies match; SHA is retained in
-  `docs/qa-logs/2026-10-04-pixelelated-ocean/inputs.json`. The editable clip master
-  has a different canvas; flattened runtime pieces match its pixels exactly.
+  fonttools4.66.1 generator and source README retained in splash. All four SVG
+  copies SHA f782b140e7898d2487fe84cd88b47278bb493c9f23865d3fe9cb0f4b20d7a08b.
 - Container: `ghcr.io/pixelelated/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39`.
-  Pulled successfully under pixelelated; a real container/host-watcher smoke
-  passes. Actual full-image build consumption still needs its receipt.
+  New namespace/digest resolves; actual new build consumption remains to prove.
 - Existing build tree `/workspace/repos/rocknix.worktrees/m7-generic-x64`,
   `build/m7-generic-x64`, **frozen61b64817bf8ab48237e51abb395484e36cbf924b**.
   DO NOT advance it. Preserve generated tracked
@@ -93,7 +91,7 @@ already lowercase; public metadata did not retain an old project name.
 
 ## Next work, in milestone order
 
-1. **M7.P3 #409: source integration complete; freeze/build after swap reclaim.**
+1. **M7.P3 #409: integrate the new Ocean Bands LCD assets, then freeze/build.**
    The owner supplied a six-treatment RGB555 wordmark system after the first
    monochrome source transition. Saved specification and generator are under
    `docs/pixelelated/art/wordmark-system.md` and `source/generate.py`. D-WORKFLOW-146.
@@ -101,19 +99,13 @@ already lowercase; public metadata did not retain an old project name.
    small-size/static screen proofs are complete. Exact font/geometry/color/alpha
    checks pass; `proofs/artifact-checks.json` records their scope. At24/32px LCD
    cell gaps suffer; prefer64px or larger. No font binary is in the art folder.
-   **Ocean is now integrated** into splash/ES/theme at the pins above. Native
-   framebuffer proofs pass allrotations and1280; the640 frame equals the canonical
-   composition pixel-for-pixel. ES NanoSVG parses258 pieces/five colors. Theme
-   patches, exact archive, identity guard and package checks pass. Receipts:
-   `docs/qa-logs/2026-10-04-pixelelated-ocean/`.
+   **Runtime still uses the monochrome pins recorded above.** Integrate Ocean consistently
+   into splash renderer/ES/theme and run their focused checks before freezing.
    Animation has no specified sequence; do not invent a required animation gate.
    First verify
-   final source integration and recheck `tools/build-preflight`: at03:12UTC
-   there was1.7TiB free and45GiB available RAM, but8GiB swap was full.
-   `sudo -n` requires interactive authentication. An asynchronous owner question
-   asks them to run `sudo swapoff /swap.img && sudo swapon /swap.img` and reply
-   done. It has not been answered; no memory action was taken. Do not treat
-   elapsed time as permission or a successful preflight.
+   final source integration and recheck `tools/build-preflight`: at02:11UTC
+   there was1.7TiB free and45GiB available RAM, but8GiB swap was full. Resolve
+   that observed host condition before a cold build; no memory action was taken.
    Create a separate `build/m7-pixelelated` worktree from qualified next;
    preserve frozen replacement02. Build root must be
    `build.pixelelated-GENERIC_X64.x86_64`, without copying a warm root.
@@ -145,15 +137,7 @@ not inferred from issue numbers. Open current titles/criteria were reconciled;
 closed titles and historical receipts were not rewritten. The rename plan and
 prepared player guide are under `docs/pixelelated/`. Proxy upstream draft under
 `docs/upstream/raofflineproxy/rasteratops-identity/` matches the new patch,
-remains unsubmitted. Proxy parent pin nowec60fdd0f6522790d9d1d4d20add397bbc4da945: the final
-preflight found four upstream commits; packaged service changes only its
-version string toalpha2. All15 patches apply,199 upstream and8 fork tests
-pass; coupled submodules unchanged. Evidence:2026-10-04-proxy-preflight.
-D-WORKFLOW-147 records SPIR-V parent coupling. Complete freshness exits0.
-The full initial RC preflight failed eight still-open bugs (#320/#327/#352/
-#353/#366/#384/#391/#392) plus missing explicit code trace on closed#371.
-#371 now has the missing trace/evidence comment. Other criteria must be
-reconciled against actual proof/new image, never waived to turn the gate green.
+remains unsubmitted. Proxy parent pin5866cd9ba784c13771a99c52dd6b6f2acc546842.
 
 ## Preserved historical qualification and remaining inputs
 
@@ -192,10 +176,5 @@ the4GB image payloads. Its final SSH remote-ref read was sandbox-blocked, so
 remote publication relies on the earlier successful push/readback receipts.
 Corrected its three findings: readiness no longer asks to finish completed
 rename checks, #409 no longer assumes personal-fork transfers, and this
-checkpoint records the completed feature→next mappings. Wordmark integration
-and the incremental upstream refresh are now complete before the new build.
-A real host/container watcher probe completed at03:04:34UTC, runner1480688/
-watcher1480689, rc0, and the active session reported it. Both have exited.
-The planned cold build uses a fresh run-owned5s/5min monitor; remain actively
-supervising at<=60s and announce terminal events immediately. Off-session
-delivery remains unavailable.
+checkpoint records the completed feature→next mappings. Wordmark preparation
+subsequently adds the asset integration step before the new build.

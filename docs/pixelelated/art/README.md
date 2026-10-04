@@ -8,9 +8,11 @@ boot, shutdown, interface or animation work. D-WORKFLOW-146, #409.
 Reusable assets live in `source/`, `wordmark/` and `raster/`. Background,
 small-size and static screen proofs are under `proofs/`; they are host asset
 proofs, not installed frames. The font binary is intentionally absent here.
-The current product pins still use the monochrome asset below; integrate
-the new treatment consistently across splash/ES/theme before freezing the
-next image and qualify those changed bytes.
+The product asset below is the Ocean Bands export for the limited boot/ES
+SVG readers:258 plain colored paths, equivalent to the editable clip master.
+The renderer samples pixel centers to preserve LCD gaps and exact colors.
+Qualify the new source pins on the next image; host proofs are retained in
+`docs/qa-logs/2026-10-04-pixelelated-ocean/`.
 
 The next RC uses only the lowercase wordmark in **Tiny5 Duo LCD**, selected
 by the maintainer (D-WORKFLOW-145). No character icon is included.
@@ -20,5 +22,5 @@ by the maintainer (D-WORKFLOW-145). No character icon is included.
 at upstream revision `f740beb653d6839fac1f8c794668ffcf22037342`.
 Font source, SHA256 and generator dependency are retained in that repository.
 `Tiny5-OFL.txt` retains the upstream font licence. Boot, ES and theme
-consume identical SVG outlines. The project artwork terms are in
+consume identical colored SVG outlines. The project artwork terms are in
 `TRADEMARK.md`; the font keeps its separate licence.

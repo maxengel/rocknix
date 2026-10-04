@@ -1,9 +1,13 @@
 # Current RAOfflineProxy integration for0.0.1
 
 M7.P2, #361/#384, D-WORKFLOW-138. Selected main:
-`5866cd9ba784c13771a99c52dd6b6f2acc546842` (2026-10-03).
-Archive SHA256: `1bc5a88f379c958e958348efd1e5de3edeb8682fe42432b6415f4f29cabc218e`.
-The additional commit after bdcd229 changes only statistics-page labels.
+`ec60fdd0f6522790d9d1d4d20add397bbc4da945` (verified2026-10-04).
+Archive SHA256: `393ffcec34b223fa4315622db7e68a8778a87e1dff2d3aaf289df857fcb7ff2f`.
+The four commits after5866cd9 change only the packaged service version string
+(alpha2); remaining changes are Android/docs/bundle versions. All15 current
+fork patches still apply with zero fuzz;199 upstream and8 fork tests pass.
+Evidence: `docs/qa-logs/2026-10-04-proxy-preflight/`. The detailed earlier
+refresh history below retains its original source counts and scope.
 This is source integration; candidate build and VM qualification remain required.
 
 ## Patch disposition
