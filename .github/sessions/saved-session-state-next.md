@@ -1,210 +1,169 @@
 # Saved Session State
 
-> Saved 20261003T234100Z; previous detailed checkpoint: `.github/sessions/archived/saved-session-state-next-20261003T231205Z.md`.
+> Saved 2026-10-04T00:04:18.615993+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T000418Z.md`.
 
 ## Start here
 
-This is Rasteratops, an immutable handheld Linux distribution and build system
-forked from ROCKNIX, not an app. Work remains M7.P3 qualification for 0.0.1.
-Read AGENTS.md and all every-session rules from `next`, compare your feature
-rules, then this checkpoint, the live milestone7/#383, release-readiness.md
-and today's work log. Scoped rules apply before changing their paths.
-The archive above retains older build/issue history and all prior decisions;
-it is history, not the current queue.
+Rasteratops is an immutable handheld Linux distribution and build system
+forked from ROCKNIX, not an app. Current work is M7.P3 qualification for0.0.1.
+Read AGENTS.md and every-session rules from next, compare your worktree rules,
+then this file, the live M7 milestone/#383, `docs/rasteratops/release-readiness.md`
+and today's work log. The archive above links the detailed earlier history;
+archived running states are historical, not current instructions.
 
 Latest owner asks us to proceed with tests and proactively monitor failures,
-stalls and completion. Authorization covers ordinary fixes/tests/VMs, exact
-single-commit integration onto next and normal distribution fork pushes.
-No handheld actions, personal-cloud writes or release publication. Earlier
-named ES/splash pushes were completed; no approval for those remains pending.
-Identity migration to Blitterbot is complete. Never print credentials.
+stalls and completion. Ordinary fixes/tests/VMs, exact single-commit integration
+onto next and normal distribution fork pushes are authorized. No handheld
+actions, personal-cloud writes or release publication. Blitterbot migration
+and earlier named ES/splash pushes are complete; no repeated permission needed.
+Never expose credentials. No goal tool was created.
 
-## Current focus and immediate next work
+## Current result and next work
 
-1. Actively supervise replacement02 default/RC2-upgrade QA. Independent
-   guest-d proxy/S3/root/archive proof is complete below. Read their detailed activity/status
-   every<=60s and immediately report terminal/failure results.
-2. Retain outcomes, then run installed 30ms timing with exact transferred
-   bytes while no other VM/build/host test is active; no source override.
-   Affected S3 denied-parent listing, explicit-root transitions/sentence and
-   selected-archive journals now pass on61b. Issue closure reconciliation
-   remains. Do not reset the active pair/backend for another test.
-3. Proxy proof uses actual predecessor-written SQLite state and the installed
-   service with no external route; finish cache/sign-in/base+subset queue
-   verification and #408 packaged account discovery are complete. Live ordinary-mode award
-   still needs the earlier QA-account fixture answer.
-4. Finish identity/manual-update/secret/licence/source readiness mapping,
-   then approved P4 primary+Fable5.1/xhigh fixes audit through Facilitator.
-   Resolve findings/rebuild affected bytes before any RC claim. P5 remains
-   separately gated source/docs/adoption/recovery/publication/device work.
+**No build or test is running.** Replacement02 build and all tests launched in
+this batch completed; owned QEMU guests and cloud endpoints stopped. No
+watcher is armed for a future job and no disconnected alert is configured.
+The build is an engineering candidate, NOT an RC; P4 remains owed.
 
-The milestone body is the ordered current priority list (D-WORKFLOW-139);
-planned titles use M7.Pn, never issue numbers as order. Keep bodies/checklists
-and checkpoint aligned and read back writes. No known software bug is waived.
+Completed on frozen61b: all15 defaults/0FAIL/0SKIP;16 UI walks/78 walk frames
+plus16 time-to-play frames; baseline comparison; actual RC2 upgrade; exact
+clean/upgraded script/policy readbacks; packaged proxy20; S3 failure10;
+root transitions/sentence22; archive writer/journal8; final actual-upgraded
+archive14, isolated timing4 and identity11 assertions. Final installed timing
+264ms legacy/241ms current =23ms, PASS unchanged30ms limit, every transfer
+hash verified and no migration journal activity. No source override.
 
-## Actual running state
+Next, in milestone order:
+1. Finish remaining P3 identity/manual-update/brand/secret/localisation and
+   source/licence/readiness mapping. Existing targeted source/image checks are
+   not a universal secret or network sweep. #337/#359 and release contract#344
+   retain their unverified criteria; public-site delivery has the403 below.
+2. Live ordinary-mode RA award/reconnect proof still needs the earlier
+   QA-account fixture answer. Continue independent work without resetting an
+   account or claiming a live award from synthetic queue preservation.
+3. Approved P4 primary plus Fable5.1/xhigh fixes audit through the verified
+   Facilitator; #375/#382 are completed initial review, do not restart them.
+   Resolve findings; changed product bytes require affected rebuild/requalification.
+4. P5 source/docs/adoption/recovery/publication and per-device work stay
+   separately gated. First handheld is RG35XX SP/H700 DDR4; GENERIC_X64 is
+   not its image. No RC call or handheld staging yet.
 
-Replacement02 build COMPLETE642tasks rc0 at23:16:46UTC, all frozen inputs and
-assembled bytes checked; owner `/workspace/tmp/rasteratops-m7-replacement-02/`,
-waiter25552 and runner3502258/watcher3502259 finished. Immutable bundle
-`/workspace/artifacts/rasteratops-candidates/sha256/87b8c01d65dc22b4f29049bd0d69307a59c14c16f5223534e95058b2234ca5cd/`.
-Image SHA f1af353331dfb1da9911b34db6b19d124feed28f59c669f3c046704acde93f47;
-tar SHA cda2524063cd75b3445cfccf7e9fe6b923ae7e9a952e8855f9271a1d2c84f30b.
-Input SHA5344827ad829dfeb126055bea2fb9ea2f719044c06829f180bf047356cbed2d2.
+The milestone body is the ordered current priority list (D-WORKFLOW-139).
+M7.Pn identifies phases; issue numbers are references. Update/read back live
+bodies when work changes. Known software bugs close only from their evidence.
 
-**ACTIVE default/upgrade QA:** owner
-`/workspace/tmp/rasteratops-m7-replacement-qa-02/`, waiter14426,
-runner3637372/watcher3637373; frozen run
-`.build-runs/20261003T231900Z-6a9ba405/`. Both a/b booted61b64817bf. Scripts suite PASS795s, round-trip84s, exit28s, time-to-play69s. UI walks
-are progressing; detailed activity starts under
-`artifacts/rocknix-images/qa-61b64817bf-webdav-a-20261003-2319/scripts.log`.
-Explicit WALK_BASELINE is set; exact source/binary/ES overrides are retained.
-Launcher runs defaults then clean payload readback, actual RC2 upgrade,
-restarts the retained upgraded disk for payload readback, verifies custody,
-and stops its pair/backend. Current QA uses9010; do not reset it.
+## Trees and immutable candidate
 
-**COMPLETE packaged proxy proof:** attempt04 owner
-`/workspace/tmp/rasteratops-m7-proxy-runtime-04/`, waiter75788; feature run
-`20261003T233311Z-c453f106`, all20 assertions PASS, outer/runner0.
-Installed canonical account discovery, two predecessor DB reopens, sign-in,
-base/subset mapping/HTTP queued unlocks, legacy image and offline queue
-preservation pass. No source overrides/provider contact. Synthetic predecessor
-state is not live award proof. Guest-d/service stopped. Attempts02/03 fixture
-failures retained (wrong image directory, then cache_images=False).
-Receipts `docs/qa-logs/2026-10-03-proxy-runtime/`.
-
-Other independent replacement02 proof COMPLETE and owned guests/endpoints
-stopped: S3 listing attempt03,10assertions (attempt02 SSH fixture failure
-retained); root-runtime-02,22assertions; archive-journal-02,8assertions with
-real backuptool/transfer journals and hashes. Receipts under
-`2026-10-03-s3-parent-listing-replacement02`, `2026-10-03-cloud-root-replacement02`
-and `2026-10-03-archive-journal-replacement02`. No live guest-d remains.
-
-Full host regression COMPLETE1373broad+322focused PASS0FAIL/0SKIP, waiter76239,
-runner3098071/watcher3098072 exited. Owner directory-host-01, feature run
-20261003T225701Z-3015f1e3. Source/proxy controls are separately scoped below.
-For host PID checks use escalated execution. Never modify executing shell
-scripts; use new immutable launchers and PID-owned cleanup.
-
-The recorder is not disconnected delivery. Active session checks/awaits every
-<=60s and reports terminal results before unrelated work. #395 still needs a
-named off-session destination and tested receipt. Do not end a turn with only
-a detached watcher while implying a notification will arrive.
-
-## Working trees and replacement02 freeze
-
-- Feature `/workspace/repos/rocknix.worktrees/conflict-resolution`,
-  feature/conflict-resolution, published45f6a73767651bc42d4795d4daa78804fc68fcd4.
-- Primary `/workspace/repos/rocknix`, next61b64817bf8ab48237e51abb395484e36cbf924b,
-  exact cherry-pick published and remote hashes verified. Docs updates may
-  advance these; never advance the frozen build for docs alone.
+- Feature `/workspace/repos/rocknix.worktrees/conflict-resolution`, branch
+  feature/conflict-resolution; previous published evidence07e39237d42e5e180c096963d517457bbc1a1bc2.
+- Primary `/workspace/repos/rocknix`, next; previous published evidence
+  e2267b475cbe1372cd8a1ac33da9bc7caa5ad231 (exact cherry-pick).
+  This checkpoint/final evidence batch advances docs only; inspect git/remote
+  HEAD for its final hashes. Integrate exact commits, never merge unrelated work.
 - Build `/workspace/repos/rocknix.worktrees/m7-generic-x64`, build/m7-generic-x64,
-  frozen61b64817bf8ab48237e51abb395484e36cbf924b. Preserve generated tracked
-  `documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md`.
+  **frozen61b64817bf8ab48237e51abb395484e36cbf924b**. DO NOT advance for docs.
+  Preserve generated tracked `documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md`.
 - ES pinned/published e6e1e4d0f91e177e182cc05b1cea74991e1cc45b at
   `/home/max/Development/emulationstation-next.worktrees/qa-integration`.
   Splash7450aa8180ae66684814dd460f31eb502b2abf61 unchanged.
 
-Replacement02 immutable inputs/build.sh under its owner above record6612files,
-180symlinks and preserved generated documentation. Source-exact script and
-policy bytes checked after642tasks. Cached original cold root, rclone+proxy
-clean, image stamp invalidated; no warm diagnostic root copied. Container/ES/
-splash/upstream pins unchanged from replacement01 below. Receipt directory
-`docs/qa-logs/2026-10-03-m7-replacement-02/`.
+Bundle:
+`/workspace/artifacts/rasteratops-candidates/sha256/87b8c01d65dc22b4f29049bd0d69307a59c14c16f5223534e95058b2234ca5cd/`
 
-## Qualified replacement01 artifact and prior work
+- Image `RASTERATOPS-GENERIC_X64.x86_64-0.0.1-from-ROCKNIX.img.gz`,2073132412bytes,
+  SHA f1af353331dfb1da9911b34db6b19d124feed28f59c669f3c046704acde93f47.
+- Tar2073989120bytes,
+  SHA cda2524063cd75b3445cfccf7e9fe6b923ae7e9a952e8855f9271a1d2c84f30b.
+- Input manifest `/workspace/tmp/rasteratops-m7-replacement-02/inputs.json`,
+  SHA5344827ad829dfeb126055bea2fb9ea2f719044c06829f180bf047356cbed2d2;
+  6612files/180raw symlinks/1608recipes. Build642tasks finished23:16:46UTC rc0.
+- Container ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39;
+  global24/WebKit4; upstream frozen9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6.
+  Original cold root cached, rclone+proxy cleaned and image stamp invalidated;
+  no diagnostic root copied. All inputs and assembled scripts verified.
 
-Immutable bundle
-`/workspace/artifacts/rasteratops-candidates/sha256/fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5/`.
-Image SHA88afd2ac9720bcdf14cde20cc5814733b339be87b76aa3c4a16d3c0439240abc;
-tar SHAbcddeeb19092120242b6b9b46be6568d015baf1dbe2e63fa6740aa0732f0990b.
-Input manifest `/workspace/tmp/rasteratops-m7-replacement-01/inputs.json`,
-SHA9da8a37468c3b65490cde4c88c8f8e611718ea9e853337fa35ad4cac0aee8315.
-Build642tasks rc0 at21:01:38. Read-only inputs also under artifacts/build-inputs.
-Container ghcr.io/rasteratops/build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39,
-global24jobs/WebKit4, upstream frozen9fd38fa87094d4f0e956d03ac6c660fe4fd5e9d6.
+## Latest completed runs and receipts
 
-Original503e bundle83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21
-and original input24116729b3610411fe5ba89543cf10db98b11cb9ca8afc3cbf0ef61f08640459
-remain intact. Original P3 proof includes all15defaults across corrected runs,
-S3 full roundtrip,42/42pair migration,19guest cases249assertions, all memory
-endurance (VmSize0; RSS620/52/1228KiB),55unique sync stamps and sign-in-page
-load. The archive above and `docs/qa-logs/2026-10-03-*` retain exact scope.
-Sign-in page load is not provider authentication.
+All paths under `docs/qa-logs/` below; no tool session remains to await.
 
-Replacement01 default14PASS+baselineSKIP was completed by a separate passing
-78-frame comparison (#406). Actual RC2 upgrade PASS; five policy/content bytes
-and modes read back from clean and actual retained upgraded guests. #397 closed.
-All7WebDAV+7S3 link cases pass with no skips; #401 closed. #406 is also closed.
-Original launch/baseline failures and outer143 discrepancy remain retained.
-Receipts: m7-replacement-01, m7-replacement-qa, transfer-sample, replacement-links.
+| Run | Owner / watcher | Outcome / retained evidence |
+| --- | --- | --- |
+| Main replacement02 | `/workspace/tmp/rasteratops-m7-replacement-qa-02/`; frozen `.build-runs/20261003T231900Z-6a9ba405/` | defaults15PASS, RC2 upgrade, clean/upgraded eight-file readback, custody; runner3637372/watcher3637373 and waiter14426 done0 at23:54:39. `2026-10-03-m7-replacement02-qualification/` |
+| Final runtime | `/workspace/tmp/rasteratops-m7-final-runtime-02/`; feature `.build-runs/20261003T235511Z-4eb57f50/` | archive14/timing4/identity11 PASS; waiter65240 and runner4136059/watcher4136060 done0 at23:56:11. `2026-10-03-m7-final-runtime/` |
+| Proxy | `/workspace/tmp/rasteratops-m7-proxy-runtime-04/`; feature run20261003T233311Z-c453f106 |20PASS; waiter75788 done0; `2026-10-03-proxy-runtime/` |
+| S3 query | `/workspace/tmp/rasteratops-m7-s3-listing-03/`; feature run20261003T233621Z-c14ecea5 |10PASS; waiter53337 done0; `2026-10-03-s3-parent-listing-replacement02/` |
+| Root transition | `/workspace/tmp/rasteratops-m7-root-runtime-02/`; feature run20261003T233734Z-91d13a6e |22PASS; waiter76209 done0; `2026-10-03-cloud-root-replacement02/` |
+| Selected archive journal | `/workspace/tmp/rasteratops-m7-archive-journal-02/`; feature run20261003T233908Z-950ce566 |8PASS; waiter21508 done0; `2026-10-03-archive-journal-replacement02/` |
 
-The retained upgraded disk is
-`/workspace/tmp/rasteratops-m7-replacement-qa-01/pair/vm-a.qcow2`; NEVER reset it.
-QA key is the sibling qa-key, SSH10022. New COW overlays may use this stopped
-base. Archive owner `/workspace/tmp/rasteratops-m7-archives-01/upgrade-overlay.qcow2`
-contains all later synthetic fixtures. Default monitor/pidfile a,640x480,MACa58.
-S3 listing owner has its own independent overlay. No personal cloud is used.
+Retained actual RC2-upgraded disk:
+`/workspace/tmp/rasteratops-m7-replacement-qa-02/pair/vm-a.qcow2`.
+Never reset it. Final runtime `final-overlay.qcow2` is a stopped COW of it,
+with its own key under final-runtime-02/pair/qa-key. Other stopped guest-d
+COW chains and old original bundles remain intact. Create a new owner/overlay
+for more tests, install the owned public key through serial on every boot.
+Do not execute the old immutable launchers blindly: they own reset/fixtures.
 
-## This batch's completed proof and remaining gaps
+`build.status` is watcher text; `build.rc` is terminal result; owner/outer.rc
+records shell outcome. Terminal status heartbeat deliberately stops. Inspect
+with `cat <run>/build.status`, `tail -n40 <run>/build.log`, and `cat <run>/build.rc`.
+For host PIDs use escalated read access; stop by validated owned PID only.
 
-- Archives #376/#379/#381: first24assertions actual RC2 archive local/cloud
-  restore and new writer, extended56selection/setup, strict22actual root
-  transitions/settings-toggle, local23failed-extraction/revert/retention.
-  Receipts `2026-10-03-archives-runtime/`. The initial follow/settle content
-  cases were no-ops; strict continuation requires actual pointer changes.
-  Current/legacy/healed/flat directories and foreign-only fallback tested.
-  D-CLOUD-067 console NEWEST fallback is distinct from D-CLOUD-156 UI MINE gate.
-  Archive histories future-dated2030 test active snapshot protection; original
-  archives preserved. Issues remain to reconcile/close from published evidence.
-- S3 #377: real child listing succeeds, parent-prefix403 denies; whole restore1,
-  no create offer, local/cloudsentinels preserved, retry exactbytes.10assertions.
-  `2026-10-03-s3-parent-listing/`. Ordinary bucket-prefixed backup cannot reach
-  old-default literal; separate whole-script host synthetic fixture covers it.
-  New directory-probe source passes installed61b S3 proof10 assertions.
-- UI #327: all24 EN/FR640x480/1280x960 frames visually reviewed. Production
-  settings row enabled/selectable with actual device/date. Receipts release-ui.
-  Site screenshot commit4f6df54 in `/home/max/Development/rocknix.org`,
-  docs/cloud-saves-native-wizard, contains exact newEN640image. Push to
-  maxengel/rocknix.org denied403 to Blitterbot. Prepared, NOT published; no
-  credentials/remote substitution. #327 remains open for this delivery.
-- Timing #364: original134e89 five-sample193/147ms=46ms FAIL. Strengthened
-  byte-verified before/after: original277/238=39ms FAIL; source-bound new
- 258/238=20ms PASS against unchanged30ms. No GOMAXPROCS adopted. One extra
-  WebDAV file-type probe avoided by a directory slash; no absence cache.
-  `2026-10-03-exit-sync-timing/` retains all failures/trace iterations and
-  exact source hash. Diagnostic source proof is not rebuilt-image proof.
-- #407: blank explicit-root progress label corrected in pointer writer;
-  old sentence negative/control/new exact-pointer tests pass. Installed61b
-  real join/root transitions and ROM/BIOS byte proof pass22 assertions.
-- #408: actual packaged config.pyc fails canonical account discovery under
-  RASTERATOPS; explicit synthetic-path control passes. Patch018 recognizes
-  both complete identities with existing paths.7isolated controls,36upstream
-  config/platform/auth,8fork cache/queue tests pass, fuzz0/pkgcheckpass. Prepared
-  upstream patch under docs/upstream/raofflineproxy/rasteratops-identity, not
-  submitted. Actual old-writer synthetic database at
-  `/tmp/m7-proxy-predecessor/` is ready for packaged reopen/service proof;
-  hash a796c1e6ce6373a6620dfa983e16de3012b6d8feb83f9a2c178f437d8c0adca5.
-  Installed61b actual service proof now passes20 assertions, as above.
-  No live account or provider touched. Full upstream pin stays5866cd9ba784c13771a99c52dd6b6f2acc546842.
+## Scope, closures and preserved failures
 
-## Open dependencies and watcher limitations
+#380/#407/#408 were closed from preceding published e2267b475c evidence.
+This final batch's issue-evidence.md maps completed #364/#376/#377/#379/#381/
+#357 criteria to exact receipts; reconcile live issue state against that file.
+#376 wording now preserves D-CLOUD-067 console NEWEST fallback and separately
+D-CLOUD-156/162 UI MINE eligibility. It does not invent a foreign-archive ban.
+Old negative controls: `2026-10-02-cloud-remediation/baseline.log` and
+apply-other-old.log; latest full1373+322 host controls all pass under
+`2026-10-03-directory-probe-host/`. Main default scripts795s pass on61b.
 
-RA dedicated QA account already earned Tobu100359 in ordinary mode. Earlier
-question pending: owner resets that test achievement or privately configures
-another QA account. Hardcore unearned is not the routed ordinary-mode proof.
-Do not reset/claim PASS without answer and live preflight. Continue independent
-cache/queue/service/identity proof. Off-session delivery destination also still
-unanswered; no unsolicited email/chat/GitHub delivery configuration.
+Synthetic predecessor SQLite SHA a796c1e6ce6373a6620dfa983e16de3012b6d8feb83f9a2c178f437d8c0adca5
+was written with old proxy Storage code. Current packaged modules twice reopen
+all cache/sign-in/queue rows; actual service exposes base/subset queued awards
+and old badge bytes while offline. This is not a live award/reconnect proof.
+Proxy pin stays5866cd9ba784c13771a99c52dd6b6f2acc546842; upstream patch018 is
+prepared under docs/upstream/raofflineproxy/rasteratops-identity, not submitted.
 
-#395: recorder/routing #393/#394 completed. Death, monitor-loss, short quiet
-stall and throttled-S3 cleanup controls pass. Actual provider waiter46328
-reported143 while child/watcher0 at22:04:52. Isolated lifecycle retry gives0
-through child/watcher/outer/tool, cause unproved. Preserve distinction.
-Each new launch records outer.rc. No external notification is armed.
+Preserved fixture failures: proxy02 wrong legacy-image directory; proxy03
+cache_images=False with an incompatible image expectation; S3 attempt02
+missing serial key installation. Corrected runs change no product bytes.
+Original134e timing46ms and stricter39ms FAIL remain; source-bound20ms PASS
+was diagnostic, now installed23ms PASS. No GOMAXPROCS/cache shortcut adopted.
+Directory slash retains presence/absence/error checks. Original provider outer
+waiter46328 reported143 despite child/watcher0; isolated lifecycle retry0,
+cause remains unproved. New successful launches retain explicit outer.rc.
 
-Audit cadence remains due, not waived or fabricated. Source consumed inventory
-568roots/547cache/17local/3parents/1prebuilt is provenance, not P5 source/licence
-publication. First physical target is RG35XX SP/H700 DDR4, requiring its own
-qualified image and named device-action permissions. Do not use old dated
-fork-publish-release to publish a manifest-bound Rasteratops candidate.
+Previous bundles: original503e83751e812351c72fc80a6a3cf418929769158684345cf6dd5f9e0fbcd9877d21;
+replacement134e fc6b9774f79d5fcf6a4e077af1f321b7a125401b08671cad7f0a5c807dbd64d5.
+Their tests keep their scope: original all15 defaults across corrected runs,
+S3 full roundtrip, pair42/42, guest matrix19cases249PASS, memory virgl10/
+software10/software50 (VmSize0; RSS620/52/1228KiB),55unique exit-sync stamps.
+Replacement134e all7WebDAV+7S3 link cases477/463s, actual upgraded archives24+
+selection/setup56+strictroot22+recovery23. All24 EN/FR640/1280 release frames
+visually reviewed; source ES unchanged. Their receipts/history are archived.
+
+## Remaining inputs and watcher contract
+
+- Dedicated RA QA account already earned ordinary Tobu100359. Earlier question
+  pending: owner resets that test achievement or privately configures another
+  QA account. Do not reset or substitute hardcore unearned state; never print
+  account secrets. Sign-in-page memory proof is not provider authentication.
+- Public-site screenshot commit4f6df54 in `/home/max/Development/rocknix.org`,
+  branch docs/cloud-saves-native-wizard, is local only. GitHub403 refuses
+  Blitterbot push to maxengel/rocknix.org. No alternate credentials/remote.
+  #327 and related site criteria stay open; this was not auto-review rejection.
+- #395 disconnected destination remains unanswered. Death/monitor-loss/short
+  stall controls and active-session notices pass; no external notification
+  is armed. Each future long job needs immutable runner/watch-build, existing
+  activity-dir, recursive detail logs,5s checks/5min suspected inactivity,
+  explicit outer.rc and active-session checks<=60s. Report terminal outcomes
+  before unrelated work. Never edit executing scripts, reset another run's
+  backend, or end with a detached watcher while promising future delivery.
+
+Fresh-context read-only resume proof at23:47 verified actual processes,
+counts and frozen trees. Its current-tracker lag/status-command/path wording
+findings were corrected; final state is now complete/stopped, not those
+historical running PIDs. Audit cadence remains due and unwaived. Consumed
+source inventory568roots is provenance, not P5 corresponding-source publication.

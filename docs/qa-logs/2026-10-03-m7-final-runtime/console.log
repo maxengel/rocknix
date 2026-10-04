@@ -1,0 +1,53 @@
+watch-build: recording in /workspace/repos/rocknix.worktrees/conflict-resolution/.build-runs/20261003T235511Z-4eb57f50
+Formatting '/workspace/tmp/rasteratops-m7-final-runtime-02/final-overlay.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=17179869184 backing_file=/workspace/tmp/rasteratops-m7-replacement-qa-02/pair/vm-a.qcow2 backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16
+up: webdav serving /workspace/tmp/rasteratops-m7-final-runtime-02/cloud/data at http://127.0.0.1:9040 (guest: http://10.0.2.2:9040)
+[W][23:55:12.599821] pw.conf      | [          conf.c: 1182 try_load_conf()] can't load config client.conf: No such file or directory
+[E][23:55:12.599854] pw.conf      | [          conf.c: 1215 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+ready after ~18s
+PASS exact replacement BUILD_ID
+PASS actual RC2 settings archive survived update
+PASS local recovery restores actual RC2 archive setting
+PASS local recovery retains inherited archive bytes
+PASS safe actual device id/label read
+PASS scan selects uploaded inherited RC2 archive
+PASS cloud recovery restores actual RC2 archive setting
+PASS cloud restore returns inherited archive byte-identically
+PASS production writer retains compatible ROCKNIX suffix
+PASS scan selects actual per-device writer archive
+PASS writer, scan and local archive bytes agree
+PASS production cloud/local restore recovers sentinel writer-proof
+PASS transfer journal names the exact selected archive copied by production restore
+PASS production recovery restored exact writer sentinel hash
+PASS installed writer/reader/local recovery bytes and transfer journal
+PASS exact replacement BUILD_ID
+PASS installed cloud_backup matches frozen reviewed source without override
+SAMPLE {"layout": "legacy", "measured": false, "milliseconds": 1044, "rc": 0, "sentinel_sha256": "51dd07fe974164500737f1ba0c521cc01e912e4aa6ad6d78a26f60bb78889120", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": false, "milliseconds": 394, "rc": 0, "sentinel_sha256": "fa6bffa16bf829737c91378ca8bf7ed2882a43c6f32668fcd084767d29ce9677", "cloud_bytes_match": true}
+SAMPLE {"layout": "legacy", "measured": true, "milliseconds": 299, "rc": 0, "sentinel_sha256": "884a345c4a6595e5185bb03414fa44173f14b30578cf550e058f0dd8f0bc035f", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": true, "milliseconds": 272, "rc": 0, "sentinel_sha256": "21b8fe24ee2ede43d4a6c7c55a02af00c152b1cdca7a5e311cc1bc6acaaf5d43", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": true, "milliseconds": 241, "rc": 0, "sentinel_sha256": "446038f2b38caa10990658532e858996c00969c6a81f22374980551b16ea1745", "cloud_bytes_match": true}
+SAMPLE {"layout": "legacy", "measured": true, "milliseconds": 262, "rc": 0, "sentinel_sha256": "8a889b1e1b90384a1c1f51c66550cb3483777af5fd0a67dbff3cc59b61b8ed00", "cloud_bytes_match": true}
+SAMPLE {"layout": "legacy", "measured": true, "milliseconds": 268, "rc": 0, "sentinel_sha256": "2234ed8fbaf69de75e8bb9d1799baf33f51e5751e2aec091b9e247ee270a31bb", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": true, "milliseconds": 246, "rc": 0, "sentinel_sha256": "f90c09797ffad367b22733fe353bbe255501b77c846b1513a72a1ce740ad7400", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": true, "milliseconds": 236, "rc": 0, "sentinel_sha256": "597d3620619962f856acea7f5155a1a1a8180d51f4e0aeff6c46c95cb019b689", "cloud_bytes_match": true}
+SAMPLE {"layout": "legacy", "measured": true, "milliseconds": 264, "rc": 0, "sentinel_sha256": "22cad5fe078dc21c349ea34fd83592320ccbbc6ea86edd537803f37b7f81eda5", "cloud_bytes_match": true}
+SAMPLE {"layout": "legacy", "measured": true, "milliseconds": 259, "rc": 0, "sentinel_sha256": "a568feecd8911f523f8084863be0171c1301d00ae701a477aeef9e8e7aff72ef", "cloud_bytes_match": true}
+SAMPLE {"layout": "current", "measured": true, "milliseconds": 241, "rc": 0, "sentinel_sha256": "9bb85665c46e9e223975c455904a3a9e76f569c78787d382d1b1c8aa635588f8", "cloud_bytes_match": true}
+RESULT {"medians_ms": {"legacy": 264, "current": 241}, "absolute_delta_ms": 23, "limit_ms": 30, "migration_journal_delta": 0, "source_sha256": "12a231698b70a8b83eb9d1fd1bc593f4507313030635a6750392f5fd19130a03"}
+PASS no migration preparation during measured syncs
+PASS installed legacy/current five-sample median difference within unchanged30ms limit
+PASS installed exact-byte alternating exit-sync timing
+PASS exact upgraded replacement02 BUILD_ID
+PASS installed OS_NAME is RASTERATOPS
+PASS booted guest has no statistics timer
+PASS statistics timer remains masked on upgraded guest
+PASS shipped statistics shim contains no upstream endpoint
+PASS installed rocknix-report-stats exactly matches reviewed inert entry point
+PASS installed rocknix-update exactly matches reviewed inert entry point
+PASS legacy update query declines silently
+PASS manual update help points to Rasteratops releases
+PASS installed LICENSE.md matches approved terms
+PASS installed TRADEMARK.md matches approved terms
+PASS installed OS identity, retired reporting/update entry points and policy bytes
+PASS final installed inherited archive, isolated timing and identity
+down

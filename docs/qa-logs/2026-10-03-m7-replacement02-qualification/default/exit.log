@@ -1,0 +1,16 @@
+helpers-ready
+A  one press ends the game cleanly and the save is written
+  PASS  runemu.sh exit code is 0 (got 0)
+  PASS  .srm exists and its first byte is 55
+  PASS  the exit-hotkey marker was consumed
+B  a held combo: three presses back to back end the game once, save intact
+  PASS  runemu.sh exit code is 0 (got 0)
+  PASS  .srm exists and its first byte is 55 -- without the debounce there is no .srm
+C  the window closes: a press 4 s after the first goes through
+  PASS  first press kills the target (survivors: 0)
+  PASS  a repeat inside 3 s is dropped (survivors: 1)
+  PASS  a press after the window goes through (survivors: 0)
+D  the marker never outlives a launch
+  PASS  no /tmp/.process-kill-requested left behind
+
+PASSED
