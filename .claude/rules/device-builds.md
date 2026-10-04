@@ -392,8 +392,17 @@ is not yet configured; do not describe a detached recorder as an alert
 service. A runner killed outright may leave its command alive: inspect `command.pid`
 before starting a replacement build.
 
-`tools/build-preflight` reports it and `--stop-vms` clears what it can. Run it
-before a cold build.
+`tools/build-preflight` reports it and `--stop-vms` stops guests explicitly.
+Before a future cold build, `tools/build-preflight --reclaim-swap` can invoke
+our installed root-owned fixed-target helper (D-INFRA-015, #410). Run this
+**before** the watcher/build; the helper refuses active compilers, watchers
+and guests. It needs used-swap RAM plus16GiB reserve, checks the actual
+`/swap.img` configuration, and verifies reactivation. Default preflight stays
+read-only. Installation uses a narrow exact-action sudo grant, never general
+passwordless sudo or privileged Docker. See `tools/host-maintenance/README.md`
+for reviewed installation, isolated tests, limitations and recovery. A
+missing/refused helper is a failed preflight, not permission to bypass it.
+Stop guests separately and wait for exit before requesting reclamation.
 
 The two constraints are easy to confuse because one of them is never a problem:
 `/workspace` has terabytes free while the box runs out of RAM. On 2026-09-19 a
@@ -417,8 +426,9 @@ So, before a cold build:
   first, so leaving one up is not a neutral choice — it is choosing to risk
   whatever state it holds.
 - **Look at swap, not just RAM.** A full swap means the cushion is gone: the
-  next spike is an OOM kill rather than a slowdown. `swapoff -a && swapon -a`
-  reclaims it and needs root plus enough free RAM to take the pages back.
+  next spike has less cushion. Use the guarded pre-build helper above;
+  do not run a broad swapoff or recycle during active work. Available RAM and
+  memory pressure still need supervision after a passing preflight.
 - **Cap the heavyweight packages rather than the whole build.** `webkitgtk`
   carries `PKG_MAKE_OPTS_TARGET="-j4"` for this reason; `ninja` takes the last
   `-j` it is given and `scripts/build` appends the package's options after

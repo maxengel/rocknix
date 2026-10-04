@@ -1,0 +1,242 @@
+#!/usr/bin/python3 -I
+"""Reclaim only serval's existing /swap.img before a build (#410).
+
+No caller-controlled paths, thresholds, subprocesses or environment settings.
+The installed, root-owned copy is the only privileged entry point.
+"""
+import fcntl
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+
+TARGET = Path('/swap.img')
+INSTALLED = Path('/usr/local/sbin/pixelelated-reclaim-swap')
+LOCK = Path('/run/pixelelated-reclaim-swap.lock')
+RESERVE_KIB = 16 * 1024 * 1024
+ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
+SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+PENDING_SIGNAL = None
+
+
+class Refused(RuntimeError):
+    pass
+
+
+class Interrupted(RuntimeError):
+    pass
+
+
+def trusted(path, directory=False, private=False):
+    info = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise Refused(f'unsafe ownership, type or writable mode: {path}')
+    if not directory and info.st_nlink != 1:
+        raise Refused(f'hard-linked file refused: {path}')
+    if private and info.st_mode & 0o077:
+        raise Refused(f'private mode required: {path}')
+    return info
+
+
+def swap_state():
+    lines = Path('/proc/swaps').read_text().splitlines()
+    if not lines or lines[0].split() != ['Filename', 'Type', 'Size', 'Used', 'Priority']:
+        raise Refused('cannot parse /proc/swaps header')
+    rows = []
+    for line in lines[1:]:
+        fields = line.split()
+        if len(fields) != 5:
+            raise Refused('cannot parse /proc/swaps row')
+        name, kind = fields[:2]
+        try:
+            size, used, priority = map(int, fields[2:])
+        except ValueError as error:
+            raise Refused('invalid swap counters') from error
+        if size <= 0 or not 0 <= used <= size or not -32768 <= priority <= 32767:
+            raise Refused('invalid swap counters or priority')
+        rows.append((name, kind, size, used, priority))
+    if len(rows) > 1 or (rows and rows[0][:2] != (str(TARGET), 'file')):
+        raise Refused('only one active swapfile, /swap.img, is supported')
+    return rows[0] if rows else None
+
+
+def available_kib():
+    values = []
+    for line in Path('/proc/meminfo').read_text().splitlines():
+        if line.startswith('MemAvailable:'):
+            fields = line.split()
+            if len(fields) != 3 or fields[2] != 'kB' or not fields[1].isdigit():
+                raise Refused('invalid MemAvailable observation')
+            values.append(int(fields[1]))
+    if len(values) != 1:
+        raise Refused('missing or duplicate MemAvailable observation')
+    return values[0]
+
+
+def assert_idle():
+    # Require the host process view. Container/sandbox PID views miss other jobs.
+    if Path('/proc/1/comm').read_text().strip() != 'systemd':
+        raise Refused('host systemd process namespace required')
+    builders = {'make', 'gmake', 'ninja', 'cc', 'c++', 'cc1', 'cc1plus', 'gcc', 'g++',
+                'clang', 'clang++', 'collect2', 'lto1', 'cargo', 'rustc', 'rust-lld',
+                'ld', 'ld.bfd', 'ld.gold', 'ld.lld', 'mold'}
+    for proc in Path('/proc').glob('[0-9]*'):
+        try:
+            words = (proc / 'cmdline').read_bytes().split(b'\0')
+        except (FileNotFoundError, ProcessLookupError):
+            continue  # Process exited during the observation.
+        except OSError as error:
+            raise Refused(f'cannot inspect process {proc.name}') from error
+        names = [os.fsdecode(word).rsplit('/', 1)[-1] for word in words[:3] if word]
+        if not names:
+            continue
+        compiler = names[0] in builders or names[0].endswith(('-gcc', '-g++', '-clang', '-clang++'))
+        guest = names[0].startswith('qemu-system-')
+        watched = 'watch-build' in names or 'watch-job' in names
+        if compiler or guest or watched:
+            raise Refused(f'active build, compiler, watcher or VM: PID {proc.name}')
+
+
+def file_identity():
+    trusted(Path('/'), directory=True)
+    info = trusted(TARGET, private=True)
+    if info.st_size < 4096:
+        raise Refused('swapfile is unexpectedly small')
+    return info.st_dev, info.st_ino, info.st_size
+
+
+def assert_default_activation():
+    # /proc/swaps exposes priority but not discard/other activation flags.
+    # Limit this helper to the reviewed default host configuration.
+    rows = [line.split() for line in Path('/etc/fstab').read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith('#')]
+    selected = [row for row in rows if row[0] == str(TARGET)]
+    if (len(selected) != 1 or len(selected[0]) != 6 or
+            selected[0][1:3] != ['none', 'swap'] or selected[0][3] not in ('sw', 'defaults') or
+            selected[0][4:] != ['0', '0']):
+        raise Refused('only the reviewed default /swap.img fstab activation is supported')
+
+
+def headroom(row):
+    available = available_kib()
+    required = row[3] + RESERVE_KIB
+    if available < required:
+        raise Refused(f'need {required} KiB available RAM; observed {available} KiB')
+
+
+def command(argv):
+    result = subprocess.run(argv, env=ENV, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, timeout=120, check=False)
+    if result.returncode:
+        raise Refused(f'{Path(argv[0]).name} failed with exit {result.returncode}')
+
+
+def recycle():
+    identity = file_identity()
+    before = swap_state()
+    if before is None:
+        raise Refused('/swap.img must already be active; use administrator recovery if inactive')
+    if (before[2] - before[3]) * 5 >= before[2]:
+        print('READY: swap has at least 20% free; no change')
+        return
+    assert_default_activation()
+    if before[4] < -1:
+        raise Refused('negative swap priority differs from reviewed serval configuration')
+    assert_idle()
+    headroom(before)
+    # Re-read immediately before mutation; headroom is a snapshot, not a reservation.
+    current = swap_state()
+    if current is None or current[:3] != before[:3] or current[4] != before[4]:
+        raise Refused('swap configuration changed during checks')
+    headroom(current)
+    assert_idle()
+    if file_identity() != identity:
+        raise Refused('swapfile changed during checks')
+    if PENDING_SIGNAL:
+        raise Interrupted(f'interrupted by signal {PENDING_SIGNAL} before mutation')
+    print('Reclaiming /swap.img with 16 GiB RAM reserve', flush=True)
+    try:
+        command(['/usr/sbin/swapoff', '--', str(TARGET)])
+    finally:
+        # Handled termination cannot interrupt our reactivation attempt. SIGKILL
+        # and power loss remain outside a process's recovery guarantee.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+        try:
+            if file_identity() != identity:
+                raise Refused('swapfile changed; administrator recovery required')
+            active = swap_state()
+            if active is None:
+                args = ['/usr/sbin/swapon']
+                if before[4] >= 0:
+                    args += ['--priority', str(before[4])]
+                command(args + ['--', str(TARGET)])
+            after = swap_state()
+            if after is None or after[:3] != before[:3] or after[4] != before[4]:
+                raise Refused('swap activation/size/priority readback differs')
+        except BaseException as error:
+            raise Refused('reactivation could not be verified; administrator must inspect '
+                          '/proc/swaps and recover with /usr/sbin/swapon /swap.img') from error
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    if (after[2] - after[3]) * 5 < after[2]:
+        raise Refused('swap is active but still nearly full; not ready for a build')
+    if PENDING_SIGNAL:
+        raise Interrupted(f'interrupted by signal {PENDING_SIGNAL}; swap reactivation verified')
+    print(f'READY: /swap.img active, priority {after[4]}, {after[2] - after[3]} KiB free')
+
+
+def interrupted(signum, _frame):
+    # Defer termination until the critical section has restored swap. Raising
+    # asynchronously here could interrupt subprocess cleanup or mask a failed
+    # reactivation when the signal mask is restored.
+    global PENDING_SIGNAL
+    PENDING_SIGNAL = signum
+
+
+def acquire_lock():
+    os.umask(0o077)
+    trusted(LOCK.parent, directory=True)
+    fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077 or info.st_nlink != 1:
+            raise Refused('unsafe lock file')
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refused('another swap reclamation owns the lock') from error
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def main(args):
+    if args != ['--reclaim']:
+        raise Refused('only --reclaim is supported; no paths or overrides accepted')
+    if os.geteuid() != 0:
+        raise Refused('use sudo -n /usr/local/sbin/pixelelated-reclaim-swap --reclaim')
+    if Path(__file__).absolute() != INSTALLED:
+        raise Refused('only the installed helper may run as root')
+    for directory in (Path('/'), Path('/usr'), Path('/usr/local'), INSTALLED.parent):
+        trusted(directory, directory=True)
+    trusted(INSTALLED)
+    fd = acquire_lock()
+    try:
+        for sig in SIGNALS:
+            signal.signal(sig, interrupted)
+        recycle()
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except (Refused, Interrupted, OSError, subprocess.SubprocessError) as error:
+        print('REFUSED: ' + str(error), file=sys.stderr)
+        sys.exit(1)

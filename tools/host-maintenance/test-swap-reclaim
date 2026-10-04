@@ -1,0 +1,464 @@
+#!/usr/bin/python3 -I
+"""Isolated guard/recovery tests; never issue real swap commands or install policy."""
+import argparse
+from contextlib import ExitStack
+import importlib.machinery
+import importlib.util
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--helper', type=Path, default=Path(__file__).with_name('reclaim-swap'))
+args = parser.parse_args()
+if os.geteuid() == 0:
+    parser.error('run the fixture suite unprivileged')
+
+
+def load(name, path):
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(name, loader))
+    loader.exec_module(module)
+    return module
+
+
+helper = load('swap_helper', args.helper)
+installer = load('swap_installer', Path(__file__).with_name('install'))
+ROW = ('/swap.img', 'file', 8 * 1024 * 1024, 7 * 1024 * 1024, -1)
+HEADER = 'Filename Type Size Used Priority\n'
+
+
+class Observations(unittest.TestCase):
+    def test_activation_flags_are_not_silently_lost(self):
+        for text in ['/swap.img none swap sw 0 0', '/swap.img none swap defaults 0 0']:
+            with patch.object(Path, 'read_text', return_value=text):
+                helper.assert_default_activation()
+        for text in ['', '/swap.img none swap sw,discard 0 0', '/swap.img none swap sw 1 0',
+                     '/swap.img none swap sw 0 0\n/swap.img none swap sw 0 0']:
+            with self.subTest(text=text), patch.object(Path, 'read_text', return_value=text):
+                with self.assertRaises(helper.Refused):
+                    helper.assert_default_activation()
+
+    def test_lock_excludes_concurrent_reclamation(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            lock = Path(directory) / 'lock'
+            stack.enter_context(patch.object(helper, 'LOCK', lock))
+            stack.enter_context(patch.object(helper, 'trusted'))
+            stack.enter_context(patch.object(Path, 'lstat', return_value=SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=0)))
+            original = os.fstat
+            def root_owned(fd):
+                info = original(fd)
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=0, st_nlink=info.st_nlink)
+            stack.enter_context(patch.object(helper.os, 'fstat', side_effect=root_owned))
+            first = helper.acquire_lock()
+            try:
+                with self.assertRaisesRegex(helper.Refused, 'another swap reclamation'):
+                    helper.acquire_lock()
+            finally:
+                os.close(first)
+            second = helper.acquire_lock()
+            os.close(second)
+
+    def test_writable_lock_parent_refused_before_open(self):
+        def info(path):
+            mode = 0o755 if str(path) == '/run' else 0o1777
+            return SimpleNamespace(st_mode=stat.S_IFDIR | mode, st_uid=0)
+        with patch.object(helper, 'LOCK', Path('/run/writable/lock')), patch.object(Path, 'lstat', info), patch.object(helper.os, 'open', side_effect=AssertionError('unsafe directory reached open')):
+            with self.assertRaises(helper.Refused):
+                helper.acquire_lock()
+
+    def test_swap_exact_and_empty(self):
+        for text, wanted in [(HEADER + '/swap.img file 8192 8100 -1\n', ('/swap.img', 'file', 8192, 8100, -1)), (HEADER, None)]:
+            with self.subTest(text=text), patch.object(Path, 'read_text', return_value=text):
+                self.assertEqual(helper.swap_state(), wanted)
+
+    def test_swap_malformed_or_other_target_refused(self):
+        for text in ['', 'wrong header\n', HEADER + '/dev/sda partition 10 9 -1', HEADER + '/other file 10 9 -1',
+                     HEADER + '/swap.img file 10 9 -1\n/swap.img file 10 9 -1', HEADER + '/swap.img file x 9 -1',
+                     HEADER + '/swap.img file 0 0 -1', HEADER + '/swap.img file 10 11 -1',
+                     HEADER + '/swap.img file 10 -1 -1', HEADER + '/swap.img file 10 9 32768']:
+            with self.subTest(text=text), patch.object(Path, 'read_text', return_value=text):
+                with self.assertRaises(helper.Refused):
+                    helper.swap_state()
+
+    def test_available_ram_missing_or_invalid_refused(self):
+        for text in ['', 'MemAvailable: -1 kB', 'MemAvailable: 2 MB', 'MemAvailable: 2 kB\nMemAvailable: 3 kB']:
+            with self.subTest(text=text), patch.object(Path, 'read_text', return_value=text):
+                with self.assertRaises(helper.Refused):
+                    helper.available_kib()
+        with patch.object(Path, 'read_text', return_value='MemAvailable: 12345 kB\n'):
+            self.assertEqual(helper.available_kib(), 12345)
+
+    def test_unsafe_ownership_mode_links_and_type_refused(self):
+        for uid, mode, links in [(1000, stat.S_IFREG | 0o600, 1), (0, stat.S_IFREG | 0o620, 1),
+                                 (0, stat.S_IFREG | 0o604, 1), (0, stat.S_IFLNK | 0o777, 1),
+                                 (0, stat.S_IFREG | 0o600, 2)]:
+            with self.subTest(uid=uid, mode=mode, links=links), patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=uid, st_mode=mode, st_nlink=links)):
+                with self.assertRaises(helper.Refused):
+                    helper.trusted(Path('/swap.img'), private=True)
+
+    def test_active_jobs_and_container_namespace_refused(self):
+        for cmd in [b'/usr/bin/make\0all\0', b'/usr/bin/cc1plus\0', b'/toolchain/x86_64-linux-gnu-g++\0',
+                    b'/usr/bin/qemu-system-x86_64\0', b'/usr/bin/python3\0/repo/tools/watch-build\0',
+                    b'/bin/bash\0/repo/tools/watch-job\0']:
+            with self.subTest(cmd=cmd), patch.object(Path, 'read_text', return_value='systemd\n'), patch.object(Path, 'glob', return_value=[Path('/proc/42')]), patch.object(Path, 'read_bytes', return_value=cmd):
+                with self.assertRaisesRegex(helper.Refused, 'PID 42'):
+                    helper.assert_idle()
+        with patch.object(Path, 'read_text', return_value='bash\n'):
+            with self.assertRaisesRegex(helper.Refused, 'namespace'):
+                helper.assert_idle()
+
+    def test_idle_process_exit_and_unreadable_process(self):
+        with patch.object(Path, 'read_text', return_value='systemd\n'), patch.object(Path, 'glob', return_value=[Path('/proc/42')]):
+            with patch.object(Path, 'read_bytes', return_value=b'/usr/bin/postgres\0'):
+                helper.assert_idle()
+            for disappeared in (FileNotFoundError, ProcessLookupError):
+                with patch.object(Path, 'read_bytes', side_effect=disappeared):
+                    helper.assert_idle()
+            with patch.object(Path, 'read_bytes', side_effect=PermissionError):
+                with self.assertRaises(helper.Refused):
+                    helper.assert_idle()
+
+    def test_args_nonroot_and_source_copy_cannot_mutate(self):
+        with patch.object(helper, 'recycle') as mutation:
+            for argv in [[], ['--reclaim', '/other'], ['--check'], ['--reclaim', '--force']]:
+                with self.subTest(argv=argv), self.assertRaises(helper.Refused):
+                    helper.main(argv)
+            with patch.object(helper.os, 'geteuid', return_value=1000), self.assertRaises(helper.Refused):
+                helper.main(['--reclaim'])
+            with patch.object(helper.os, 'geteuid', return_value=0), self.assertRaisesRegex(helper.Refused, 'installed'):
+                helper.main(['--reclaim'])
+            mutation.assert_not_called()
+
+    def test_command_uses_fixed_environment_no_shell_and_failure_propagates(self):
+        with patch.object(helper.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run:
+            helper.command(['/usr/sbin/swapoff', '--', '/swap.img'])
+            self.assertEqual(run.call_args.args[0], ['/usr/sbin/swapoff', '--', '/swap.img'])
+            self.assertEqual(run.call_args.kwargs['env'], {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+            self.assertNotIn('shell', run.call_args.kwargs)
+        with patch.object(helper.subprocess, 'run', return_value=SimpleNamespace(returncode=2)):
+            with self.assertRaises(helper.Refused):
+                helper.command(['/usr/sbin/swapoff', '--', '/swap.img'])
+
+
+class Reclamation(unittest.TestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.row = ROW
+        self.calls = []
+        self.identity = self.stack.enter_context(patch.object(helper, 'file_identity', return_value=(1, 2, 8589934592)))
+        self.stack.enter_context(patch.object(helper, 'swap_state', side_effect=lambda: self.row))
+        self.memory = self.stack.enter_context(patch.object(helper, 'available_kib', return_value=32 * 1024 * 1024))
+        self.idle = self.stack.enter_context(patch.object(helper, 'assert_idle'))
+        self.stack.enter_context(patch.object(helper, 'assert_default_activation'))
+        self.stack.enter_context(patch.object(helper, 'PENDING_SIGNAL', None))
+        self.action = self.stack.enter_context(patch.object(helper, 'command', side_effect=self.command))
+
+    def command(self, argv):
+        self.calls.append(argv)
+        if argv[0] == '/usr/sbin/swapoff':
+            self.row = None
+        elif argv[0] == '/usr/sbin/swapon':
+            priority = int(argv[2]) if '--priority' in argv else -1
+            self.row = (*ROW[:3], 0, priority)
+        else:
+            raise AssertionError('unexpected command')
+
+    def test_reclaims_only_one_file_and_restores_priority(self):
+        helper.recycle()
+        self.assertEqual(self.calls, [['/usr/sbin/swapoff', '--', '/swap.img'], ['/usr/sbin/swapon', '--', '/swap.img']])
+        self.assertEqual(self.row, (*ROW[:3], 0, -1))
+        self.calls.clear()
+        self.row = (*ROW[:4], 17)
+        helper.recycle()
+        self.assertEqual(self.calls[-1], ['/usr/sbin/swapon', '--priority', '17', '--', '/swap.img'])
+        self.assertEqual(self.row[4], 17)
+
+    def test_healthy_noop_and_inactive_refusal(self):
+        self.row = (*ROW[:3], 0, -1)
+        helper.recycle()
+        self.action.assert_not_called()
+        self.row = None
+        with self.assertRaises(helper.Refused):
+            helper.recycle()
+        self.action.assert_not_called()
+
+    def test_unrestorable_negative_priority_refuses(self):
+        self.row = (*ROW[:4], -2)
+        with self.assertRaisesRegex(helper.Refused, 'negative swap priority'):
+            helper.recycle()
+        self.action.assert_not_called()
+
+    def test_insufficient_memory_and_boundary(self):
+        self.memory.return_value = ROW[3] + helper.RESERVE_KIB - 1
+        with self.assertRaisesRegex(helper.Refused, 'available RAM'):
+            helper.recycle()
+        self.action.assert_not_called()
+        self.memory.return_value += 1
+        helper.recycle()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_second_memory_read_refuses_new_pressure(self):
+        self.memory.side_effect = [32 * 1024 * 1024, 1]
+        with self.assertRaises(helper.Refused):
+            helper.recycle()
+        self.action.assert_not_called()
+
+    def test_job_started_during_checks_refuses_before_mutation(self):
+        self.idle.side_effect = [None, helper.Refused('new active build')]
+        with self.assertRaisesRegex(helper.Refused, 'new active build'):
+            helper.recycle()
+        self.action.assert_not_called()
+
+    def test_active_job_and_changed_file_refuse_before_mutation(self):
+        self.idle.side_effect = helper.Refused('active job')
+        with self.assertRaises(helper.Refused):
+            helper.recycle()
+        self.action.assert_not_called()
+        self.idle.side_effect = None
+        self.identity.side_effect = [(1, 2, 8589934592), (1, 3, 8589934592)]
+        with self.assertRaises(helper.Refused):
+            helper.recycle()
+        self.action.assert_not_called()
+
+    def test_failed_swapoff_still_active_is_not_success(self):
+        self.action.side_effect = helper.Refused('swapoff failed')
+        with self.assertRaisesRegex(helper.Refused, 'swapoff failed'):
+            helper.recycle()
+        self.assertEqual(self.row, ROW)
+        self.assertEqual(self.action.call_count, 1)
+
+    def test_partial_swapoff_failure_and_interruption_reactivate(self):
+        for error in [helper.Refused('swapoff failed after deactivation'), helper.Interrupted('cancelled')]:
+            with self.subTest(error=error):
+                self.row, self.calls = ROW, []
+                def command(argv):
+                    self.command(argv)
+                    if argv[0].endswith('swapoff'):
+                        raise error
+                self.action.side_effect = command
+                with self.assertRaises(type(error)):
+                    helper.recycle()
+                self.assertEqual(self.row[3], 0)
+                self.assertEqual(len(self.calls), 2)
+
+    def test_failed_swapon_never_reports_success(self):
+        def command(argv):
+            if argv[0].endswith('swapon'):
+                raise helper.Refused('swapon failed')
+            self.command(argv)
+        self.action.side_effect = command
+        with self.assertRaisesRegex(helper.Refused, 'administrator must inspect'):
+            helper.recycle()
+        self.assertIsNone(self.row)
+
+    def test_false_swapon_success_and_priority_drift_refused(self):
+        for wrong in [None, (*ROW[:3], 0, 9)]:
+            self.row = ROW
+            def command(argv):
+                self.command(argv)
+                if argv[0].endswith('swapon'):
+                    self.row = wrong
+            self.action.side_effect = command
+            with self.assertRaisesRegex(helper.Refused, 'reactivation'):
+                helper.recycle()
+
+    def test_signal_acknowledged_only_after_reactivation(self):
+        def command(argv):
+            self.command(argv)
+            if argv[0].endswith('swapoff'):
+                helper.interrupted(signal.SIGTERM, None)
+        self.action.side_effect = command
+        with self.assertRaisesRegex(helper.Interrupted, 'reactivation verified'):
+            helper.recycle()
+        self.assertEqual(self.row[3], 0)
+        self.assertEqual(len(self.calls), 2)
+
+
+class Preflight(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        self.state = root / 'reclaimed'
+        self.calls = root / 'calls'
+        self.helper_path = root / 'installed-helper'
+        self.script = root / 'build-preflight'
+        source = Path(__file__).resolve().parents[1] / 'build-preflight'
+        self.script.write_text(source.read_text().replace('/usr/local/sbin/pixelelated-reclaim-swap', str(self.helper_path)))
+        fixtures = {
+            'pgrep': '#!/bin/sh\nexit 1\n',
+            'free': '''#!/bin/sh
+[ "$TEST_MODE" = invalid ] && { echo malformed; exit 0; }
+total=8192; used=8191; remaining=1
+[ -f "$TEST_STATE" ] && { used=0; remaining=8192; }
+[ "$TEST_MODE" = inactive ] && { total=0; used=0; remaining=0; }
+printf 'total used free shared buff/cache available\nMem: 64000 16000 1000 0 47000 48000\nSwap: %s %s %s\n' "$total" "$used" "$remaining"
+''',
+            'sudo': '''#!/bin/sh
+printf '%s\n' "$@" > "$TEST_CALLS"
+[ "$#" = 4 ] && [ "$1" = -n ] && [ "$2" = -- ] && [ "$3" = "$TEST_HELPER" ] && [ "$4" = --reclaim ] || exit 96
+[ "$TEST_MODE" = denied ] && exit 1
+[ "$TEST_MODE" = stale ] || touch "$TEST_STATE"
+exit 0
+''',
+            'installed-helper': '#!/bin/sh\nexit 97\n',
+        }
+        for name, text in fixtures.items():
+            path = root / name
+            path.write_text(text)
+            path.chmod(0o755)
+        self.env = {'PATH': str(root) + ':/usr/bin:/bin', 'LC_ALL': 'C',
+                    'TEST_MODE': 'success', 'TEST_STATE': str(self.state),
+                    'TEST_CALLS': str(self.calls), 'TEST_HELPER': str(self.helper_path)}
+
+    def run_preflight(self, *args):
+        return subprocess.run(['/bin/bash', str(self.script), *args], env=self.env,
+                              capture_output=True, text=True)
+
+    def test_default_is_read_only(self):
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.state.exists())
+
+    def test_opt_in_uses_only_fixed_sudo_action_and_fresh_readback(self):
+        result = self.run_preflight('--reclaim-swap')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls.read_text().splitlines(), ['-n', '--', str(self.helper_path), '--reclaim'])
+        self.assertIn('0MB used, 8192MB free', result.stdout)
+
+    def test_missing_permission_or_false_success_does_not_pass(self):
+        for mode in ['denied', 'stale']:
+            with self.subTest(mode=mode):
+                self.env['TEST_MODE'] = mode
+                result = self.run_preflight('--reclaim-swap')
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn('\nREADY\n', result.stdout)
+
+    def test_missing_helper_is_visible(self):
+        self.helper_path.unlink()
+        result = self.run_preflight('--reclaim-swap')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('RECLAIM UNAVAILABLE', result.stdout)
+        self.assertFalse(self.calls.exists())
+
+    def test_inactive_swap_never_reports_ready_or_auto_recovers(self):
+        self.env['TEST_MODE'] = 'inactive'
+        for argv in [(), ('--reclaim-swap',)]:
+            with self.subTest(argv=argv):
+                result = self.run_preflight(*argv)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('NO ACTIVE SWAP', result.stdout)
+                self.assertNotIn('\nREADY\n', result.stdout)
+                self.assertFalse(self.calls.exists())
+
+    def test_bad_observations_or_options_never_mutate(self):
+        self.env['TEST_MODE'] = 'invalid'
+        result = self.run_preflight('--reclaim-swap')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('cannot read valid', result.stdout)
+        for argv in [('--force',), ('--stop-vms', '--reclaim-swap')]:
+            self.assertEqual(self.run_preflight(*argv).returncode, 2)
+        self.assertFalse(self.calls.exists())
+
+
+class Installation(unittest.TestCase):
+    def test_policy_directory_must_be_included(self):
+        for text in ['@includedir /etc/sudoers.d\n', '#includedir /etc/sudoers.d\n']:
+            with patch.object(Path, 'read_text', return_value=text):
+                installer.assert_policy_directory_included()
+        for text in ['', '# @includedir /etc/sudoers.d\n', '@includedir /different\n']:
+            with patch.object(Path, 'read_text', return_value=text), self.assertRaisesRegex(RuntimeError, 'direct'):
+                installer.assert_policy_directory_included()
+
+    def test_real_visudo_rejects_unowned_include_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            included = root / 'included'
+            included.mkdir()
+            main = root / 'sudoers'
+            main.write_text('@includedir ' + str(included) + '\n')
+            entry = included / 'fixture'
+            entry.write_bytes(installer.policy(args.helper.read_bytes()))
+            result = subprocess.run(['/usr/sbin/visudo', '-c', '-f', str(main)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('must be owned by root', result.stdout + result.stderr)
+
+    def test_policy_is_exact_action_with_hash_receipt_and_valid_sudoers(self):
+        data = args.helper.read_bytes()
+        policy = installer.policy(data).decode()
+        self.assertIn('max ALL=(root) NOPASSWD: NOSETENV: ', policy)
+        self.assertIn(installer.hashlib.sha256(data).hexdigest(), policy)
+        self.assertEqual(len([line for line in policy.splitlines() if not line.startswith('#')]), 1)
+        self.assertTrue(policy.endswith(' /usr/local/sbin/pixelelated-reclaim-swap --reclaim\n'))
+        self.assertNotIn('*', policy)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'policy'
+            target.write_text(policy)
+            result = subprocess.run(['/usr/sbin/visudo', '-c', '-f', str(target)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unprivileged_installation_cannot_write(self):
+        with patch.object(installer, 'stage') as stage, self.assertRaises(RuntimeError):
+            installer.install(b'irrelevant')
+        stage.assert_not_called()
+
+    def test_policy_validation_failure_rolls_back_both_files(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            helper_path, policy_path = Path(directory) / 'helper', Path(directory) / 'policy'
+            helper_path.write_bytes(b'old-helper'); helper_path.chmod(0o755)
+            policy_path.write_bytes(b'old-policy'); policy_path.chmod(0o440)
+            stack.enter_context(patch.object(installer, 'HELPER', helper_path))
+            stack.enter_context(patch.object(installer, 'POLICY', policy_path))
+            stack.enter_context(patch.object(installer.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(installer.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)))
+            stack.enter_context(patch.object(Path, 'read_text', return_value='serval\n'))
+            stack.enter_context(patch.object(installer, 'assert_policy_directory_included'))
+            stack.enter_context(patch.object(installer, 'secure'))
+            stack.enter_context(patch.object(installer.os, 'fchown'))
+            stack.enter_context(patch.object(installer, 'validate', side_effect=[None, None, RuntimeError('full policy rejected'), None]))
+            with self.assertRaisesRegex(RuntimeError, 'full policy rejected'):
+                installer.install(b'new-helper')
+            self.assertEqual(helper_path.read_bytes(), b'old-helper')
+            self.assertEqual(policy_path.read_bytes(), b'old-policy')
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['helper', 'policy'])
+
+    def test_failed_policy_restore_still_restores_helper_and_cleans_temps(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            helper_path, policy_path = Path(directory) / 'helper', Path(directory) / 'policy'
+            helper_path.write_bytes(b'old-helper'); policy_path.write_bytes(b'old-policy')
+            stack.enter_context(patch.object(installer, 'HELPER', helper_path))
+            stack.enter_context(patch.object(installer, 'POLICY', policy_path))
+            stack.enter_context(patch.object(installer.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(installer.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)))
+            stack.enter_context(patch.object(Path, 'read_text', return_value='serval\n'))
+            stack.enter_context(patch.object(installer, 'assert_policy_directory_included'))
+            stack.enter_context(patch.object(installer, 'secure'))
+            stack.enter_context(patch.object(installer.os, 'fchown'))
+            validate = stack.enter_context(patch.object(installer, 'validate', side_effect=[None, None, RuntimeError('full policy rejected'), None]))
+            replace = Path.replace
+            policy_replaces = []
+            def fail_rollback(path, target):
+                if target == policy_path:
+                    policy_replaces.append(path)
+                    if len(policy_replaces) == 2:
+                        raise OSError('injected policy restore failure')
+                return replace(path, target)
+            stack.enter_context(patch.object(Path, 'replace', fail_rollback))
+            with self.assertRaisesRegex(RuntimeError, 'rollback incomplete'):
+                installer.install(b'new-helper')
+            self.assertEqual(helper_path.read_bytes(), b'old-helper')
+            self.assertEqual(validate.call_count, 4)
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['helper', 'policy'])
+
+
+if __name__ == '__main__':
+    unittest.main(argv=['test-swap-reclaim'], verbosity=2)
