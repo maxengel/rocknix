@@ -29,12 +29,19 @@ Review `reclaim-swap`, `install`, the generated policy and the retained tests.
 The installer requires administrator authentication and is scoped to serval's
 `max` account (uid1000). It copies the standalone helper as root:root0755 to
 `/usr/local/sbin/pixelelated-reclaim-swap`, installs root:root0440 policy at
-`/etc/sudoers.d/pixelelated-reclaim-swap`, and validates the complete sudoers
+`/etc/sudoers.d/zz-pixelelated-reclaim-swap`, and validates the complete sudoers
 configuration, and requires the normal direct `/etc/sudoers.d` include.
 Validation failure attempts to restore both prior files and
 reports any incomplete rollback with administrator recovery required. A
 failed restoration of one file does not skip the other or final validation. Concurrent
 installers/reclaimers share one lock. No swap operation occurs during install.
+
+The filename places the one-command exception after `zz-fleet-hardening`.
+Sudo-rs uses the last matching rule. The installer refuses later active
+include files or directives after the include, and migrates only an unchanged
+older `pixelelated-reclaim-swap` entry. It does not modify fleet policy.
+Successful parsing and installed checksums alone do not prove effective
+permission: verify the noninteractive busy refusal before calling setup ready.
 
 The sole added permission is:
 
