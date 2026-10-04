@@ -78,10 +78,12 @@ immutable bundle87b8c01d65dc22b4f29049bd0d69307a59c14c16f5223534e95058b2234ca5cd
 Includes directory-probe timing #364, root wording #407 and canonical proxy
 account discovery #408. Full source regression1373+322PASS. Installed proxy
 proof20, S3 refusal10, root transitions/sentence22 and archive writer/selected
-journal8 now PASS. Full default/RC2-upgrade QA remains active with shared
-watcher; final isolated installed timing is next. Source-bound timing20ms
-passes30ms, but is not yet the installed-image timing receipt. See the
-canonical checkpoint and live milestone for current process/phase state.
+journal8 now PASS. Full default15/15, actual RC2 upgrade and exact clean/upgraded readbacks now
+PASS. A COW of the actual upgraded disk passes14 archive,4 timing and11
+identity assertions. Installed legacy/current exit-sync medians264/241ms
+are23ms apart within30ms, with exact transferred bytes. All guest/backend jobs
+stopped. Receipts:2026-10-03-m7-replacement02-qualification and
+2026-10-03-m7-final-runtime; previous-artifact evidence retains its scope.
 
 Shared recorder and active session report failures, stalls and completion;
 no disconnected delivery destination is configured (#395). RA ordinary award
