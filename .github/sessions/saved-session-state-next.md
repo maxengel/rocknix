@@ -244,7 +244,7 @@ Preparation was published normally and remote-ref verified:
 feature4d6890395ce09c56ca9c352d99d4f44d3b70ab2f →
 next1ae3190d0cab648bac232a160b49810d1b6b2f8e. Frozen build remainsb137.
 
-## Host helper #410 — reviewed, prepared for administrator bootstrap
+## Host helper #410 — first install exposed ordering; corrected bootstrap pending
 
 Owner: "I'll do it manually now, and then let's create the guarded host helper."
 Manual reset completed before the current build; never repeat it during work.
@@ -272,20 +272,39 @@ Original packet/response immutable, final-source-hashes.json binds corrected
 implementation. Artifact lint including411's five checked items passes.
 Parent410 stays open for host rollout, with first two fixture criteria checked.
 
-Prepared read-only bundle `/workspace/tmp/pixelelated-host-helper-8c448fcb35`:
+The owner installed bundle8c448 successfully around05:05UTC. Root helper
+and policy bytes/modes matched, but the real sudo -n invocation still needed
+a password. Actual sudo listing shows zz-fleet-hardening's later broad
+password-required rule after ours. Exact-command sudo -l returned0 despite
+that, so listing alone is not effective-grant proof. No swap command ran.
+
+Corrected source feature652ec25fed→next6e4ab570ed is pushed/remote-ref
+verified. It places the identical rule
+at /etc/sudoers.d/zz-pixelelated-reclaim-swap. Checks final include/no later
+active files; only unchanged old entry is retired with three-file rollback.
+37 tests PASS and matching37-test negative control fails2. Helper bytes and
+granted action are unchanged; fleet policy is not modified. Source/evidence
+are retained in audit410's post-audit installation addendum, under parent410.
+Completed five-finding source audit411 remains closed, not an installation PASS.
+
+Use corrected read-only bundle `/workspace/tmp/pixelelated-host-helper-652ec25fed`:
 install, reclaim-swap, README, sudoers.preview, SHA256SUMS. Helper hash
 acfb7936c7271cd642a628a66b9a50d2b70c765eac9dd43bca60a67a7fec0547;
-installer cd84ee28990d20ac1426ede9ac409c5e8b711e31649771fdefb7e0659d9d6d00.
-No root install/policy/swap action has occurred. One-time owner command:
-`cd /workspace/tmp/pixelelated-host-helper-8c448fcb35 && sha256sum -c SHA256SUMS && sudo /usr/bin/python3 -I ./install`.
-This needs local interactive sudo authentication and performs no swap reset.
-After owner bootstrap, verify exact root bytes/modes, effective narrow grant
-and busy refusal. Actual idle recycle/timing waits until builds/VMs end;
-never bypass guards, use privileged Docker or broaden sudo. Read current
-user messages for whether the bootstrap request has been delivered/completed.
+installer0bf0af109455cb0e8cbd038abead79bb355948459aca56d4453c46fa8fd07278.
+Corrected owner command (async request sent05:09UTC, response pending):
+`cd /workspace/tmp/pixelelated-host-helper-652ec25fed && sha256sum -c SHA256SUMS && sudo /usr/bin/python3 -I ./install`.
+Do not ask the owner to rerun the obsolete8c448 installer. This needs local
+interactive sudo authentication and performs no swap reset. After bootstrap,
+verify root bytes/modes, old entry absent, effective narrow grant and actual
+busy refusal. Extra args/unrelated command must still require authentication.
+Actual idle recycle/timing waits until builds/VMs end; never bypass guards,
+use privileged Docker or broaden sudo. Reads/commands inspecting real host
+UIDs/processes/sudo require escalated tool execution; sandbox shows root as
+nobody and sets no-new-privileges. Read latest user messages for completion.
 
 The active cold build remains runner1801222/watcher1801223 under run
-20261004T041520Z-ef28d7ab. At05:00UTC520/642, fresh detailed MAME/kernel logs,
-available RAM about38GiB and PSI negligible. Main build.log may be quiet while
+20261004T041520Z-ef28d7ab. At05:12UTC525/642, all five active jobs have fresh individual logs:
+LLVM3265/4525, RenderDoc210/345, MAME, ScummVM and kernel. Available RAM
+about37GiB and PSI negligible. Main build.log may be quiet while
 heavy packages compile; watch detailed activity and actual pressure. Remain
 actively supervising and report completion/stalls. No off-session notifier.
