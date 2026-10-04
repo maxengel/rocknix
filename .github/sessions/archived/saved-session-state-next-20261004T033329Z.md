@@ -1,6 +1,6 @@
 # Saved Session State
 
-> Saved 2026-10-04T03:33:29.135218+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T033329Z.md`.
+> Saved 2026-10-04T03:14:57.285661+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T031457Z.md`.
 
 ## Start here
 
@@ -62,11 +62,7 @@ The316/0 result is not a claim of support for unshipped Rasteratops state.
   Later wordmark-system/docs commits follow; read git HEAD for the current hash.
 - Primary: `/workspace/repos/rocknix`, `next`. Completed integration mappings:
   feature092e4ae1c5 → next61f3c27146; feature8d26722b91 → nexta9af618398.
-  Later mappings: feature8e990419075b51b648e074fefb0b8e5daf2f1d9f →
-  nextbd3fcfa2281ebaf158f1b98790b12ee4455014b1;
-  featurec12c0e1b3075d5a92785e108a7ecc1643d46942c →
-  nextb137d8c37323abbf07788af8bf8dbd495a31e9c9.
-  All four batches were pushed normally and remote hashes verified.
+  Both branches were pushed normally and their remote hashes verified.
   Do not reapply those commits. Integrate later exact #409 commits by cherry-pick;
   never merge this feature branch wholesale (unrelated historical archives).
   Normal pushes use `git@github-blitterbot:pixelelated/distribution.git`.
@@ -97,7 +93,7 @@ already lowercase; public metadata did not retain an old project name.
 
 ## Next work, in milestone order
 
-1. **M7.P3 #409: source and input freeze complete; build after swap reclaim.**
+1. **M7.P3 #409: source integration complete; freeze/build after swap reclaim.**
    The owner supplied a six-treatment RGB555 wordmark system after the first
    monochrome source transition. Saved specification and generator are under
    `docs/pixelelated/art/wordmark-system.md` and `source/generate.py`. D-WORKFLOW-146.
@@ -111,46 +107,27 @@ already lowercase; public metadata did not retain an old project name.
    patches, exact archive, identity guard and package checks pass. Receipts:
    `docs/qa-logs/2026-10-04-pixelelated-ocean/`.
    Animation has no specified sequence; do not invent a required animation gate.
-   Final source integration and the separate freeze are complete.
-   At03:30:29UTC `tools/build-preflight` still reported1.7TiB free and
-   45912MB available RAM, but only1MB swap free of8191MB.
+   First verify
+   final source integration and recheck `tools/build-preflight`: at03:12UTC
+   there was1.7TiB free and45GiB available RAM, but8GiB swap was full.
    `sudo -n` requires interactive authentication. An asynchronous owner question
    asks them to run `sudo swapoff /swap.img && sudo swapon /swap.img` and reply
    done. It has not been answered; no memory action was taken. Do not treat
    elapsed time as permission or a successful preflight.
-   Created `/workspace/repos/rocknix.worktrees/m7-pixelelated` on
-   `build/m7-pixelelated`, frozen atb137d8c37323abbf07788af8bf8dbd495a31e9c9.
-   Do not advance it for docs. It is clean; the new
-   `build.pixelelated-GENERIC_X64.x86_64` root does not exist.
-   No warm root was copied; replacement02 remains untouched.
-2. Frozen inputs and launcher are ready in
-   `/workspace/tmp/pixelelated-m7-cold-01/`: `inputs.json`, `inputs.sha256`,
-   `container.txt`, and mode0500 `build.sh`. Manifest SHA256
-   c83828fa6013666811b044fb0842b3f493a6237366206a26bea3c645d041ca79;
-   launcher SHA256b1ded574b9fc0ae5b01190a32e671b40ac2d6206c2865378349a0664219b4016.
-   Reverified6,547 regular input files/180 symlinks,1,608 recipes.
-   Source cache `/workspace/cache/rocknix-sources`, main.git mount
-   `/workspace/repos/rocknix/.git`, global24/WebKit4. From the frozen tree,
-   after a passing memory preflight, launch:
-   `tools/watch-build --docker --interval 5 --stall-min 5 -- /workspace/tmp/pixelelated-m7-cold-01/build.sh`.
-   Capture the outer result. Owner `run.path` will locate `build.status`,
-   `build.log`, detailed activity and `build.rc`; poll<=60s and announce
-   terminal/stall events. There is no `run.path`, build.start or inner.rc yet:
-   **the cold build has never been launched**. Do not run old RASTERATOPS
-   launchers. Preparation receipts and exact scripts are in
-   `docs/qa-logs/2026-10-04-pixelelated-build-preparation/`.
+   Create a separate `build/m7-pixelelated` worktree from qualified next;
+   preserve frozen replacement02. Build root must be
+   `build.pixelelated-GENERIC_X64.x86_64`, without copying a warm root.
+2. Record new distro/ES/splash/container/source input hashes. The earlier
+   `/workspace/tmp/rasteratops-m7-cold-01/build.sh` illustrates the mounts and
+   freeze checks, **not a launcher to rerun unchanged**. It targets the old
+   worktree/root. Existing source cache `/workspace/cache/rocknix-sources`,
+   main.git mount `/workspace/repos/rocknix/.git`, global24/WebKit4.
+   Normal `make docker-GENERIC_X64` enters `tools/watch-build`; use a fresh
+   run owner, logs, explicit outer result and verified notification delivery.
 3. Store and verify the new artifact with `tools/rasteratops-candidate-store`
    (put/verify; it does not freeze inputs). Run clean/default/required opt-ins,
    actual ROCKNIX RC2 upgrade, migration/provider/pair/archive, visual EN/FR,
    time-to-play/memory and installed identity/licence/source checks on new bytes.
-   Prepared first-stage QA owner `/workspace/tmp/pixelelated-m7-qa-01` holds
-   `qualify.sh`, `verify-inputs.py`, `check-payload.py`, `harness.sha256` and
-   an empty `artifacts/`. Syntax checks only; never executed against a guest.
-   After candidate-store put/verify, run from the frozen tree:
-   `tools/watch-build --interval 5 --stall-min 5 --activity-dir /workspace/tmp/pixelelated-m7-qa-01/artifacts --recursive-activity -- /workspace/tmp/pixelelated-m7-qa-01/qualify.sh <verified-bundle>`.
-   This runs15 defaults, actual RC2 upgrade, clean/upgrade installed identity,
-   policy/scripts/Ocean bytes. It does not replace required later targeted
-   qualification. Capture outerrc and supervise as above.
    Keep `-from-ROCKNIX` on the adoption tar; RC2 init greps its filename.
    Retained helper names/watcher env vars are internal interfaces, not branding.
 4. Complete remaining P3 brand/secret/localisation/source/licence/readiness
@@ -163,9 +140,6 @@ already lowercase; public metadata did not retain an old project name.
    H700 DDR4/RG35XX SP image follow qualification and existing action gates.
    GENERIC_X64 is not a handheld image. No release publication is authorized.
 
-Live M7/#409/#383/#361/#386 were updated and read back at03:28UTC:
-Ocean integration, current proxy and input freeze complete; memory reset then
-build/qualification remains current. Readbacks are in the preparation receipts.
 Current M7 title is **M7: pixelelated 0.0.1**. Body owns order; M7.Pn is stable,
 not inferred from issue numbers. Open current titles/criteria were reconciled;
 closed titles and historical receipts were not rewritten. The rename plan and
@@ -178,12 +152,8 @@ pass; coupled submodules unchanged. Evidence:2026-10-04-proxy-preflight.
 D-WORKFLOW-147 records SPIR-V parent coupling. Complete freshness exits0.
 The full initial RC preflight failed eight still-open bugs (#320/#327/#352/
 #353/#366/#384/#391/#392) plus missing explicit code trace on closed#371.
-#371 now has the missing trace/evidence comment. The final frozen-tree
-RC diagnostic in2026-10-04-pixelelated-build-preparation exits1 only on
-those eight open bugs: packages and23 already-written code traces pass;
-ancestry uses last-fetched refs explicitly (--no-fetch). P4 audit remains
-due. Other criteria must be reconciled against actual proof/new image,
-never waived to turn the gate green.
+#371 now has the missing trace/evidence comment. Other criteria must be
+reconciled against actual proof/new image, never waived to turn the gate green.
 
 ## Preserved historical qualification and remaining inputs
 
@@ -216,7 +186,7 @@ retain their artifact-scoped verdicts. Do not reopen merely for the rename.
 
 ## Fresh-context proof and corrections
 
-The earlier context-free resume agent verified source/pins, actual regression counts and
+A context-free resume agent verified source/pins, actual regression counts and
 rc0, absent job PIDs, frozen replacement02 and live M7 order. It did not rehash
 the4GB image payloads. Its final SSH remote-ref read was sandbox-blocked, so
 remote publication relies on the earlier successful push/readback receipts.
@@ -229,5 +199,3 @@ watcher1480689, rc0, and the active session reported it. Both have exited.
 The planned cold build uses a fresh run-owned5s/5min monitor; remain actively
 supervising at<=60s and announce terminal events immediately. Off-session
 delivery remains unavailable.
-
-The new frozen-input/prepared-launcher handoff awaits its fresh-context proof.
