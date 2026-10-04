@@ -1,0 +1,62 @@
+{
+  "previous": "5866cd9ba784c13771a99c52dd6b6f2acc546842",
+  "head": "ec60fdd0f6522790d9d1d4d20add397bbc4da945",
+  "archive_sha256": "393ffcec34b223fa4315622db7e68a8778a87e1dff2d3aaf289df857fcb7ff2f",
+  "commits": [
+    {
+      "sha": "b98a9baf50f6ea31b9a26ae0d98afaeeaf9a37d8",
+      "subject": "android: remove the manual Refresh games button, the cache refreshes itself on launch and in the background (#201)"
+    },
+    {
+      "sha": "a227a6662a58becb5fbd6359e4c62774473ec3c5",
+      "subject": "chore: bump version to 2.0.0-alpha2"
+    },
+    {
+      "sha": "e8c048dfdc6c912bcc5c976b6a96322afeb16a3c",
+      "subject": "Keep ARMSX recent games without a last-played stamp (#202)"
+    },
+    {
+      "sha": "ec60fdd0f6522790d9d1d4d20add397bbc4da945",
+      "subject": "Add SeedlessDS support via broadcast host override (#203)"
+    }
+  ],
+  "changed_files": [
+    "README.md",
+    "app/build.gradle.kts",
+    "app/src/main/AndroidManifest.xml",
+    "app/src/main/java/com/raofflineproxy/PrefsConstants.kt",
+    "app/src/main/java/com/raofflineproxy/proxy/SmartCache.kt",
+    "app/src/main/java/com/raofflineproxy/ui/CachedGamesFragment.kt",
+    "app/src/main/java/com/raofflineproxy/ui/CachedGamesHeaderAdapter.kt",
+    "app/src/main/java/com/raofflineproxy/ui/Emulator.kt",
+    "app/src/main/java/com/raofflineproxy/ui/MainViewModel.kt",
+    "app/src/main/res/drawable/ic_refresh.xml",
+    "app/src/main/res/layout/item_cached_games_header.xml",
+    "app/src/main/res/values/strings.xml",
+    "docs/.vitepress/theme/components/SupportForm.vue",
+    "docs/.vitepress/theme/style.css",
+    "docs/caching-games.md",
+    "docs/cfg-patching.md",
+    "docs/installation.md",
+    "docs/introduction.md",
+    "docs/platforms.md",
+    "docs/settings.md",
+    "linux/allium/app/RAOfflineProxy.pak/common.sh",
+    "linux/allium/build_bundle.sh",
+    "linux/darkos/build_bundle.sh",
+    "linux/knulli/build_bundle.sh",
+    "linux/muos/build_bundle.sh",
+    "linux/onion/app/RAOfflineProxy/common.sh",
+    "linux/onion/build_bundle.sh",
+    "linux/raofflineproxy/config.py",
+    "linux/rocknix/build_bundle.sh",
+    "linux/spruce/app/RAOfflineProxy/common.sh",
+    "linux/spruce/build_bundle.sh",
+    "linux/tests/e2e/test_fake_ra.py"
+  ],
+  "packaged_service_delta": "Only config.APP_VERSION alpha1 to alpha2; all other Python module bytes unchanged after identical fork patches",
+  "submodules": {
+    "libchdr": "8e7b8bd32bc676b7e5c6b42fe7d2daca986c4a0d",
+    "rcheevos": "1433173220a7eaede6a9ed7a18e94117be1821e0"
+  }
+}
