@@ -1,5 +1,17 @@
 # pixelelated wordmark
 
+The [interim wordmark system](wordmark-system.md) defines **Tiny5 Duo LCD**,
+six RGB555 treatments (Ocean Bands default), transparent cell gaps, live-text
+and outlined SVG masters, and monochrome fallbacks. Start there for new
+boot, shutdown, interface or animation work. D-WORKFLOW-146, #409.
+
+Reusable assets live in `source/`, `wordmark/` and `raster/`. Background,
+small-size and static screen proofs are under `proofs/`; they are host asset
+proofs, not installed frames. The font binary is intentionally absent here.
+The current product pins still use the monochrome asset below; integrate
+the new treatment consistently across splash/ES/theme before freezing the
+next image and qualify those changed bytes.
+
 The next RC uses only the lowercase wordmark in **Tiny5 Duo LCD**, selected
 by the maintainer (D-WORKFLOW-145). No character icon is included.
 

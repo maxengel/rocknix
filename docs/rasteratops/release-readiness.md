@@ -8,7 +8,8 @@ is unchanged. The required adoption flow is **ROCKNIX → pixelelated**;
 there are no fielded /Rasteratops systems requiring an additional gate.
 
 The [M7 milestone body](https://github.com/pixelelated/distribution/milestone/7)
-is the binding running order. **Current: finish #409 source checks, then
+is the binding running order. **The rename source checks are complete.
+Current: integrate #409's new Ocean Bands LCD asset treatment, then
 freeze/build new pixelelated bytes and qualify clean install plus ROCKNIX
 upgrade, followed by remaining P3 release checks and the approved P4 fixes
 audit.** See `docs/pixelelated/rename-plan.md` for the classified inventory.
