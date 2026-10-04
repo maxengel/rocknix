@@ -11,7 +11,8 @@ import sys
 import tempfile
 
 HELPER = Path('/usr/local/sbin/pixelelated-reclaim-swap')
-POLICY = Path('/etc/sudoers.d/pixelelated-reclaim-swap')
+POLICY = Path('/etc/sudoers.d/zz-pixelelated-reclaim-swap')
+LEGACY_POLICY = Path('/etc/sudoers.d/pixelelated-reclaim-swap')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
 LOCK = Path('/run/pixelelated-reclaim-swap.lock')
 
@@ -63,6 +64,21 @@ def assert_policy_directory_included():
         raise RuntimeError('expected direct /etc/sudoers.d include; administrator review required')
 
 
+def assert_policy_order():
+    # sudo-rs uses the last matching rule, not the most specific. The normal
+    # serval fleet policy must precede this one-command exception.
+    lines = [line.strip() for line in Path('/etc/sudoers').read_text().splitlines()
+             if line.strip() and (not line.lstrip().startswith('#')
+                                  or line.lstrip().startswith(('#include ', '#includedir ')))]
+    if not lines or lines[-1] not in ('@includedir /etc/sudoers.d', '#includedir /etc/sudoers.d'):
+        raise RuntimeError('policy include must be the final directive; administrator review required')
+    later = [path.name for path in POLICY.parent.iterdir()
+             if '.' not in path.name and not path.name.endswith('~')
+             and os.fsencode(path.name) > os.fsencode(POLICY.name)]
+    if later:
+        raise RuntimeError('later sudoers entries could override the fixed grant: ' + ', '.join(sorted(later)))
+
+
 def install(data):
     if os.geteuid() != 0:
         raise RuntimeError('administrator authentication is required for installation')
@@ -73,13 +89,17 @@ def install(data):
     for path in [Path('/'), Path('/usr'), Path('/usr/local'), HELPER.parent,
                  Path('/etc'), POLICY.parent]:
         secure(path, directory=True)
-    for path in [HELPER, POLICY]:
+    for path in [HELPER, POLICY, LEGACY_POLICY]:
         if path.exists() or path.is_symlink():
             secure(path)
     validate(Path('/etc/sudoers'))
     assert_policy_directory_included()
+    assert_policy_order()
     old_helper = HELPER.read_bytes() if HELPER.exists() else None
     old_policy = POLICY.read_bytes() if POLICY.exists() else None
+    old_legacy = LEGACY_POLICY.read_bytes() if LEGACY_POLICY.exists() else None
+    if old_legacy is not None and (old_helper is None or old_legacy != policy(old_helper)):
+        raise RuntimeError('old helper policy was edited; administrator review required')
     new_helper = None
     new_policy = None
     changed = False
@@ -92,6 +112,8 @@ def install(data):
         new_helper.replace(HELPER)
         changed = True
         new_policy.replace(POLICY)
+        if old_legacy is not None:
+            LEGACY_POLICY.unlink()
         validate(Path('/etc/sudoers'))
         for path, expected, mode in [(HELPER, data, 0o755), (POLICY, policy(data), 0o440)]:
             secure(path)
@@ -101,7 +123,8 @@ def install(data):
     except BaseException as cause:
         if changed:
             failures = []
-            for path, old, mode in [(POLICY, old_policy, 0o440), (HELPER, old_helper, 0o755)]:
+            for path, old, mode in [(POLICY, old_policy, 0o440), (HELPER, old_helper, 0o755),
+                                    (LEGACY_POLICY, old_legacy, 0o440)]:
                 rollback = None
                 try:
                     if old is None:

@@ -1,0 +1,20 @@
+2026-10-04 about05:05UTC: owner installed staged8c448 helper successfully.
+Checksums all OK. visudo parsed original/staged/full policy; installed
+helper root:0 mode755 sha256:acfb7936c7271cd642a628a66b9a50d2b70c765eac9dd43bca60a67a7fec0547
+policy root:0 mode440 sha256:583685083f8cbeed1fab20d5ae4442c5cc164f4bbcd75d4632ee6550377f98e9
+No swap operation was run during install.
+
+Independent actual host readback verified both types/owners/modes and helper
+hash. Root0440 policy bytes were not independently user-readable; owner's
+installer receipt covers that hash. Intended sudo -n -- helper --reclaim
+returned1: interactive authentication is required. No helper invocation ran.
+Actual sudo -n -l, normalized in order (raw tag format triggers the credential-line guard):
+    all target users/groups; all commands; authentication required
+    root; no environment grant; no password required; exact helper --reclaim
+    all target users; all commands; authentication required
+Actual included filenames: README, pixelelated-reclaim-swap, zz-fleet-hardening.
+Command-specific sudo -n -ll -- helper --reclaim exits0 and merely prints the
+command despite actual execution requiring a password; listing is not enough.
+The later password-required fleet rule overrides the initial placement.
+Swap remains active/full at priority-1; build stays running. Narrow-grant
+installation effectiveness is still pending, not reported PASS.

@@ -126,3 +126,24 @@ are graded above; response and original packet remain unchanged.
 
 Audit tracker: [#411](https://github.com/pixelelated/distribution/issues/411).
 Parent [#410](https://github.com/pixelelated/distribution/issues/410) retains host rollout.
+
+## Post-audit host installation — policy ordering correction
+
+The owner installed the reviewed bundle; exact helper bytes/root modes and
+installer policy checksum passed. The promised live permission check then
+failed: a later matching rule from zz-fleet-hardening required authentication.
+Sudo-rs's [version0.2.13 manual](https://raw.githubusercontent.com/trifectatechfoundation/sudo-rs/v0.2.13/docs/man/sudoers.5.md)
+states that the last matching rule wins, including a broader one. Actual
+sudo listing and failed command are retained in first-install-policy-order.txt.
+This is the pending installation criterion in410, not a sixth finding
+attributed to the completed external review. The original response is intact.
+
+Corrected installer uses zz-pixelelated-reclaim-swap, validates that the
+directory include is the final directive and no later active file can
+override it, and retires only an unchanged original helper policy. Failed
+installation restores all three owned files where possible. It never edits
+fleet policy or adds another allowed command. Helper bytes remain identical.
+37 tests PASS,37-test negative control fails2; new manifest policy-order-source-
+hashes.json binds this source revision. Original35-test receipts remain the
+reviewed pre-install version, not final corrected-installer proof. Another
+owner-authenticated installation and live grant check are pending.

@@ -371,6 +371,19 @@ exit 0
 
 
 class Installation(unittest.TestCase):
+    def test_rule_order_refuses_later_files_or_main_directives(self):
+        good = '@includedir /etc/sudoers.d\n# trailing comment\n'
+        entries = [Path('/etc/sudoers.d/zz-fleet-hardening'), Path('/etc/sudoers.d/README'),
+                   Path('/etc/sudoers.d/zzz-ignored.tmp'), Path('/etc/sudoers.d/zzz-ignored~')]
+        with patch.object(Path, 'read_text', return_value=good), patch.object(Path, 'iterdir', return_value=entries):
+            installer.assert_policy_order()
+        with patch.object(Path, 'read_text', return_value=good), patch.object(Path, 'iterdir', return_value=entries + [Path('/etc/sudoers.d/zzz-later')]):
+            with self.assertRaisesRegex(RuntimeError, 'later sudoers'):
+                installer.assert_policy_order()
+        with patch.object(Path, 'read_text', return_value=good + 'max ALL=(ALL) ALL\n'):
+            with self.assertRaisesRegex(RuntimeError, 'final directive'):
+                installer.assert_policy_order()
+
     def test_policy_directory_must_be_included(self):
         for text in ['@includedir /etc/sudoers.d\n', '#includedir /etc/sudoers.d\n']:
             with patch.object(Path, 'read_text', return_value=text):
@@ -416,12 +429,16 @@ class Installation(unittest.TestCase):
             helper_path, policy_path = Path(directory) / 'helper', Path(directory) / 'policy'
             helper_path.write_bytes(b'old-helper'); helper_path.chmod(0o755)
             policy_path.write_bytes(b'old-policy'); policy_path.chmod(0o440)
+            legacy_path = Path(directory) / 'legacy'
+            legacy_path.write_bytes(installer.policy(b'old-helper'))
             stack.enter_context(patch.object(installer, 'HELPER', helper_path))
             stack.enter_context(patch.object(installer, 'POLICY', policy_path))
+            stack.enter_context(patch.object(installer, 'LEGACY_POLICY', legacy_path))
             stack.enter_context(patch.object(installer.os, 'geteuid', return_value=0))
             stack.enter_context(patch.object(installer.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)))
             stack.enter_context(patch.object(Path, 'read_text', return_value='serval\n'))
             stack.enter_context(patch.object(installer, 'assert_policy_directory_included'))
+            stack.enter_context(patch.object(installer, 'assert_policy_order'))
             stack.enter_context(patch.object(installer, 'secure'))
             stack.enter_context(patch.object(installer.os, 'fchown'))
             stack.enter_context(patch.object(installer, 'validate', side_effect=[None, None, RuntimeError('full policy rejected'), None]))
@@ -429,7 +446,31 @@ class Installation(unittest.TestCase):
                 installer.install(b'new-helper')
             self.assertEqual(helper_path.read_bytes(), b'old-helper')
             self.assertEqual(policy_path.read_bytes(), b'old-policy')
-            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['helper', 'policy'])
+            self.assertEqual(legacy_path.read_bytes(), installer.policy(b'old-helper'))
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['helper', 'legacy', 'policy'])
+
+    def test_migrate_only_unchanged_legacy_policy(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            helper_path, policy_path, legacy_path = [Path(directory) / name for name in ('helper', 'policy', 'legacy')]
+            helper_path.write_bytes(b'old-helper')
+            legacy_path.write_bytes(b'locally edited policy')
+            for name, value in [('HELPER', helper_path), ('POLICY', policy_path), ('LEGACY_POLICY', legacy_path)]:
+                stack.enter_context(patch.object(installer, name, value))
+            stack.enter_context(patch.object(installer.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(installer.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)))
+            stack.enter_context(patch.object(Path, 'read_text', return_value='serval\n'))
+            for name in ('secure', 'validate', 'assert_policy_directory_included', 'assert_policy_order'):
+                stack.enter_context(patch.object(installer, name))
+            stack.enter_context(patch.object(installer.os, 'fchown'))
+            with self.assertRaisesRegex(RuntimeError, 'old helper policy was edited'):
+                installer.install(b'new-helper')
+            self.assertFalse(policy_path.exists())
+            self.assertEqual(helper_path.read_bytes(), b'old-helper')
+            legacy_path.write_bytes(installer.policy(b'old-helper'))
+            installer.install(b'new-helper')
+            self.assertEqual(helper_path.read_bytes(), b'new-helper')
+            self.assertEqual(policy_path.read_bytes(), installer.policy(b'new-helper'))
+            self.assertFalse(legacy_path.exists())
 
     def test_failed_policy_restore_still_restores_helper_and_cleans_temps(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
@@ -437,10 +478,12 @@ class Installation(unittest.TestCase):
             helper_path.write_bytes(b'old-helper'); policy_path.write_bytes(b'old-policy')
             stack.enter_context(patch.object(installer, 'HELPER', helper_path))
             stack.enter_context(patch.object(installer, 'POLICY', policy_path))
+            stack.enter_context(patch.object(installer, 'LEGACY_POLICY', Path(directory) / 'legacy'))
             stack.enter_context(patch.object(installer.os, 'geteuid', return_value=0))
             stack.enter_context(patch.object(installer.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)))
             stack.enter_context(patch.object(Path, 'read_text', return_value='serval\n'))
             stack.enter_context(patch.object(installer, 'assert_policy_directory_included'))
+            stack.enter_context(patch.object(installer, 'assert_policy_order'))
             stack.enter_context(patch.object(installer, 'secure'))
             stack.enter_context(patch.object(installer.os, 'fchown'))
             validate = stack.enter_context(patch.object(installer, 'validate', side_effect=[None, None, RuntimeError('full policy rejected'), None]))
