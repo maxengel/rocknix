@@ -531,7 +531,7 @@ case "$1" in
 
         # Where the games actually are, when the configured root holds nothing
         # of ours (fork #352, D-CLOUD-156): the cloud root's Content folder --
-        # the saves folder's parent, /Rasteratops/Content by default -- is
+        # the saves folder's parent, /pixelelated/Content by default -- is
         # looked at for a ROMs or BIOS folder, and named, so the interface can
         # offer it before it asks the player to choose.
         FOUND=""
@@ -727,7 +727,7 @@ case "$1" in
         # The folder is settled before anything is made
         # (cloud_migrate_layout --settle, D-CLOUD-169). A fresh install, or
         # a carried /GAMES, beside a fleet still on the earlier folder joins
-        # it: seeding an empty /Rasteratops beside the player's saves left a
+        # it: seeding an empty /pixelelated beside the player's saves left a
         # new device reading a folder with none of them in it (the
         # mixed-installation test, D-CLOUD-158), and seeding the carried
         # /GAMES put a README there that every later check read as saves. A
@@ -761,8 +761,8 @@ case "$1" in
             log_message "Seeding: a folder in ${SYNC_CONF} is not in a form the sync reads; nothing was made"
             exit 1
         fi
-        SAVES="${SAVES_REMOTE:-/Rasteratops/Saves}"
-        BACKUPS="${SETTINGS_REMOTE:-/Rasteratops/Backups}"
+        SAVES="${SAVES_REMOTE:-/pixelelated/Saves}"
+        BACKUPS="${SETTINGS_REMOTE:-/pixelelated/Backups}"
         # An empty CONTENT_REMOTE is not a missing one: it is
         # --use-content-root's "the cloud's root", which is where the
         # content scripts put ROMs/ and BIOS/ (ROOT="<remote>:"). Only a
@@ -770,7 +770,7 @@ case "$1" in
         if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; then
             CONTENT="${CONTENT_REMOTE%/}"
         else
-            CONTENT="/Rasteratops/Content"
+            CONTENT="/pixelelated/Content"
         fi
 
         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \

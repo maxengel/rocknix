@@ -185,7 +185,7 @@ Phase 1 (after any required Phase 0).
 ## Future roster updates
 
 Use the installed `definitive` profile: Claude, Gemini, GPT, Kimi and Muse.
-Rasteratops takes future fifth-seat changes through reviewed imports from the
+pixelelated takes future fifth-seat changes through reviewed imports from the
 other projects (D-WORKFLOW-135). Importing a candidate's tooling does not select
 it for this fork. An adopted replacement records the decision and brings its
 exact model, provider, effort, capacity and identity checks together with tests

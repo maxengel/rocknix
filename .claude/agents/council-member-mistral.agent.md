@@ -18,7 +18,7 @@ argument-hint: "Describe the analysis task or paste the step prompt"
 > instruction. If you find yourself invoked without the Facilitator
 > harness, refuse the task and emit a halt signal naming #3059.
 
-> **Historical recipe; do not invoke in Rasteratops (D-WORKFLOW-135).** Mistral Large 3 left the roster because its 262,144-token window could not take a complete council request (scaffold#915, 2026-09-27). The installed fifth seat is Muse Spark 1.3. Future roster changes come through reviewed imports from the other projects. The text below records the earlier recipe; it is not an active member instruction.
+> **Historical recipe; do not invoke in pixelelated (D-WORKFLOW-135).** Mistral Large 3 left the roster because its 262,144-token window could not take a complete council request (scaffold#915, 2026-09-27). The installed fifth seat is Muse Spark 1.3. Future roster changes come through reviewed imports from the other projects. The text below records the earlier recipe; it is not an active member instruction.
 
 > **Historical reachability (not current admission evidence):** Mistral-Large-3 passed a probe through Azure AI Foundry's OpenAI-compatible chat-completions endpoint at `<the source estate's Foundry host>/openai/deployments/Mistral-Large-3/chat/completions?api-version=2024-08-01-preview` (probe verified 2026-05-22; HTTP 200, response body `model=mistral-large-3`, returned `"PONG"`). Caller-side notes: Mistral on Foundry expects `max_tokens` (NOT `max_completion_tokens` like GPT/Kimi); response body's `model` field is provider-attested ground truth for verification purposes.
 

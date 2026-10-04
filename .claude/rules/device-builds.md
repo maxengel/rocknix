@@ -99,7 +99,7 @@ artifacts. Those are not cleaned by a package version bump, so an incremental
 build can fail in ways a clean build never does. Two things to do before
 rebuilding:
 
-1. **Verify the pinned build container.** `Makefile` names the Rasteratops
+1. **Verify the pinned build container.** `Makefile` names the pixelelated
    mirror by digest. `make docker-image-pull` retrieves that exact image; record
    the digest actually consumed in the build inputs. A newer host-tool
    requirement needs an explicit pin update, not an unrecorded latest tag.

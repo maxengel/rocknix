@@ -25,6 +25,10 @@ belongs. Deeper background: `es-native-ui.md` (the building blocks),
 Upstream documents **none** of this: `THEMES.md` covers only repainting menus.
 The Batocera wiki contributes the interaction rules in the last section.
 
+The project name **pixelelated** always stays lowercase, including labels and
+headings otherwise written in capitals (D-WORKFLOW-144). Do not uppercase the
+brand through a component formatter.
+
 ## Rows
 
 Seven builders. Pick by what the row *is*, not by how it looks.

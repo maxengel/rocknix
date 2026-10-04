@@ -15,7 +15,7 @@ on:
         required: true
         default: "ghcr.io/rocknix/rocknix-build@sha256:988c0ba586263caeba4be4c03bd16eee055c9d066657951e320087bb8226ee39"
       tag:
-        description: "Tag under ghcr.io/rasteratops/build"
+        description: "Tag under ghcr.io/pixelelated/build"
         required: true
         default: "20260925-988c0ba5"
 
@@ -41,9 +41,9 @@ jobs:
           set -euo pipefail
           case "$SRC" in *@sha256:*) ;; *) echo "source must be pinned by digest"; exit 2;; esac
           want="${SRC##*@}"
-          skopeo copy --all --preserve-digests "docker://$SRC" "docker://ghcr.io/rasteratops/build:$TAG"
-          got="sha256:$(skopeo inspect --raw "docker://ghcr.io/rasteratops/build:$TAG" | sha256sum | cut -d' ' -f1)"
+          skopeo copy --all --preserve-digests "docker://$SRC" "docker://ghcr.io/pixelelated/build:$TAG"
+          got="sha256:$(skopeo inspect --raw "docker://ghcr.io/pixelelated/build:$TAG" | sha256sum | cut -d' ' -f1)"
           echo "source digest: $want"
           echo "mirror digest: $got"
           [ "$want" = "$got" ] || { echo "DIGEST MISMATCH: the mirror is not the source"; exit 1; }
-          echo "pin: ghcr.io/rasteratops/build@$got" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "pin: ghcr.io/pixelelated/build@$got" | tee -a "$GITHUB_STEP_SUMMARY"

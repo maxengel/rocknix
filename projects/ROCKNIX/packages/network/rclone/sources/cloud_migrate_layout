@@ -54,9 +54,9 @@
 . /etc/profile 2>/dev/null
 
 SYNC_CONF="/storage/.config/cloud_sync.conf"
-NEW_SAVES="/Rasteratops/Saves"
-NEW_BACKUPS="/Rasteratops/Backups"
-NEW_CONTENT="/Rasteratops/Content"
+NEW_SAVES="/pixelelated/Saves"
+NEW_BACKUPS="/pixelelated/Backups"
+NEW_CONTENT="/pixelelated/Content"
 NEW_ROOT="${NEW_SAVES%/*}"   # the folder the tiers move into; named by the plan line below
 # Every saves folder this project ever shipped as its default. A device whose
 # saves folder is one of these is on a layout it never chose, so the move is
@@ -119,7 +119,7 @@ backup_pointer_for() { # <remote> <configured backups> <destination default>
     local remote="$1" backups="$2" target="$3" known=0
     NEXT_BACKUPS="${backups}"
     case "${backups%/}" in
-        ""|/GAMES/backup|/ROCKNIX/Backups|/Rasteratops/Backups) known=1 ;;
+        ""|/GAMES/backup|/ROCKNIX/Backups|/pixelelated/Backups) known=1 ;;
     esac
     [ "${known}" -eq 1 ] || return 0
     if [ -n "${backups}" ]; then
@@ -807,7 +807,7 @@ layout_state() { # <remote> <saves> <backups> <content>
     # while its saves sit in /ROCKNIX/Saves, made by its sibling on the
     # fork's earlier build (the Retroid Pocket Nova, 2026-10-01): read from
     # the conf alone it is "superseded, empty" and would be offered a fresh
-    # /Rasteratops beside its real saves. So every default this project
+    # /pixelelated beside its real saves. So every default this project
     # once shipped is looked at, and the one holding files is the source
     # the move is offered from (SOURCE=), the configured one or not.
     local source=""
@@ -1396,7 +1396,7 @@ migration_step_1() {
         # what moves and where): the tiers holding files, in move order --
         # backups, saves, discarded, content -- or none when only a setting
         # would change. The row named /ROCKNIX on a build whose folder is
-        # /Rasteratops until this line existed (2026-10-01).
+        # /pixelelated until this line existed (2026-10-01).
         echo ">>> plan ${plan:-none} ${NEW_ROOT}"
         say ""
         say "Nothing has been changed. Run with --apply to do it."

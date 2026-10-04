@@ -93,7 +93,7 @@ that span files.
 
 - `to-change-cloud-folder.steps` and `confirm-cloud-folder.steps` reach the
   CLOUD FOLDER editor and press OK on the current value; on MinIO, where
-  `/Rasteratops/Saves` is not a legal bucket name, that is the refusal dialog
+  `/pixelelated/Saves` is not a legal bucket name, that is the refusal dialog
   (#78). The walk takes **seven** downs since CHECK CONNECTION joined CLOUD
   STORAGE SETUP above CHANGE CLOUD FOLDER; with six it ran the connection
   check instead and sat on its dialog (2026-09-11).

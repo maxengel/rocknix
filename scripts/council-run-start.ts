@@ -144,17 +144,17 @@ async function main(): Promise<number> {
     resolveRunArtifact(args.runDir, "verification/seal-key.local");
     resolveRunArtifact(args.runDir, "verification/anchor-receipt.json");
     const remoteUrl = args.noPush ? null : git(["remote", "get-url", args.remote]);
-    // rasteratops (D-WORKFLOW-088): a live anchor lands on the fork's own repository,
+    // pixelelated (D-WORKFLOW-144): a live anchor lands on the fork's own repository,
     // over the box's ssh key or https. The push and the ls-remote read-back below are
     // the receipt; no write preflight, custody file or token is involved.
     if (
       remoteUrl !== null &&
-      !/^(https:\/\/github\.com\/rasteratops\/|git@github(?:\.com|-[a-z0-9-]+):rasteratops\/)[a-zA-Z0-9_.-]+(?:\.git)?$/.test(
+      !/^(https:\/\/github\.com\/pixelelated\/|git@github(?:\.com|-[a-z0-9-]+):pixelelated\/)[a-zA-Z0-9_.-]+(?:\.git)?$/.test(
         remoteUrl
       )
     )
       throw new Error(
-        "[FAIL remote_scope] live anchors require the fork's own repository (rasteratops on GitHub) as the named remote"
+        "[FAIL remote_scope] live anchors require the fork's own repository (pixelelated on GitHub) as the named remote"
       );
     const machineEnv =
       remoteUrl !== null ? { ...process.env, GIT_TERMINAL_PROMPT: "0" } : process.env;

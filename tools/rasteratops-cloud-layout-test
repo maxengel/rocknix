@@ -20,7 +20,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = Path('projects/ROCKNIX/packages/network/rclone/sources')
-NEW = '/Rasteratops'
+NEW = '/pixelelated'
 OLD = '/ROCKNIX'
 ARCHIVE = '2026_10_01-120000-QA-ROCKNIX_SETTINGS.tar.gz'
 DEVICE = 'QA-deadbeef01'
@@ -161,7 +161,7 @@ def archive_roundtrip(f):
     src = f.archive(ARCHIVE, local=True)
     digest = hashlib.sha256(src.read_bytes()).hexdigest()
     r = f.run('cloud_backup', '--system-only', '--yes')
-    sent = f.path/'cloud/Rasteratops/Backups'/DEVICE/ARCHIVE
+    sent = f.path/'cloud/pixelelated/Backups'/DEVICE/ARCHIVE
     require(r.returncode == 0 and sent.exists(), f'production writer rc={r.returncode}; no per-device archive: {r.stdout[-400:]}')
     require(hashlib.sha256(sent.read_bytes()).hexdigest() == digest, 'writer changed archive bytes')
     facts = scan(f)
@@ -178,9 +178,9 @@ def archive_selection(f, kind, branded=False):
     folder = folders[kind]
     if kind == 'legacy': put(f.path/'ctl/legacy', folder+'\n')
     if kind == 'healed': put(f.path/'ctl/previous', folder+'\n')
-    f.archive(f'Rasteratops/Backups/{folder}/{ARCHIVE}')
+    f.archive(f'pixelelated/Backups/{folder}/{ARCHIVE}')
     if branded:
-        put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=RASTERATOPS\n')
+        put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=pixelelated\n')
     facts = scan(f)
     expected = '' if kind == 'foreign' else ARCHIVE
     require(facts.get('MINE') == expected, f'{kind} branded={branded}: {facts}')
@@ -313,7 +313,7 @@ def apply_other_source(f, custom=False):
     require(r.returncode==0, f'apply discovered source failed: {r.stdout[-600:]}')
     found=f.path/'cloud'/f.pointers()['SETTINGS_REMOTE'].lstrip('/')/DEVICE/ARCHIVE
     require(found.exists() and found.read_bytes()==original, 'discovered saves source abandoned the separate backup tier')
-    require((f.path/'cloud/Rasteratops/Saves/gb/A.srm').read_text()=='sentinel\n', 'save bytes lost')
+    require((f.path/'cloud/pixelelated/Saves/gb/A.srm').read_text()=='sentinel\n', 'save bytes lost')
     require(f.pointers()['CONTENT_REMOTE']=='', 'explicit root changed')
 
 
@@ -455,7 +455,7 @@ def collision(f):
     f.file(NEW+'/Content/ROMs/gb/A.gb','unrelated\n')
     r=f.run('cloud_migrate_layout','--apply')
     require(r.returncode != 0, 'unmarked content collision not refused')
-    require((f.path/'cloud/Rasteratops/Content/ROMs/gb/A.gb').read_text()=='unrelated\n', 'unrelated content overwritten')
+    require((f.path/'cloud/pixelelated/Content/ROMs/gb/A.gb').read_text()=='unrelated\n', 'unrelated content overwritten')
     # Record partially advanced pointers for the recovery proof, rather than assuming atomic migration.
 
 
@@ -489,20 +489,20 @@ def migration_retry(f, stage, operation='copy', legacy_record=False):
                 'Content/ROMs/gb/A.gb': 'game bytes\n'}
     for name, data in payloads.items():
         f.file(OLD+'/'+name, data)
-    pattern = r'^rcat qa:/Rasteratops/\.layout ' if stage == 'marker' else (
+    pattern = r'^rcat qa:/pixelelated/\.layout ' if stage == 'marker' else (
         r'^'+operation+r' qa:/ROCKNIX/'+re.escape(stage)+r'/? ')
     f.fault(pattern)
     first = f.run('cloud_migrate_layout', '--apply')
     require((f.path/'ctl/fault-fired').exists(), f'{stage} fault never reached production call')
     require(first.returncode != 0, f'{stage} failure reported success: {first.stdout[-400:]}')
-    require(not (f.path/'cloud/Rasteratops/.layout').exists(), 'incomplete migration published marker')
+    require(not (f.path/'cloud/pixelelated/.layout').exists(), 'incomplete migration published marker')
     if legacy_record:
         record=f.path/'storage/.config/cloud-layout-migration.json'
         data=json.loads(record.read_text())
         data['source'].pop('discarded',None)
         record.write_text(json.dumps(data)+'\n')
     for name, data in payloads.items():
-        copies = [f.path/'cloud'/root/name for root in ['ROCKNIX', 'Rasteratops']]
+        copies = [f.path/'cloud'/root/name for root in ['ROCKNIX', 'pixelelated']]
         require(any(p.exists() and p.read_text()==data for p in copies), f'{stage} lost {name} before retry')
     pending = f.run('cloud_migrate_layout', '--needs-step')
     state = f.run('cloud_scan', '--folder')
@@ -531,10 +531,10 @@ def migration_retry(f, stage, operation='copy', legacy_record=False):
         config.write('token = ' + json.dumps(refreshed) + '\n')
     second = f.run('cloud_migrate_layout', '--apply')
     require(second.returncode in (0,3), f'{stage} retry failed: {second.stdout[-500:]}')
-    require((f.path/'cloud/Rasteratops/.layout').is_file() and
-            (f.path/'cloud/Rasteratops/.layout').read_text()=='layout=2\n', f'{stage} retry did not commit marker')
+    require((f.path/'cloud/pixelelated/.layout').is_file() and
+            (f.path/'cloud/pixelelated/.layout').read_text()=='layout=2\n', f'{stage} retry did not commit marker')
     for name, data in payloads.items():
-        p = f.path/'cloud/Rasteratops'/name
+        p = f.path/'cloud/pixelelated'/name
         require(p.is_file() and p.read_text()==data, f'{stage} retry abandoned {name}')
         require(not (f.path/'cloud/ROCKNIX'/name).exists(), f'{stage} retry left duplicate {name}')
     before = cloud_hashes(f), f.pointers()
@@ -551,44 +551,36 @@ def migration_retry(f, stage, operation='copy', legacy_record=False):
     require(cloud_hashes(f)==before[0], 'following the completed migration changed cloud data')
 
 
-def predecessor_retry(f, predecessor, stage, interrupt_again=False):
+def predecessor_retry(f, stage, interrupt_again=False):
     """The old script creates the inherited state; never hand-draw its pointers."""
-    refs = {'RC2':'69e6039f8f', 'run101':'b2378d9c33'}
-    source = '/GAMES' if predecessor == 'RC2' else OLD+'/Saves'
-    backups = '/GAMES/backup' if predecessor == 'RC2' else OLD+'/Backups'
-    content = '/GAMES/Content' if predecessor == 'RC2' else OLD+'/Content'
+    predecessor, ref = 'RC2', '69e6039f8f'
+    source = '/GAMES'
+    backups = '/GAMES/backup'
+    content = '/GAMES/Content'
     f.conf(source, backups, content)
     payloads = {backups+'/QA/settings.tar.gz':'settings bytes\n',
                 source+'/gb/A.srm':'save bytes\n', content+'/ROMs/gb/A.gb':'game bytes\n'}
-    if predecessor == 'run101':
-        payloads[source+'-replaced/gb/A.srm'] = 'previous progress\n'
     for name,data in payloads.items(): f.file(name,data)
     tool = f.path/'repo/cloud_migrate_layout'
     candidate = tool.read_bytes()
-    old = subprocess.run(['git','-C',str(ROOT),'show',f'{refs[predecessor]}:{SOURCES}/cloud_migrate_layout'],
+    old = subprocess.run(['git','-C',str(ROOT),'show',f'{ref}:{SOURCES}/cloud_migrate_layout'],
                          capture_output=True,check=True).stdout
     tool.write_bytes(old)
     targets = {'backups':backups, 'saves':source, 'discarded':source+'-replaced', 'content':content}
     if stage != 'complete':
-        pattern = r'^rcat qa:/Rasteratops/\.layout ' if stage == 'marker' else r'^copy qa:'+re.escape(targets[stage])+r'/? '
+        pattern = r'^rcat qa:/pixelelated/\.layout ' if stage == 'marker' else r'^copy qa:'+re.escape(targets[stage])+r'/? '
         f.fault(pattern)
     first = f.run('cloud_migrate_layout','--apply')
     if stage != 'complete':
         require((f.path/'ctl/fault-fired').exists(), f'{predecessor}/{stage}: fault was not reached')
         (f.path/'ctl/faults').unlink()
-    (f.path/'predecessor.json').write_text(json.dumps(dict(ref=refs[predecessor],
+    (f.path/'predecessor.json').write_text(json.dumps(dict(ref=ref,
         script_sha256=hashlib.sha256(old).hexdigest(), rc=first.returncode,
         pointers=f.pointers(), cloud=cloud_hashes(f)),indent=2)+'\n')
     require(not (f.path/'storage/.config/cloud-layout-migration.json').exists(), 'old binary unexpectedly wrote new-format recovery state')
     tool.write_bytes(candidate)
-    if predecessor == 'run101' and stage in ('discarded','content'):
-        gate=f.run('cloud_migrate_layout','--needs-step')
-        state=f.run('cloud_scan','--folder')
-        require(gate.returncode==0 and state.returncode==0 and
-                'STATE=migration-pending' in (f.path/'storage/.cache/cloud_sync/scan/state').read_text(),
-                'inherited unfinished content is not offered through boot/transfer recovery')
     if interrupt_again:
-        f.fault(r'^rcat qa:/Rasteratops/\.layout ')
+        f.fault(r'^rcat qa:/pixelelated/\.layout ')
         failed=f.run('cloud_migrate_layout','--apply')
         require(failed.returncode != 0 and (f.path/'storage/.config/cloud-layout-migration.json').exists(),
                 'interrupted predecessor recovery lost its record')
@@ -597,12 +589,11 @@ def predecessor_retry(f, predecessor, stage, interrupt_again=False):
     require(retry.returncode in (0,3), f'{predecessor}/{stage}: upgrade retry failed: {retry.stdout[-500:]}')
     expected = {'Backups/QA/settings.tar.gz':'settings bytes\n','Saves/gb/A.srm':'save bytes\n',
                 'Content/ROMs/gb/A.gb':'game bytes\n'}
-    if predecessor == 'run101': expected['Saves-replaced/gb/A.srm']='previous progress\n'
     for name,data in expected.items():
-        path=f.path/'cloud/Rasteratops'/name
+        path=f.path/'cloud/pixelelated'/name
         require(path.is_file() and path.read_text()==data, f'{predecessor}/{stage}: upgrade left {name} behind')
-    require((f.path/'cloud/Rasteratops/.layout').read_text()=='layout=2\n'
-            if (f.path/'cloud/Rasteratops/.layout').exists() else False,
+    require((f.path/'cloud/pixelelated/.layout').read_text()=='layout=2\n'
+            if (f.path/'cloud/pixelelated/.layout').exists() else False,
             f'{predecessor}/{stage}: completed upgrade has no current marker')
     before=cloud_hashes(f),f.pointers()
     again=f.run('cloud_migrate_layout','--apply')
@@ -640,11 +631,11 @@ def predecessor_boundaries(f, kind):
         require((f.path/'cloud/ROCKNIX'/name).is_file() and
                 (f.path/'cloud/ROCKNIX'/name).read_text()==data,
                 'recovering the shelf moved an unselected live tier')
-        require(not (f.path/'cloud/Rasteratops'/name).exists(),
+        require(not (f.path/'cloud/pixelelated'/name).exists(),
                 'recovering the shelf copied an unselected live tier')
     require((f.path/'cloud'/((content or '')+'/ROMs/gb/A.gb').lstrip('/')).read_text()=='chosen content\n',
             'recovery moved independent content bytes')
-    values=[p.read_text() for p in (f.path/'cloud/Rasteratops').rglob('*.srm')]
+    values=[p.read_text() for p in (f.path/'cloud/pixelelated').rglob('*.srm')]
     require('current progress\n' in values and 'earlier progress\n' in values, 'recovery lost a progress version')
     if kind == 'fleet': require('foreign progress\n' in values, 'marked merge lost the other progress version')
 
@@ -657,7 +648,7 @@ def predecessor_content_only(f, empty=False):
     if not empty: f.file('/GAMES/Content/ROMs/gb/A.gb','inherited content\n')
     before=cloud_hashes(f)
     preview=f.run('cloud_migrate_layout','--check')
-    require(preview.returncode==0 and f'>>> plan {"none" if empty else "content"} /Rasteratops' in preview.stdout,
+    require(preview.returncode==0 and f'>>> plan {"none" if empty else "content"} /pixelelated' in preview.stdout,
             'current primary pointers planned unselected old live tiers')
     require(cloud_hashes(f)==before, 'preview changed cloud bytes')
     applied=f.run('cloud_migrate_layout','--apply')
@@ -668,7 +659,7 @@ def predecessor_content_only(f, empty=False):
             require(after.get(name)==digest, 'content-only recovery changed an unselected live tier')
     require(f.pointers()['CONTENT_REMOTE']==NEW+'/Content', 'content pointer did not advance')
     if not empty:
-        require((f.path/'cloud/Rasteratops/Content/ROMs/gb/A.gb').read_text()=='inherited content\n',
+        require((f.path/'cloud/pixelelated/Content/ROMs/gb/A.gb').read_text()=='inherited content\n',
                 'content-only recovery lost bytes')
 
 
@@ -696,11 +687,11 @@ def restricted_actor(f, actor):
 def marker_direct_actor(f, actor):
     f.file(NEW+'/.layout','layout=999\n')
     actor_case(f,'T04',actor,OLD+'/Saves',[OLD+'/Saves/gb/A.srm'],[],'')
-    require((f.path/'cloud/Rasteratops/.layout').read_text()=='layout=999\n', 'direct transfer rewrote a marker')
+    require((f.path/'cloud/pixelelated/.layout').read_text()=='layout=999\n', 'direct transfer rewrote a marker')
 
 
 def local_archive(f, suffix):
-    put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=RASTERATOPS\n')
+    put(f.path/'profile', 'export PATH=/shim:/repo:/usr/bin:/bin\nexport HOME=/storage\nexport OS_NAME=pixelelated\n')
     put(f.path/'storage/.config/backuptool.conf', 'LOCATIONS=( /storage/.config/proof-sentinel )\n')
     put(f.path/'storage/.config/proof-sentinel', 'before restore\n')
     archive = f.archive(ARCHIVE.replace('ROCKNIX_SETTINGS', suffix+'_SETTINGS'), local=True)
@@ -730,7 +721,7 @@ def main():
     args=p.parse_args()
     cases=[('T24-production-backup-scan-restore',archive_roundtrip),
            ('T24-local-legacy-recovery',lambda f:local_archive(f,'ROCKNIX')),
-           ('T24-local-renamed-recovery',lambda f:local_archive(f,'RASTERATOPS'))]
+           ('T24-local-renamed-recovery',lambda f:local_archive(f,'pixelelated'))]
     for kind in ['current','legacy','healed','flat','foreign']:
         for branded in [False,True]:
             cases.append((f'T24-{kind}-'+('renamed' if branded else 'legacy-os'),lambda f,k=kind,b=branded: archive_selection(f,k,b)))
@@ -806,12 +797,14 @@ def main():
     for stage in ['Backups','Saves','Saves-replaced','Content']:
         cases.append((f'T23-retry-delete-{stage}',lambda f,s=stage:migration_retry(f,s,'delete')))
     cases.append(('T23-retry-legacy-record',lambda f:migration_retry(f,'Saves-replaced',legacy_record=True)))
-    for predecessor,stages in [('RC2',['backups','saves','content','complete']),
-                               ('run101',['backups','saves','discarded','content','marker','complete'])]:
-        for stage in stages:
-            cases.append((f'T23-predecessor-{predecessor}-{stage}',
-                          lambda f,p=predecessor,s=stage: predecessor_retry(f,p,s)))
-    cases.append(('T23-predecessor-reinterrupted',lambda f:predecessor_retry(f,'run101','discarded',True)))
+    # D-WORKFLOW-144: only ROCKNIX RC2 is a fielded adoption predecessor.
+    # Unshipped run101 -> /Rasteratops cases remain in historical evidence;
+    # new-layout interruption/marker/discarded-shelf controls above stay active.
+    for stage in ['backups','saves','content','complete']:
+        cases.append((f'T23-predecessor-RC2-{stage}',
+                      lambda f,s=stage: predecessor_retry(f,s)))
+    cases.append(('T23-predecessor-RC2-reinterrupted',
+                  lambda f:predecessor_retry(f,'content',True)))
     for kind in ['root','custom','foreign','fleet']:
         cases.append((f'T23-predecessor-boundary-{kind}',lambda f,k=kind:predecessor_boundaries(f,k)))
     for empty in (False,True):

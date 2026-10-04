@@ -22,6 +22,10 @@ space, D-UI-045) and `least-surprise.md` (same thing, same place, same words).
 Beside it: `es-native-ui.md` (the surfaces the words go on),
 `es-ui-style-guide.md` (how a screen looks), `es-code-traps.md`.
 
+The project name **pixelelated** always stays lowercase, including labels and
+headings otherwise written in capitals (D-WORKFLOW-144). Do not uppercase the
+brand through a component formatter.
+
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).

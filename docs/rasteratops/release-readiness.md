@@ -1,26 +1,28 @@
-# Rasteratops 0.0.1 release readiness
+# pixelelated 0.0.1 release readiness
 
-Review: 2026-10-02, #385. Delivery: #383. Release contract: #344; cloud
-epic: #354. This assesses the first Rasteratops release, not a renewal of
-RC2's exceptions. Keep 0.0.1 as the working version. The owner's offer of
-1.0.0 does not change the acceptance criteria or authorize a rename.
+Current update: 2026-10-04, #409. Delivery #383; release contract #344;
+cloud epic #354. The next RC uses lowercase **pixelelated** and the Tiny5
+Duo LCD wordmark (D-WORKFLOW-144/145); the cloud default is `/pixelelated`
+(D-CLOUD-174). Version remains 0.0.1. Rasteratops is a character; Blitterbot
+is unchanged. The required adoption flow is **ROCKNIX → pixelelated**;
+there are no fielded /Rasteratops systems requiring an additional gate.
 
-The [M7 milestone body](https://github.com/rasteratops/distribution/milestone/7)
-is the binding **current** execution order (D-WORKFLOW-139, #388). This document
-retains the evidence assessment. Its route below maps to M7.P1 state/recovery,
-P2 inputs, P3 build/qualification, P4 fixes audit and P5 release staging.
-Current priority is M7.P3: finish the remaining identity, brand, secret,
-localisation, source/licence and live RA fixture checks. Replacement02's
-full default, actual RC2 upgrade and targeted preservation/timing tests are
-complete. The milestone and affected open titles carry the current order;
-issue numbers are references, not queue positions.
+The [M7 milestone body](https://github.com/pixelelated/distribution/milestone/7)
+is the binding running order. **Current: finish #409 source checks, then
+freeze/build new pixelelated bytes and qualify clean install plus ROCKNIX
+upgrade, followed by remaining P3 release checks and the approved P4 fixes
+audit.** See `docs/pixelelated/rename-plan.md` for the classified inventory.
 
-**Verdict: not ready to call a build an RC.** Replacement02, frozen61b64817bf,
-passed all15 default suites, clean/upgraded payload readback, actual RC2
-upgrade and the recorded installed proxy/cloud/archive/timing/identity checks.
-The remaining P3 criteria and the approved P4 independent fixes review still
-apply. Exact artifact digests and scoped receipts are in the current checkpoint;
-older build completion times below are historical, not a running job.
+**Verdict: no pixelelated candidate image exists yet, so no RC claim.**
+Replacement02 frozen61b64817bf remains successful historical RASTERATOPS
+engineering evidence: all15 default suites, actual RC2 upgrade and scoped
+installed proxy/cloud/archive/timing/identity checks passed. Preserve those
+receipts and artifacts; do not transfer their verdict to renamed bytes.
+Remaining source/licence/brand/secret/localisation and ordinary RA fixture
+criteria still apply, as do P4 and the separately gated P5 staging work.
+
+The older sections below retain the October2–3 investigations and source
+receipts, including names and pins valid at that time.
 
 ## Current execution update — 2026-10-03
 

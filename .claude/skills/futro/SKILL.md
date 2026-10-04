@@ -23,7 +23,7 @@ only where a stage explicitly says so. Swarm rule: while this skill is active on
 scope, other agents pause mutations on that scope until it completes
 ([ceremony execution discipline](../../rules/ceremonies.md#execution-discipline)).
 
-## Rasteratops continuation
+## pixelelated continuation
 
 The live milestone body orders phases; follow
 [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
@@ -465,7 +465,7 @@ skill's folder. Copy it to your project's docs directory (e.g. under
 
 ## Repo-specific integrations
 
-- **Rasteratops:**
+- **pixelelated:**
   - The reflective counterpart is the `mini-retro` skill — it ensures the
     prior phase's learnings feed this futro.
   - Delivery, issue/PR, and review conventions live in

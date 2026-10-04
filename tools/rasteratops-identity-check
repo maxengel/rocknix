@@ -42,9 +42,14 @@ def value(text, name):
 
 options = read(root / "distributions/ROCKNIX/options")
 version = read(root / "distributions/ROCKNIX/version")
-for name, expected in [("DISTRONAME", "RASTERATOPS"), ("OSNAME", "rocknix"),
+for name, expected in [("DISTRONAME", "pixelelated"), ("OSNAME", "rocknix"),
                        ("DISTRO_BOOTLABEL", "ROCKNIX"), ("DISTRO_DISKLABEL", "STORAGE")]:
     check(value(options, name) == expected, name + " = " + expected)
+for name, expected in [("GIT_ORGANIZATION", "pixelelated"),
+                       ("HOME_URL", "https://pixelelated.com"),
+                       ("WIKI_URL", "https://github.com/pixelelated/distribution/tree/next/docs"),
+                       ("BUG_REPORT_URL", "https://github.com/pixelelated/distribution/issues")]:
+    check(value(options, name) == expected, name + " uses the current identity")
 check(value(version, "OS_VERSION") == "0.0.1", "semantic OS version")
 check(value(version, "IMAGE_SUFFIX") == "from-ROCKNIX", "RC2 adoption filename suffix")
 for file in ["packages/linux/package.mk", "projects/ROCKNIX/packages/linux/package.mk"]:
@@ -95,12 +100,12 @@ check(timer.is_symlink() and os.readlink(timer) == "/dev/null", "statistics time
 api = read(es / "es-app/src/ApiSystem.cpp")
 menu = read(es / "es-app/src/guis/GuiMenu.cpp")
 check('GetEnv("OS_NAME")' in api, "ES reads the displayed OS identity")
-check('if (getApplicationName() == "RASTERATOPS")\n        return false;' in api,
+check('if (getApplicationName() == "pixelelated")\n        return false;' in api,
       "ES refuses inherited automatic/forced update queries")
-check('_("MANUAL UPDATES")' in menu and '_("ENABLE RASTERATOPS SCREENSHOT")' in menu,
+check('_("MANUAL UPDATES")' in menu and '_("ENABLE pixelelated SCREENSHOT")' in menu,
       "manual update and screenshot rows")
 check('ENABLE ROCKNIX SCREENSHOT' not in menu, "old screenshot display literal removed")
-check(':/rasteratops-wordmark.svg' in read(es / "es-core/src/Splash.h"), "ES wordmark selected")
+check(':/pixelelated-wordmark.svg' in read(es / "es-core/src/Splash.h"), "ES wordmark selected")
 recipe = read(root / "projects/ROCKNIX/packages/ui/emulationstation/package.mk")
 try:
     head = subprocess.check_output(["git", "-C", str(es), "rev-parse", "HEAD"], text=True).strip()
@@ -109,14 +114,14 @@ except subprocess.CalledProcessError:
 check(head is not None and value(recipe, "PKG_VERSION") == head, "ES recipe pins the checked commit")
 check(value(recipe, "PKG_LICENSE") == "MIT", "ES licence matches its source")
 
-art = root / "docs/rasteratops/art/rasteratops-wordmark.svg"
+art = root / "docs/pixelelated/art/pixelelated-wordmark.svg"
 theme = root / "projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next"
-paths = [art, es / "resources/rasteratops-wordmark.svg", theme / "sources/rasteratops-wordmark.svg"]
+paths = [art, es / "resources/pixelelated-wordmark.svg", theme / "sources/pixelelated-wordmark.svg"]
 digests = [hashlib.sha256(read(path).encode()).hexdigest() for path in paths]
 check(len(set(digests)) == 1 and art.is_file(), "ES and theme use the canonical wordmark bytes")
-check('+         <path>./rasteratops-wordmark.svg</path>' in read(theme / "patches/001-rasteratops-splash.patch"),
+check('+         <path>./pixelelated-wordmark.svg</path>' in read(theme / "patches/001-pixelelated-splash.patch"),
       "theme selects the wordmark, retaining custom splash support")
-check('cp ${PKG_DIR}/sources/rasteratops-wordmark.svg' in read(theme / "package.mk"),
+check('cp ${PKG_DIR}/sources/pixelelated-wordmark.svg' in read(theme / "package.mk"),
       "theme installs its selected wordmark")
 for file in ["LICENSE.md", "TRADEMARK.md", "NAMING.md"]:
     check(bool(read(root / file).strip()), "identity policy present: " + file)

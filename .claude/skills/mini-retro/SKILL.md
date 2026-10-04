@@ -23,7 +23,7 @@ only where a stage explicitly says so. Swarm rule: while this skill is active on
 scope, other agents pause mutations on that scope until it completes
 ([ceremony execution discipline](../../rules/ceremonies.md#execution-discipline)).
 
-## Rasteratops continuation
+## pixelelated continuation
 
 The live milestone body orders phases; follow
 [`milestone-phase-naming.md`](../../rules/milestone-phase-naming.md).
@@ -594,7 +594,7 @@ Three things to note:
 
 ## Repo-specific integrations
 
-- **Rasteratops:**
+- **pixelelated:**
   - This skill is the procedure; the local cadence is in [`ceremonies.md`](../../rules/ceremonies.md). Issue / PR / Epic delivery conventions live in
     [`issue-tracking.md`](../../rules/issue-tracking.md) and [`fork-workflow.md`](../../rules/fork-workflow.md);
     phase / Epic / milestone naming in

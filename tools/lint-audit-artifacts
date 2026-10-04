@@ -102,7 +102,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--issue", type=int, help="audit issue number to check the task list")
-    ap.add_argument("--repo", default="rasteratops/distribution")
+    ap.add_argument("--repo", default="pixelelated/distribution")
     args = ap.parse_args()
     d = pathlib.Path(args.folder)
     fails = []
