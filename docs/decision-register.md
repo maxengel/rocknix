@@ -607,6 +607,8 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 
 | D-WORKFLOW-145 | 2026-10-04 | **Use Tiny5 Duo LCD for the lowercase pixelelated splash wordmark, with the wordmark alone for now.** The maintainer: "we can also use Tiny5 Duo LCD for the splash font, and just that for now. it suits "pixelelated" well." Refines D-WORKFLOW-130's interim Tiny5 Duo choice; use the same generated wordmark at boot, in ES and in the theme, retain the exact unmodified font source and SIL OFL attribution, and introduce no character art in this change. | #409; D-WORKFLOW-144; `docs/pixelelated/art/README.md` |
 
+| D-WORKFLOW-146 | 2026-10-04 | **The interim pixelelated wordmark system uses the exact Tiny5 Duo LCD face, transparent LCD cell gaps, canonical RGB555 triplets and hard bands, with Ocean Bands as the multicolor default.** Refines D-WORKFLOW-145: retain six treatments (Ocean, Neon, Spectrum, Scanline with extra transparent rows, left-to-right Dual, Sunrise), light/dark monochromes, editable live text and outlined portable SVGs. The maintainer supplied the system and clarified: "So we might need to modify this slightly because, as you said, it needs to be Tiny5 Duo LCD, not Tiny5 Duo." Compute hex from the triplets when draft examples differ. Keep font provenance/OFL; no font binary in the brand folder and no character art. Reuse these sources for boot, shutdown and future animation; asset proofs do not establish installed behavior. | #409; `docs/pixelelated/art/wordmark-system.md`; `docs/pixelelated/art/source/palettes.json` |
+
 ## Open decisions
 
 | ID | Question | Home |

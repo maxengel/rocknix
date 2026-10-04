@@ -1,6 +1,6 @@
 # Saved Session State
 
-> Saved 2026-10-04T02:44:05.229152+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T024405Z.md`.
+> Saved 2026-10-04T02:22:48.743208+00:00. Previous checkpoint: `.github/sessions/archived/saved-session-state-next-20261004T022248Z.md`.
 
 ## Start here
 
@@ -58,13 +58,11 @@ The316/0 result is not a claim of support for unshipped Rasteratops state.
 
 - Feature: `/workspace/repos/rocknix.worktrees/conflict-resolution`,
   `feature/conflict-resolution`. Rename plan commit092e4ae1c5 precedes the
-  implementation/checkpoint batch8d26722b91. Both were integrated and pushed.
-  Later wordmark-system/docs commits follow; read git HEAD for the current hash.
-- Primary: `/workspace/repos/rocknix`, `next`. Completed integration mappings:
-  feature092e4ae1c5 → next61f3c27146; feature8d26722b91 → nexta9af618398.
-  Both branches were pushed normally and their remote hashes verified.
-  Do not reapply those commits. Integrate later exact #409 commits by cherry-pick;
-  never merge this feature branch wholesale (unrelated historical archives).
+  implementation/checkpoint batch. Read git HEAD for the final source hash.
+- Primary: `/workspace/repos/rocknix`, `next`; before this batchd1caca29fa.
+  **Integrate exactly092e4ae1c5 and the subsequent #409 commits via cherry-pick.**
+  Never merge this feature branch wholesale: it carries unrelated old session
+  archives. Check current log before cherry-picking to avoid duplicates.
   Normal pushes use `git@github-blitterbot:pixelelated/distribution.git`.
 - ES: `/home/max/Development/emulationstation-next.worktrees/qa-integration`,
   `test/qa-integration`, **4d0c7a6867045245b23cec74f33ca0ea003437cd** published
@@ -91,18 +89,7 @@ already lowercase; public metadata did not retain an old project name.
 
 ## Next work, in milestone order
 
-1. **M7.P3 #409: integrate the new Ocean Bands LCD assets, then freeze/build.**
-   The owner supplied a six-treatment RGB555 wordmark system after the first
-   monochrome source transition. Saved specification and generator are under
-   `docs/pixelelated/art/wordmark-system.md` and `source/generate.py`. D-WORKFLOW-146.
-   Eight outlined variants, live-text master, CSS,24 PNG exports and background/
-   small-size/static screen proofs are complete. Exact font/geometry/color/alpha
-   checks pass; `proofs/artifact-checks.json` records their scope. At24/32px LCD
-   cell gaps suffer; prefer64px or larger. No font binary is in the art folder.
-   **Runtime still uses the monochrome pins recorded above.** Integrate Ocean consistently
-   into splash renderer/ES/theme and run their focused checks before freezing.
-   Animation has no specified sequence; do not invent a required animation gate.
-   First verify
+1. **M7.P3 #409: freeze/build new lowercase pixelelated inputs.** First verify
    final source integration and recheck `tools/build-preflight`: at02:11UTC
    there was1.7TiB free and45GiB available RAM, but8GiB swap was full. Resolve
    that observed host condition before a cold build; no memory action was taken.
@@ -167,14 +154,3 @@ retain their artifact-scoped verdicts. Do not reopen merely for the rename.
   immutable scripts. Never end with an unattended job while promising alerts.
 - Ceremony gate passes, with existing overdue-audit warning (37 closures/two
   days). It permits normal pushes but keeps CI red until the required audit.
-
-## Fresh-context proof and corrections
-
-A context-free resume agent verified source/pins, actual regression counts and
-rc0, absent job PIDs, frozen replacement02 and live M7 order. It did not rehash
-the4GB image payloads. Its final SSH remote-ref read was sandbox-blocked, so
-remote publication relies on the earlier successful push/readback receipts.
-Corrected its three findings: readiness no longer asks to finish completed
-rename checks, #409 no longer assumes personal-fork transfers, and this
-checkpoint records the completed feature→next mappings. Wordmark preparation
-subsequently adds the asset integration step before the new build.
